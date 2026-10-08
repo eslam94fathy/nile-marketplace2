@@ -24,7 +24,8 @@
     "format:check": "prettier --check .",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev:env": "node scripts/dev-env.js"
   },
   "dependencies": {
     "amqp-connection-manager": "5.0.0",

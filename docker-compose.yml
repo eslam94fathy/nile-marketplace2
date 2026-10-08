@@ -1,0 +1,95 @@
+# Local development only (CLAUDE.md §12). Credentials below are for this throwaway local stack.
+# 1. npm run dev:env      (creates .env with local values + a dev JWT key pair, once)
+# 2. docker compose up --build
+# Image versions match the integration tests (test/helpers/global-setup.ts).
+
+x-app: &app
+  build: .
+  env_file: .env
+  # Each service sets its own environment (merge keys are shallow): inside the compose network
+  # the dependencies are reached by service name, overriding the localhost URLs from .env.
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: nile
+      POSTGRES_PASSWORD: nile
+      POSTGRES_DB: nile
+    ports: ['5432:5432']
+    volumes: ['pgdata:/var/lib/postgresql']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U nile -d nile']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.2-alpine
+    ports: ['6379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: nile
+      RABBITMQ_DEFAULT_PASS: nile
+    ports: ['5672:5672', '15672:15672']
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'check_port_connectivity']
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  migrate:
+    <<: *app
+    environment:
+      DATABASE_URL: postgres://nile:nile@postgres:5432/nile
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://nile:nile@rabbitmq:5672
+      SERVICE_NAME: nile-migrate
+    command: ['node', 'dist/migrate.js', 'latest']
+    healthcheck:
+      disable: true
+    restart: 'no'
+
+  api:
+    <<: *app
+    environment:
+      DATABASE_URL: postgres://nile:nile@postgres:5432/nile
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://nile:nile@rabbitmq:5672
+      SERVICE_NAME: nile-api
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports: ['3000:3000']
+
+  worker:
+    <<: *app
+    environment:
+      DATABASE_URL: postgres://nile:nile@postgres:5432/nile
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://nile:nile@rabbitmq:5672
+      SERVICE_NAME: nile-worker
+    command: ['node', 'dist/worker.js']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # The worker serves no HTTP: its liveness is the process itself.
+    healthcheck:
+      disable: true
+
+volumes:
+  pgdata:
