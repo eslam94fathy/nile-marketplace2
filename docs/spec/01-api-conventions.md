@@ -1,6 +1,6 @@
 # Spec 01 — API Conventions (shared by all module specs)
 
-Status: **v1.0 APPROVED (2026-10-08).** Approved by the user. Changes from now on need explicit approval and a version bump.
+Status: **v1.1 APPROVED (2026-10-08).** Approved by the user. v1.1: passwords are never trimmed; `opt` implemented by a shared `Optional()` decorator (Phase 1). Changes from now on need explicit approval and a version bump.
 Inputs: `CLAUDE.md` §7–§10, `docs/design/01-architecture.md` v1.0, `docs/design/02-database.md` v1.0.
 
 Module specs: `03-identity.md` · `04-customers.md` · `05-sellers.md` · `06-catalog.md` · `07-inventory.md` · `08-cart.md` · `09-ordering.md` · `10-payments.md` · `11-delivery.md` · `12-finance.md` · `13-notifications.md`. Events: `02-events.md`.
@@ -32,8 +32,8 @@ Request DTOs are tables. Every row becomes a class-validator decorator set. The 
 | `int(a..b)` | `@IsInt() @Min(a) @Max(b)` on a JSON number (no string coercion, D2) |
 | `bool` | `@IsBoolean()` on a JSON boolean |
 | `enum(X)` | `@IsIn(Object.values(X))` |
-| `opt` | `@IsOptional()`. `null` is **rejected** unless the row says `nullable` |
-| `password` | `str(8..)` + custom `@MaxBytes(72)` (bcrypt limit, UTF-8 bytes). No composition rules (NIST 800-63B) |
+| `opt` | `@Optional()` (`lib/http`): the field may be absent, but `null` is still validated and so **rejected** unless the row says `nullable`. Plain `@IsOptional()` is not used, because it lets `null` through |
+| `password` | `@IsString() @MinLength(8)` + custom `@MaxBytes(72)` (bcrypt limit, UTF-8 bytes). **Never trimmed**: passwords are compared byte for byte (unlike `str`). No composition rules (NIST 800-63B) |
 | `otp` | `^\d{6}$` |
 | `slug` | `^[a-z0-9]+(?:-[a-z0-9]+)*$`, length as stated |
 

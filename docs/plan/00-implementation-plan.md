@@ -1,7 +1,7 @@
 # Implementation Plan (Release 1)
 
-Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08).** Later phases are detailed when their specs are approved.
-Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.1, `docs/design/02-database.md` v1.1, `docs/spec/01-api-conventions.md` v1.0, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
+Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6).** Later phases are detailed when their specs are approved.
+Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.2, `docs/design/02-database.md` v1.3, `docs/spec/01-api-conventions.md` v1.1, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
 
 ---
 
@@ -199,3 +199,5 @@ Needs approved: spec `03-identity.md` and spec `13-notifications.md` (both still
 - CI green; every P1 endpoint is in the OpenAPI document with its DTOs.
 - Locally: `seed-admin` → invite email visible in Mailpit → accept → login → refresh → logout works through the API.
 - No plain-text OTP, invite token, password or refresh token in any log line, outbox row or broker message (asserted by tests).
+
+**P1 status (2026-10-08): implemented** on branch `p1-identity` (7 commits, §3.5 steps 1–7). Locally green: lint, type-check, Prettier, unit (144), integration (121), build, `npm audit` (0). **Still to do for "done when":** a CI run on the PR, and the manual local walkthrough (`seed-admin` → Mailpit → accept → login → refresh → logout); the integration tests cover the same path with an in-memory sender. Deviations from §3.3–§3.5: none in scope. Clarifications made during implementation and accepted: spec 01 v1.1 (passwords never trimmed, `Optional()`), spec 03 v1.1 §7.1 (I-1…I-9), spec 13 v1.1 §7.1 (N-1…N-5), architecture v1.2 §3.2 (`beforeTransaction` for external effects), database v1.3 (`notification_log` FK + failure check). Extra shared code: async rate-limit keys (`emailRateKey`), `InvitationService` without bcrypt (for the CLI). Open: DB-Q6 (index for the admin list).

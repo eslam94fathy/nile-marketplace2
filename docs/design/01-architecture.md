@@ -1,6 +1,6 @@
 # System Design 01 — Architecture (Release 1)
 
-Status: **v1.1 APPROVED (2026-10-08).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). SD-3d (region, §12.2) is still open and only blocks Terraform provisioning. Changes from now on need explicit approval and a version bump.
+Status: **v1.2 APPROVED (2026-10-08).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). SD-3d (region, §12.2) is still open and only blocks Terraform provisioning. Changes from now on need explicit approval and a version bump.
 Inputs: `CLAUDE.md` (engineering rules), `docs/spec/00-overview.md` v1.0 (business). Schema: `02-database.md`.
 
 ---
@@ -86,6 +86,7 @@ The rules:
 
 ### 3.2 Consistency guards for consumers
 - At-least-once delivery. Every consumer records `(consumer, event_id)` in `processed_events` **in the same transaction** as its effects, and a duplicate is acknowledged and skipped.
+- **External effects** (an HTTP call such as sending an email) must not run inside that transaction (CLAUDE.md §6.4). A consumer with one declares a `beforeTransaction` step: the host checks `processed_events` first and skips duplicates, runs the step outside any transaction, then commits its result (e.g. the `notification_log` row) together with the `processed_events` row. A crash between the two can repeat the effect once on redelivery, so this is only used where that is acceptable (spec 13 UC-NO-1) [v1.2].
 - Consumers are **state-machine guarded**: they apply a transition only if the current state allows it (e.g. ignore `shipment.picked_up` if the seller order is already `cancelled`, and log at `warn`). Out-of-order or stale events are therefore harmless.
 
 ## 4. Request pipeline (api)

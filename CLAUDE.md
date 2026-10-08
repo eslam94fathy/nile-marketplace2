@@ -257,11 +257,15 @@ P0-Q1 Node 24 locally via nvm (`.nvmrc`, `engines`, `engine-strict`) · P0-Q2 Co
 ### 14.1c Decided (2026-10-08, Phase 1 plan)
 P1-Q1 env schema split per process (JWT private key api-only, email keys worker-only) · P1-Q2 `EMAIL_PROVIDER` mailjet | mailpit (Mailpit for local dev, in-memory sender in tests) · P1-Q3 `bcrypt@6.0.0` · P1-Q4 bcrypt cost 12, OTP 10 min / 5 attempts / 60 s cooldown, invite 72 h, access 15 min, refresh 30 days · P1-Q5 `JWT_PRIVATE_KEY` + `JWT_ACTIVE_KID` with documented rotation · P1-Q6 invite link = https app link via `INVITE_URL_BASE` (value agreed with the mobile team before staging) · P1-Q7 `seed-admin` CLI · P1-Q8 Mailjet account and verified sender available
 
+### 14.1d Decided (2026-10-08, Phase 1 implementation)
+P1-I1 passwords never trimmed; `opt` = shared `Optional()` (absent ok, `null` rejected) (spec 01 v1.1) · P1-I2 identity clarifications I-1…I-9: reset needs an active account, row lock on resend/forgot cooldown, bcrypt outside transactions, admin suspend only for customers/admins and only `active ⇄ suspended`, suspend reason in the audit log only, change-password limit keyed on IP + account email (spec 03 v1.1 §7.1) · P1-I3 notifications clarifications N-1…N-5: provider call outside the transaction, secrets redacted from provider errors, malformed payloads → DLQ, only 400/422 permanent (spec 13 v1.1 §7.1) · P1-I4 consumers with external effects use the host's `beforeTransaction` step (architecture v1.2 §3.2) · P1-I5 `notification_log` FK `ON DELETE SET NULL` + `chk_notification_log_error_on_failure` (database v1.3)
+
 ### 14.2 Still open
 
 | # | Topic | Options / recommendation |
 |---|---|---|
 | SD-3d | AWS region | Rec `eu-central-1`; see `docs/design/01-architecture.md` §12.2 |
+| DB-Q6 | Index for `GET /admin/admins` (`users` by role + `created_at`) | Rec `idx_users_role_created_at (role, created_at DESC, id DESC)` before launch; see `docs/design/02-database.md` §13.1 |
 
 New ones go here as rows of this table.
 

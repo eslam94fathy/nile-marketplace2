@@ -1,6 +1,6 @@
 # System Design 02 — Database Schema (Release 1)
 
-Status: **v1.2 APPROVED (2026-10-08).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). Changes from now on need explicit approval and a version bump. Decisions: §13.
+Status: **v1.3 APPROVED (2026-10-08).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1); open DB-Q6. Changes from now on need explicit approval and a version bump. Decisions: §13.
 Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §6. Business rules: `docs/spec/00-overview.md` v1.0.
 
 ---
@@ -488,9 +488,10 @@ A payout amount must be ≤ the account balance. This is checked under `SELECT �
 ## 12. notifications & shared
 
 ### notification_log
-std columns · `user_id UUID null` fk · `template VARCHAR(50)` (`email_verification, password_reset, account_invite`) · `to_email VARCHAR(254)` · `status VARCHAR(20)` (`sent, failed`) · `provider_message_id VARCHAR(100) null` · `error VARCHAR(2000) null` · `source_event_id UUID`.
+std columns · `user_id UUID null` `fk_notification_log_user_id` → users `ON DELETE SET NULL` (the log outlives the user) · `template VARCHAR(50)` (`email_verification, password_reset, account_invite`) · `to_email VARCHAR(254)` · `status VARCHAR(20)` (`sent, failed`) · `provider_message_id VARCHAR(100) null` · `error VARCHAR(2000) null` · `source_event_id UUID`.
 - `uq_notification_log_source_event_id`: never send the same email twice.
 - `idx_notification_log_user_id_created_at`: support lookup.
+- `chk_notification_log_error_on_failure CHECK (status = 'sent' OR error IS NOT NULL)`: a failed row always says why (v1.3).
 - The OTP itself is never stored here.
 
 ### events_outbox
@@ -515,4 +516,8 @@ Index: `idx_processed_events_processed_at`: the cleanup job.
 | DB-Q4 | Lengths: product `name` 200, `description` 5000, seller `business_name` 150 |
 | DB-Q5 | Retention: dispatched outbox 7 days, processed events 30 days, expired codes/tokens 30 days (all env config) |
 
-No open schema questions.
+### 13.1 Open
+
+| # | Question | Options / recommendation |
+|---|---|---|
+| DB-Q6 | `GET /admin/admins` (spec 03 §4.11) reads `users WHERE role = 'admin' ORDER BY created_at DESC, id DESC` with no supporting index, so it scans `users` (fine while the table is small; admins are few and the endpoint is rare). | **Rec:** add `idx_users_role_created_at (role, created_at DESC, id DESC)` before launch (a `CREATE INDEX CONCURRENTLY` migration). Alternative: a partial index `WHERE role = 'admin'`, smaller but only serves this list · or leave it until the table grows |
