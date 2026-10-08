@@ -1,6 +1,6 @@
 # Implementation Plan (Release 1)
 
-Status: **v1.0 APPROVED (2026-10-08).** Phase 0 approved, with all P0-Q recommendations accepted. Later phases are detailed when their specs are approved.
+Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) DRAFT v0.1, under review.** Later phases are detailed when their specs are approved.
 Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.1, `docs/design/02-database.md` v1.1, `docs/spec/01-api-conventions.md` v1.0, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
 
 ---
@@ -133,3 +133,69 @@ Test-only routes (a `/__test` router mounted only by the test app factory) exerc
 - `docker compose up` starts Postgres/Redis/RabbitMQ + api + worker, migrations apply, `GET /health/ready` → `200` with all three dependencies `up`, and stopping Redis turns it into `503`.
 - `GET /api/v1/docs/openapi.json` returns a valid OpenAPI 3 document (health only, for now).
 - No `any`, no `console.*` outside the logger writer, no `process.env` outside `lib/config`.
+
+**P0 status (2026-10-08): implemented** on branch `p0-foundation` (9 commits). Deviations from §2.3: TypeScript 6.0.3 instead of 7 (typescript-eslint supports TS < 6.1); `eslint-plugin-boundaries` replaced by a local rule in `eslint-rules/` (its dependency chain had 4 unfixable high audit findings); `@types/amqplib` dropped (amqplib 2 ships its types). Design notes: the outbox drain claims rows with a lease and publishes outside any transaction (CLAUDE.md §6.4); migrations are listed explicitly in `src/migrations/index.ts`.
+
+---
+
+## 3. Phase 1: identity + notifications
+
+Status: **DRAFT v0.1 (2026-10-08), under review.**
+Needs approved: spec `03-identity.md` and spec `13-notifications.md` (both still DRAFT v0.1), plus the P1-Q decisions below. It does **not** need A-2 / D-2 / D-3: identity and notifications call no other module.
+
+### 3.1 What P1 delivers, and what it can't yet
+- Identity end to end for admin-created accounts: seed the first admin (CLI), invite admins, accept an invite, login, refresh rotation with reuse detection, logout, forgot/reset password, change password, suspend/reactivate, resend invite, list admins.
+- The transactional emails (verification OTP, password reset OTP, invite) go identity → outbox (secrets encrypted) → worker → notifications → email provider.
+- **Self-registration is P2**: its routes live in `customers` / `sellers` (spec 03 §1). In P1, `identity.createPendingUser` and the email-verification endpoints are built and integration-tested through the module's public API; their HTTP end-to-end test lands with P2.
+
+### 3.2 Decisions to approve (P1-Q)
+
+| # | Topic | Options / recommendation |
+|---|---|---|
+| P1-Q1 | Secrets per process | Today one env schema is shared by api, worker and migrate, so adding the JWT **private** key or Mailjet keys would hand them to every process. **Rec:** a base schema + per-process extensions: api adds `JWT_PRIVATE_KEY`, `JWT_ACTIVE_KID`, token TTLs, OTP/invite settings, `BCRYPT_COST`; worker adds the email-provider keys; both get `SECRETS_ENCRYPTION_*` (api encrypts, worker decrypts); migrate gets DB only · or keep one schema |
+| P1-Q2 | Email in development and tests | **Rec:** `EMAIL_PROVIDER` env (`mailjet` \| `mailpit`). Local dev uses a **Mailpit** container (new compose service, pinned version; web inbox at :8025, sent through its HTTP API, so no SMTP library). Integration tests use an in-memory sender injected through DI. Staging/prod: `mailjet` · or Mailjet sandbox mode everywhere |
+| P1-Q3 | bcrypt library (D10) | **Rec: `bcrypt@6.0.0`** (native, ships prebuilt binaries loaded at runtime, so it works with `npm ci --ignore-scripts`; verified in the slim Docker image as part of P1) · or `bcryptjs` (pure JS, ~3× slower per hash) |
+| P1-Q4 | Values for spec 03 / S-16 settings | **Rec:** `BCRYPT_COST=12`, OTP 10 min / 5 attempts / 60 s cooldown, invite 72 h, access token 15 min, refresh token 30 days (all env, no defaults) |
+| P1-Q5 | JWT signing keys | **Rec:** `JWT_PRIVATE_KEY` (PEM, api only) + `JWT_ACTIVE_KID`; the matching public key must be in `JWT_PUBLIC_KEYS`. Rotation: add the new public key, deploy, switch `JWT_ACTIVE_KID`, remove the old public key after the access-token TTL |
+| P1-Q6 | Invite link format (`INVITE_URL_BASE`) | The app opens it, so the mobile team must agree. **Rec:** an https universal/app link (e.g. `https://<domain>/invite?token=…`), which email clients handle better than a custom scheme. The code only appends `?token=`; the value can be decided before staging |
+| P1-Q7 | First-admin seed | **Rec:** `node dist/seed-admin.js --email <email>` (in Docker: `docker compose run --rm api node dist/seed-admin.js --email …`). Creates an invited admin and queues the invite email. Refuses an existing email; never prints the token |
+| P1-Q8 | Mailjet account | Needed before staging (not for P1 development): API key/secret and a verified sender address/domain. Do you have one? |
+
+### 3.3 Scope
+
+| Area | Content |
+|---|---|
+| Migrations | `users`, `refresh_tokens`, `verification_codes`, `notification_log`: one migration per table, exactly as `02-database.md` §2 and §12 |
+| `pkg/` | `hashing` (`IPasswordHasher` + bcrypt adapter), `email` (`IEmailSender` + Mailjet adapter via `fetch` + Mailpit adapter) |
+| `lib/` | env split (P1-Q1); `lib/auth` `JwtSigner` (api only); shared `UserRole` reused |
+| `app/identity` | full module layout (CLAUDE.md §2.1): routes, controllers, services, repositories, models, DTOs, enums, errors, constraint registrations (`uq_users_email` → `EMAIL_ALREADY_REGISTERED`), public API (§2 of spec 03), OpenAPI docs for every endpoint |
+| `app/notifications` | `notifications.email` consumer, templates in the repo (S-15), `notification_log` repository, permanent vs transient failure handling (spec 13 §3) |
+| Jobs | `expired-codes-cleanup` (architecture §6) |
+| CLI | `seed-admin` |
+| Docker | Mailpit service in compose; `.env.example` and `dev:env` updated with the new keys |
+| Boundaries | `module-graph.js` unchanged (identity and notifications import no module) |
+
+### 3.4 Tests
+- **Unit** (services with mocked repositories/clock/hasher through DI): token rotation decisions, reuse detection, OTP attempt counting and expiry, cooldowns, generic responses, template rendering, permanent vs transient email failures.
+- **Integration, per endpoint** (CLAUDE.md §12): happy path, validation failure, authz failure (where authenticated), not-found (where it applies). Plus:
+  - refresh reuse revokes the whole family; two concurrent refreshes of the same token → exactly one succeeds
+  - login: wrong password and unknown email give the same response; invited and suspended accounts
+  - OTP: wrong code counts attempts; after `OTP_MAX_ATTEMPTS` even the right code fails; a new code invalidates older ones
+  - password reset and suspension revoke all sessions; password change keeps only the current session
+  - strict-auth rate limits on every public auth endpoint
+  - email pipeline end to end: request → outbox row with **no plain-text OTP/token** in the payload → worker consumer → fake sender received the decrypted OTP → `notification_log` row; redelivery doesn't send twice
+  - `seed-admin` CLI against a test database
+
+### 3.5 Order of work (one commit each)
+1. Env split per process (P1-Q1) + `.env.example` / `dev:env` / compose updates.
+2. `pkg/hashing`, `pkg/email` (+ Mailpit service), `JwtSigner` + unit tests.
+3. Identity migrations.
+4. Identity: repositories, models, token/OTP services + unit tests.
+5. Identity: auth endpoints (verify, resend, login, refresh, logout, forgot/reset, change password, invite accept) + integration tests + OpenAPI.
+6. Identity: admin endpoints + `seed-admin` CLI + `expired-codes-cleanup` job + tests.
+7. Notifications: migration, consumer, templates, adapters wiring + end-to-end email test.
+
+### 3.6 Done when
+- CI green; every P1 endpoint is in the OpenAPI document with its DTOs.
+- Locally: `seed-admin` → invite email visible in Mailpit → accept → login → refresh → logout works through the API.
+- No plain-text OTP, invite token, password or refresh token in any log line, outbox row or broker message (asserted by tests).
