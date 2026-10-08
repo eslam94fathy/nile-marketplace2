@@ -6,7 +6,7 @@
  *   - lib    may import pkg and lib
  *   - app/<m> may import pkg, lib, its own files, and another module ONLY via its index.ts,
  *     and only along an edge allowed in module-graph.js
- *   - migrations may import pkg only
+ *   - migrations may import pkg and lib (types, helpers), never app
  *   - nothing imports migrations, and nothing in app/lib/pkg imports an entrypoint (src/*.ts)
  */
 const path = require('node:path');
@@ -19,7 +19,8 @@ function classify(absPath) {
   if (rel.startsWith('..') || path.isAbsolute(rel)) return { layer: 'outside' };
   const parts = rel.split(path.sep);
   const [top, second, third] = parts;
-  if (parts.length === 1) return { layer: 'entry' };
+  // A bare layer directory (e.g. `../migrations` resolving to its index.ts) belongs to that layer.
+  if (parts.length === 1 && !['pkg', 'lib', 'migrations', 'app'].includes(top)) return { layer: 'entry' };
   if (top === 'pkg') return { layer: 'pkg' };
   if (top === 'lib') return { layer: 'lib' };
   if (top === 'migrations') return { layer: 'migrations' };
@@ -69,8 +70,7 @@ module.exports = {
           if (to.layer !== 'pkg' && to.layer !== 'lib') deny('layer', { from: 'lib', to: toName });
           return;
         case 'migrations':
-          if (to.layer !== 'pkg' && to.layer !== 'migrations')
-            deny('layer', { from: 'migrations', to: toName });
+          if (to.layer === 'app' || to.layer === 'entry') deny('layer', { from: 'migrations', to: toName });
           return;
         case 'app':
           if (to.layer === 'entry') return deny('layer', { from: `app/${from.module}`, to: 'an entrypoint' });
