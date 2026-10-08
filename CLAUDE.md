@@ -27,8 +27,10 @@ Read this whole file before every task. These rules are binding. If a rule confl
 | Cache / rate-limit / idempotency store | Redis (ioredis) |
 | Async messaging | Transactional outbox, then RabbitMQ (topic exchange, publisher confirms), drained by `worker.ts` |
 | Tests | Vitest + Supertest + Testcontainers (Postgres, Redis, RabbitMQ) |
-| API docs | OpenAPI 3 spec generated from the class-validator DTOs via `class-validator-jsonschema` + `openapi3-ts`, served at `/api/v1/docs` (exposure in production: decided in system design) |
+| API docs | OpenAPI 3 spec generated from the class-validator DTOs via `class-validator-jsonschema` + `openapi3-ts`, served at `/api/v1/docs` plus Swagger UI, both behind `API_DOCS_ENABLED` (off in production, P0-Q4) |
 | Packaging / deploy | Docker (multi-stage build, non-root user, `node dist/server.js` / `node dist/worker.js`) on **AWS** (ECS Fargate, RDS, ElastiCache, Amazon MQ). Infrastructure as code: **Terraform** in `infra/terraform/` |
+| Module system / dev runtime | CommonJS output (`module: NodeNext`). Dev: `tsc --watch` + `node --watch --env-file=.env`. Tests: Vitest + `unplugin-swc` (P0-Q2, P0-Q3) |
+| Auth / rate limit / broker / jobs libraries | `jose` (JWT RS256) · `rate-limiter-flexible` · `amqplib` + `amqp-connection-manager` · own advisory-locked job runner (P0-Q5…Q8) |
 | Clients | Mobile app (plus any other client) consuming the REST API |
 
 New dependencies need a reason and user approval. Prefer well-maintained libraries with types included.
@@ -249,9 +251,16 @@ Dependency direction: `app → lib → pkg`. `pkg` never imports `lib` or `app`,
 ### 14.1 Decided (2026-10-07)
 D1 Node 24 LTS · D2 class-validator DTOs · D3 own custom logger · D4 Vitest · D5 DB defaults allowed only on technical columns (`id`, `created_at`, `updated_at`) · D6 UUID v7 PKs · D7 `NUMERIC(12,2)`, single currency EGP (O4) · D8 `VARCHAR + CHECK` enums · D9 clients include a mobile app · D10 bcrypt · D11 RabbitMQ · D12 cross-module FKs allowed · D13 single `public` schema · D14 deletion strategy per entity · D15 npm · D16 OpenAPI yes · D17 Docker · O1 Bearer tokens for all clients · O3 `decimal.js` · O6 `class-validator-jsonschema` + `openapi3-ts` · O2 Postgres 18 · O5 GitHub Actions
 
+### 14.1b Decided (2026-10-08, Phase 0 plan)
+P0-Q1 Node 24 locally via nvm (`.nvmrc`, `engines`, `engine-strict`) · P0-Q2 CommonJS output · P0-Q3 dev = `tsc --watch` + `node --watch`, tests = Vitest + `unplugin-swc` (decorator metadata), every constructor param uses `@inject(TOKEN)` · P0-Q4 API docs behind `API_DOCS_ENABLED`, off in production · P0-Q5 `jose` · P0-Q6 `rate-limiter-flexible` · P0-Q7 `amqplib` + `amqp-connection-manager` · P0-Q8 own advisory-locked interval job runner · P0-Q9 test DB per test file from a migrated template, Redis prefix and RabbitMQ vhost per file · P0-Q10 git, `main` branch · P0-Q11 dependency list in `docs/plan/00-implementation-plan.md` §2.3
+
 ### 14.2 Still open
 
-No open technical decisions. New ones go here as a table (`# | Topic | Options / recommendation`).
+| # | Topic | Options / recommendation |
+|---|---|---|
+| SD-3d | AWS region | Rec `eu-central-1`; see `docs/design/01-architecture.md` §12.2 |
+
+New ones go here as rows of this table.
 
 When a decision is made, move it into the relevant section and into 14.1.
 
