@@ -1,6 +1,6 @@
 # System Design 01 — Architecture (Release 1)
 
-Status: **v1.0 APPROVED (2026-10-08).** All sections approved by the user, except SD-3d (region, §12.2), which is still open and only blocks Terraform provisioning. Changes from now on need explicit approval and a version bump.
+Status: **v1.1 APPROVED (2026-10-08).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). SD-3d (region, §12.2) is still open and only blocks Terraform provisioning. Changes from now on need explicit approval and a version bump.
 Inputs: `CLAUDE.md` (engineering rules), `docs/spec/00-overview.md` v1.0 (business). Schema: `02-database.md`.
 
 ---
@@ -74,7 +74,7 @@ The rules:
 | Kashier paid / failed | Webhook → `payments` updates the payment + outbox `payment.paid` → `ordering` consumer moves seller orders `pending_payment → placed` | Payments stays independent of ordering |
 | Seller accepts / ready | ordering (sync) → outbox `seller_order.ready_for_pickup` → `delivery` consumer creates the shipment + auto-assigns | Delivery owns shipments. The event payload carries the pickup/drop-off snapshot |
 | Agent picked up / delivered / failed | delivery (sync) → outbox `shipment.*` → `ordering` consumer updates the seller order (+ `inventory.commit` in its transaction) → outbox `seller_order.delivered` → `finance` consumer writes ledger entries | Each module changes only its own tables |
-| Cancellation | ordering (sync, in one trx with `inventory.release`) → outbox `seller_order.cancelled` → payments (refund due for Kashier) / delivery (cancel shipment if one exists) / finance consumers | |
+| Cancellation | ordering (sync, in one trx with `inventory.release`) → outbox `seller_order.cancelled` → payments (refund due for Kashier, COD amount) / delivery (cancel shipment if one exists) consumers. Finance books nothing before delivery (E-6) | |
 | Seller approved / suspended | sellers → outbox → `catalog` consumer flips `products.seller_active` | Keeps public listings join-free across modules |
 | Stock level change | inventory → outbox `inventory.stock_status_changed` → `catalog` consumer updates `products.in_stock` | Same as above. Listings are eventually consistent (≤ seconds), while checkout always checks real stock |
 | Emails (OTP, invites) | identity → outbox `notification.email_requested` → `notifications` consumer → Mailjet | Retries are handled by the broker. Requests never wait on Mailjet |
@@ -109,13 +109,7 @@ Health: `GET /health/live`, `GET /health/ready` (Postgres, Redis, RabbitMQ with 
 ## 5. Messaging (RabbitMQ)
 
 - **Exchange:** `nile.events` (topic, durable). Routing key = event type (e.g. `seller_order.delivered`).
-- **Queues:** one per consumer **purpose**, named `<module>.<purpose>`, durable, bound to specific keys. Examples:
-  - `ordering.payment-updates` ← `payment.*`
-  - `ordering.shipment-updates` ← `shipment.*`
-  - `delivery.seller-order-updates` ← `seller_order.ready_for_pickup`, `seller_order.cancelled`
-  - `finance.ledger` ← `seller_order.delivered`, `seller_order.cancelled`, `cod.collected`, `payment.refund_recorded`
-  - `catalog.listing-projections` ← `seller.approved`, `seller.suspended`, `inventory.stock_status_changed`
-  - `notifications.email` ← `notification.email_requested`
+- **Queues:** one per consumer **purpose**, named `<module>.<purpose>`, durable, bound to specific keys. The full list of queues and bindings is in **`docs/spec/02-events.md` §2** (the source of truth, A-1).
 - **Retries:** a failed message is re-published to a per-queue retry queue with TTL backoff (e.g. 5 s → 30 s → 5 min, from config), then sent to the per-queue **DLQ** `<queue>.dlq` after N attempts. A message landing in a DLQ produces an `error` log with event code `MQ_DEAD_LETTERED` [SD-4].
 - **Prefetch** from config. Manual ack after the DB transaction commits.
 - **Envelope:** `eventId` (= outbox row id, UUID v7), `eventType`, `version`, `occurredAt`, `correlationId`, `aggregateType`, `aggregateId`, `payload`. Consumers restore `correlationId` into the AsyncLocalStorage context, so logs trace end-to-end.

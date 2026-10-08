@@ -1,6 +1,6 @@
 # System Design 02 — Database Schema (Release 1)
 
-Status: **v1.0 APPROVED (2026-10-08).** Approved by the user. Changes from now on need explicit approval and a version bump. Decisions: §13.
+Status: **v1.1 APPROVED (2026-10-08).** v1.1: COD payment status `cancelled` added (D-1, S-12). Changes from now on need explicit approval and a version bump. Decisions: §13.
 Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §6. Business rules: `docs/spec/00-overview.md` v1.0.
 
 ---
@@ -380,7 +380,7 @@ Index: `(order_id | seller_order_id, created_at)`: timeline view.
 | std columns | | |
 | order_id | UUID | fk → orders. `uq_payments_order_id` (one per checkout, Q-9) |
 | method | VARCHAR(20) | `cod, kashier` |
-| status | VARCHAR(40) | COD: `pending, partially_collected, collected`. Kashier: `initiated, paid, failed, expired, partially_refunded_manually, refunded_manually` |
+| status | VARCHAR(40) | COD: `pending, partially_collected, collected, cancelled` (`cancelled` = nothing collected because every seller order ended undelivered, D-1). Kashier: `initiated, paid, failed, expired, partially_refunded_manually, refunded_manually` |
 | amount | money | order total at checkout (adjusted on cancellations before payment) |
 | collected_amount | money | COD: sum collected by agents. Kashier: amount paid. The app inserts 0 |
 | refunded_amount | money | app inserts 0. `CHECK (refunded_amount <= collected_amount)` |

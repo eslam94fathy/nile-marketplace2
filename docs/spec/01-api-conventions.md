@@ -1,6 +1,6 @@
 # Spec 01 — API Conventions (shared by all module specs)
 
-Status: **DRAFT v0.1 (2026-10-08), under review.** Everything here is [PROPOSED] unless it restates `CLAUDE.md` or an approved design doc.
+Status: **v1.0 APPROVED (2026-10-08).** Approved by the user. Changes from now on need explicit approval and a version bump.
 Inputs: `CLAUDE.md` §7–§10, `docs/design/01-architecture.md` v1.0, `docs/design/02-database.md` v1.0.
 
 Module specs: `03-identity.md` · `04-customers.md` · `05-sellers.md` · `06-catalog.md` · `07-inventory.md` · `08-cart.md` · `09-ordering.md` · `10-payments.md` · `11-delivery.md` · `12-finance.md` · `13-notifications.md`. Events: `02-events.md`.

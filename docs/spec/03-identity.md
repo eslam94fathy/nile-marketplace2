@@ -13,7 +13,9 @@ Enums:
 - `UserStatus`: `pending_email_verification, invited, active, suspended`
 - `VerificationPurpose`: `email_verification, password_reset, account_invite`
 
-Config (env, no defaults): `OTP_TTL_MINUTES` (proposed 10), `OTP_MAX_ATTEMPTS` (5), `OTP_RESEND_COOLDOWN_SECONDS` (60), `INVITE_TTL_HOURS` (72), `INVITE_URL_BASE` (app deep link), `ACCESS_TOKEN_TTL_MINUTES` (15), `REFRESH_TOKEN_TTL_DAYS` (30), `BCRYPT_COST`, JWT key pair + `kid`, `JWT_ISSUER`, `JWT_AUDIENCE`.
+Config (env, no defaults): `OTP_TTL_MINUTES` (proposed 10), `OTP_MAX_ATTEMPTS` (5), `OTP_RESEND_COOLDOWN_SECONDS` (60), `INVITE_TTL_HOURS` (72), `INVITE_URL_BASE` (app deep link), `ACCESS_TOKEN_TTL_MINUTES` (15), `REFRESH_TOKEN_TTL_DAYS` (30), `BCRYPT_COST`, JWT key pair + `kid`, `JWT_ISSUER`, `JWT_AUDIENCE`, `SECRETS_ENCRYPTION_KEYS`, `SECRETS_ENCRYPTION_ACTIVE_KEY_ID` (S-1).
+
+Every `notification.email_requested` this module writes puts the OTP / invite URL only in `encryptedSecrets` (`02-events.md` §3.1), never in `variables`.
 
 ## 2. Public API (`index.ts`)
 
@@ -143,6 +145,16 @@ interface MessageDto { message: string }   // generic, same text for every outco
 
 `200 AuthTokensDto`. Errors: `INVALID_INVITE_TOKEN` 400.
 
+### 4.9b `POST /auth/password/change`   auth: any authenticated role · rate: strict-auth (IP + the account's email) · idem: – (S-19)
+| field | rules |
+|---|---|
+| currentPassword | `str(1..)` + `@MaxBytes(72)` |
+| newPassword | `password`; must differ from `currentPassword` |
+| refreshToken | `str(43..43)`: the caller's current session, which is kept |
+
+One transaction: verify `currentPassword` (bcrypt), store the new hash, **revoke every refresh-token family of the user except the one `refreshToken` belongs to**. `204`.
+Errors: `INVALID_CURRENT_PASSWORD` 400, `PASSWORD_UNCHANGED` 422, `INVALID_REFRESH_TOKEN` 401 (the token doesn't belong to this user or isn't active).
+
 ### 4.10 `POST /admin/admins`   auth: admin · rate: general
 | field | rules |
 |---|---|
@@ -157,7 +169,7 @@ Whitelist: `status` (enum, `eq,in`), `createdAt` (date, `gte,lte`, sort: yes). D
 ### 4.12 `POST /admin/users/:userId/resend-invite`   auth: admin
 Params: `userId` `uuid`. `204`. Errors: `USER_NOT_FOUND` 404, `USER_NOT_INVITED` 409.
 
-### 4.13 `POST /admin/users/:userId/suspend` · `POST /admin/users/:userId/reactivate`   auth: admin — **pending S-2**
+### 4.13 `POST /admin/users/:userId/suspend` · `POST /admin/users/:userId/reactivate`   auth: admin (S-2)
 Params: `userId` `uuid`. Body (suspend only): `reason` `str(3..500)`.
 `200 { id, email, role, status }`. Errors: `USER_NOT_FOUND` 404, `USER_INVALID_STATUS_TRANSITION` 409, `CANNOT_SUSPEND_SELF` 409.
 Not used for sellers (seller suspension is a business status in spec 05 and doesn't block login).
@@ -178,14 +190,16 @@ Consumed: none.
 | `INVALID_OTP` | 400 | Missing/expired/consumed/wrong OTP, or too many attempts |
 | `INVALID_REFRESH_TOKEN` | 401 | Unknown, expired, revoked or reused token |
 | `INVALID_INVITE_TOKEN` | 400 | Unknown, expired or consumed invite |
+| `INVALID_CURRENT_PASSWORD` | 400 | Password change with a wrong current password |
+| `PASSWORD_UNCHANGED` | 422 | New password equals the current one |
 | `USER_NOT_FOUND` | 404 | Admin action on a missing user |
 | `USER_NOT_INVITED` | 409 | Resend invite for a user who isn't `invited` |
 | `USER_INVALID_STATUS_TRANSITION` | 409 | e.g. suspend an already suspended user |
 | `CANNOT_SUSPEND_SELF` | 409 | Admin suspends their own account |
 
-## 7. Open questions
+## 7. Decisions (answered 2026-10-08, `00-overview.md` §9.1). No open questions.
 
-- **S-1** Plain-text secrets in the outbox: see `00-overview.md` §8.
-- **S-2** Admin suspend/reactivate users in R1: see §8.
-- **S-16** OTP / invite / token parameters: see §8.
-- **S-19** Change password while logged in: see §8.
+- **S-1** Secret email variables are encrypted in the outbox (`02-events.md` §3.1).
+- **S-2** Admin suspend/reactivate is in R1 (§4.13).
+- **S-16** OTP 10 min, 5 attempts, 60 s cooldown · invite 72 h · access 15 min · refresh 30 days.
+- **S-19** Change password while logged in is in R1 (§4.9b).

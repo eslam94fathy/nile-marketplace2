@@ -60,7 +60,7 @@ Ownership: `shipments.agent_id = my agent id`, else `404 SHIPMENT_NOT_FOUND`.
 - **Delivered:** `out_for_delivery → delivered`, `delivered_at`. COD: `codCollectedAmount` must equal `cod_items_amount + cod_fee_amount` → else `COD_AMOUNT_MISMATCH`. Kashier: `codCollectedAmount` must be absent. Sets `cod_collected_amount`. Outbox `shipment.delivered`. The fee carrier keeps `carries_delivery_fee = true` (it's now "collected").
 - **Failed attempt:** `attempt_count + 1`, a `shipment_attempts` row. `customer_refused` or the 3rd attempt → `returning_to_seller`, else `delivery_failed`. If this shipment carried the fee, release it (`carries_delivery_fee = false`, `cod_fee_amount = 0`) so the next shipment going out takes it. Outbox `shipment.attempt_failed`.
 
-**Known gap in DB-Q1 (S-3):** if the fee carrier fails *after* a sibling shipment was already delivered without the fee, and no other sibling goes out afterwards, the COD fee is never collected although the checkout had a delivery. Spec 12 books revenue only on the fee actually collected, so the ledger stays correct. The loss is logged as `warn COD_DELIVERY_FEE_UNCOLLECTED`.
+**Known gap in DB-Q1 (S-3, accepted for R1):** if the fee carrier fails *after* a sibling shipment was already delivered without the fee, and no other sibling goes out afterwards, the COD fee is never collected although the checkout had a delivery. Spec 12 books revenue only on the fee actually collected, so the ledger stays correct. The loss is logged as `warn COD_DELIVERY_FEE_UNCOLLECTED`.
 
 ### UC-DE-4 Admin assignment
 Assign or reassign in `unassigned` / `assigned` only (Q-41). After `picked_up` the parcel is with the agent, so R1 doesn't support reassigning it (S-18). The target agent must be `active` (not necessarily on shift or in the same governorate: the admin can override). Outbox `shipment.assigned (admin, previousAgentId)`.
@@ -173,7 +173,7 @@ Consumed: `seller_order.ready_for_pickup`, `seller_order.items_cancelled`, `sell
 | `COD_AMOUNT_REQUIRED` | 422 | COD delivered without an amount |
 | `COD_AMOUNT_NOT_ALLOWED` | 422 | Kashier delivered with an amount |
 
-## 7. Open questions
-- **S-10** Agent deactivation blocks login.
+## 7. Decisions (answered 2026-10-08, `00-overview.md` §9.1). No open questions.
+- **S-10** Agent deactivation suspends the login.
 - **S-18** No reassignment after pickup.
-- **S-3** COD fee gap in DB-Q1.
+- **S-3** The COD fee gap in DB-Q1 is accepted for R1 (§3, UC-DE-3).

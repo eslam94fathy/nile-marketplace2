@@ -1,6 +1,6 @@
 # Spec 02 — Domain Events Catalogue (Release 1)
 
-Status: **DRAFT v0.1 (2026-10-08), under review.** [PROPOSED]. Once approved, this file replaces the event list in `00-overview.md` §7 and the event names in `01-architecture.md` §3/§5 (see §5 below for the differences).
+Status: **v1.0 APPROVED (2026-10-08).** Approved by the user. It replaces the event list in `00-overview.md` §7 and the event names in `01-architecture.md` §3/§5 (differences in §5 below). Changes from now on need explicit approval and a version bump.
 Contracts live in `src/lib/events/contracts/` (architecture §2), one file per event: name constant + payload type + version.
 
 ---
@@ -73,12 +73,16 @@ Events with no consumer in R1 are still published. They are cheap, they give an 
   template: 'email_verification' | 'password_reset' | 'account_invite';
   userId: string;
   toEmail: string;
-  variables:                                    // per template
-    | { otp: string; expiresInMinutes: number }                       // email_verification, password_reset
-    | { inviteUrl: string; role: UserRole; expiresAt: string };       // account_invite
+  variables:                                    // non-secret, per template
+    | { expiresInMinutes: number }                                    // email_verification, password_reset
+    | { role: UserRole; expiresAt: string };                          // account_invite
+  encryptedSecrets: string;                     // AES-256-GCM of the secret variables (see below)
 }
 ```
-See S-1 (open question): OTPs and invite tokens would sit in plain text in `events_outbox.payload` and in RabbitMQ.
+**Secret variables are encrypted (S-1).** The secret part (`{ otp }` or `{ inviteUrl }`) is never stored in plain text in `events_outbox.payload` or sent in plain text over RabbitMQ.
+- Format: `v1.<keyId>.<iv>.<ciphertext>.<authTag>` (base64url parts). The IV is 12 random bytes per message. AAD = `userId + ':' + template`, so a ciphertext can't be moved to another user or template.
+- Keys come from env (no defaults): `SECRETS_ENCRYPTION_KEYS` (JSON map `keyId → base64 32-byte key`) and `SECRETS_ENCRYPTION_ACTIVE_KEY_ID`. To rotate, add a new key, switch the active id, and remove the old key once the outbox retention period (DB-Q5) has passed.
+- Only identity encrypts and only notifications decrypts, through a `pkg/crypto` `ISecretBox` interface. A decryption failure is a permanent error (`error` log `SECRET_DECRYPT_FAILED`, message sent to the DLQ). The plain text is never logged.
 
 ### 3.2 sellers
 ```ts

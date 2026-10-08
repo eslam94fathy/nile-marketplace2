@@ -228,8 +228,8 @@ Consumed: `payment.paid`, `payment.failed` (`ordering.payment-updates`); `shipme
 
 (`ADDRESS_NOT_FOUND`, `INSUFFICIENT_STOCK`, `PAYMENT_PROVIDER_UNAVAILABLE` come from other modules. On checkout, `ADDRESS_NOT_FOUND` is returned as `422`, since the address is a body reference.)
 
-## 7. Open questions
-- **S-8** `expectedTotal` required at checkout.
-- **S-9** Admin cancellation in R1.
-- **S-11** No customer PII for sellers.
-- **S-13** Agent-share remainder when the last seller order isn't delivered.
+## 7. Decisions (answered 2026-10-08, `00-overview.md` §9.1). No open questions.
+- **S-8** `expectedTotal` is required at checkout.
+- **S-9** No admin cancellation in R1.
+- **S-11** Sellers see no customer PII.
+- **S-13** The remainder goes to the delivery that closes the order, else stays with the platform.

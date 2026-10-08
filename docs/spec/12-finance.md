@@ -114,5 +114,5 @@ Consumed: `seller_order.delivered`, `order.closed` (`finance.ledger`).
 | `PAID_AT_IN_FUTURE` | 422 | |
 | `AGENT_NOT_FOUND` | 422 | FK `fk_cod_remittances_agent_id` |
 
-## 7. Open questions
-- **S-14** Seller / agent finance self-service endpoints (new in R1).
+## 7. Decisions (answered 2026-10-08, `00-overview.md` §9.1). No open questions.
+- **S-14** Seller / agent read-only finance endpoints are in R1.

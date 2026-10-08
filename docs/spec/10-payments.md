@@ -104,6 +104,6 @@ Consumed: `seller_order.items_cancelled`, `seller_order.cancelled`, `seller_orde
 | `REFUND_NOT_FOUND` | 404 | |
 | `REFUND_ALREADY_RECORDED` | 409 | |
 
-## 7. Open questions
-- **S-4** Kashier failure webhooks don't fail the payment (retry until expiry).
-- **S-12** New COD status `cancelled` (schema change).
+## 7. Decisions (answered 2026-10-08, `00-overview.md` §9.1). No open questions.
+- **S-4** Kashier failure webhooks are recorded only; the payment stays `initiated` until success or expiry.
+- **S-12** COD status `cancelled` (applied to `02-database.md` v1.1, D-1).

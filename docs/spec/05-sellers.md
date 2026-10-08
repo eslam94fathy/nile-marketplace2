@@ -140,5 +140,5 @@ Consumed: none.
 | `BUSINESS_NAME_TAKEN` | 409 | `uq_sellers_business_name_lower` |
 | `COMMISSION_RATE_UNCHANGED` | 409 | New rate equals the current one |
 
-## 7. Open questions
-- **S-7** Re-approval after an approved seller edits the profile: see `00-overview.md` §8.
+## 7. Decisions (answered 2026-10-08, `00-overview.md` §9.1). No open questions.
+- **S-7** No re-approval after an approved seller edits the profile.

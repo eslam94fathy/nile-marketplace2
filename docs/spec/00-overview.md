@@ -1,6 +1,6 @@
 # Nile Marketplace — Spec Overview (Release 1)
 
-Status: **v1.0 APPROVED (2026-10-07).** All sections approved by the user. Changes from now on need explicit approval and a version bump.
+Status: **v1.1 APPROVED (2026-10-08).** v1.0 approved 2026-10-07. v1.1: §7 now points to `02-events.md` (O-3); per-module answers in §9.1. Changes from now on need explicit approval and a version bump.
 Legend: **[CONFIRMED]** = decided by the user · **[PROPOSED]** = Claude's proposal, not yet approved · **Q-n** = open question (§8). Answers are logged in §9.
 
 Nothing marked [PROPOSED] may be implemented until it is approved.
@@ -199,16 +199,18 @@ Auto-assignment [CONFIRMED Q-32]:
 | Delivery agent | `PATCH /agent/availability`, `GET /agent/shipments`, `POST /agent/shipments/:id/picked-up`, `POST /agent/shipments/:id/out-for-delivery`, `POST /agent/shipments/:id/delivered` (+ COD collected), `POST /agent/shipments/:id/failed-attempt` |
 | Admin | sellers: list / approve / reject / suspend / commission · CRUD categories + attributes + options · governorate fees · create admins / agents · shipments: assign / reassign · payments: record manual refund · finance: balances, confirm COD remittance, record seller/agent payout |
 
-## 7. Events (outbox → RabbitMQ) [CONFIRMED]
+## 7. Events (outbox → RabbitMQ) [CONFIRMED, v1.1]
 
-`seller.approved`, `seller.suspended`, `order.placed`, `seller_order.status_changed`, `seller_order.items_cancelled`, `order.status_changed`, `payment.paid`, `payment.failed`, `payment.expired`, `payment.refund_recorded`, `shipment.ready_for_assignment`, `shipment.assigned`, `shipment.attempt_failed`, `shipment.delivered`, `shipment.returned`, `cod.collected`, `cod.remittance_confirmed`, `inventory.reservation_expired`.
+The event catalogue (names, publishers, consumers, payloads, queues) is **`02-events.md` v1.0** (approved 2026-10-08, O-3). It replaces the v1.0 list here.
 Every envelope carries `eventId`, `eventType`, `version`, `occurredAt`, `correlationId`, `aggregateType`, `aggregateId`, `payload`. Consumers are idempotent on `eventId`.
 
 ## 8. Open questions
 
 All overview-level questions are answered. New questions found during system design or the per-module specs go here.
 
-### 8.1 Per-module spec questions (2026-10-08, from specs 01–13, awaiting answers)
+### 8.1 Per-module spec questions (2026-10-08, from specs 01–13): **all answered**
+
+The user accepted every recommendation (2026-10-08). Answers are logged in §9.1. The table is kept for the reasoning.
 
 | # | Topic | Options / recommendation | Spec |
 |---|---|---|---|
@@ -232,19 +234,19 @@ All overview-level questions are answered. New questions found during system des
 | S-18 | Reassign a shipment after pickup | **Rec:** not in R1 (the parcel is physically with the agent) · or allow admin reassignment at any active status | 11 |
 | S-19 | Change password while logged in | **Rec: add** `POST /auth/password/change` (`currentPassword`, `newPassword`; revokes other sessions) · or users go through forgot-password | 03 |
 
-### 8.2 Proposed changes to approved documents (need approval + version bump)
+### 8.2 Proposed changes to approved documents
 
-| # | Document | Change | Reason |
-|---|---|---|---|
-| O-1 | `00-overview.md` §2 | Table names: `otp_codes` → `verification_codes`; finance `seller_payouts` → `finance_accounts`, `ledger_entries`, `cod_remittances`, `payouts`; add the history/settings tables listed in `02-database.md` §1 | Align with the approved schema |
-| O-2 | `00-overview.md` §6 | API surface: replace with specs 03–12 (new: invite accept, admin admins, resend invite, seller reapply, settings endpoints, `DELETE /cart`, agent profile, finance self-service if S-14, stock adjustments if S-6) | Detailed specs |
-| O-3 | `00-overview.md` §7 | Event list: replace with `02-events.md` (differences E-1…E-7 there) | Detailed specs |
-| A-1 | `01-architecture.md` §3, §5 | Event names and queue bindings as in `02-events.md` | E-1…E-7 |
-| A-2 | `01-architecture.md` §2 | Dependency edges: `customers → identity`, `sellers → identity` (self-registration routes live in the profile modules, so identity depends on nobody); `cart → sellers` (display names); `finance → sellers, delivery` (profile resolution, display names) | Still acyclic |
-| A-3 | `01-architecture.md` §7.1 | Checkout inserts the order rows **before** `inventory.reserve` (a reservation references `order_item_id`); same transaction, so a shortfall still rolls everything back | Schema FK |
-| D-1 | `02-database.md` §9 | `payments.status`: add `cancelled` (COD) | S-12 |
-| D-2 | `02-database.md` §10 | `shipments`: add `payment_method VARCHAR(20)` (CHECK), `order_number VARCHAR(20)`, `order_delivery_fee money`, `pickup_business_name VARCHAR(150)`; drop `agent_fee_share` (ordering computes it, and the ledger records it) | Fee carrier + agent screen need them, and delivery can't call ordering |
-| D-3 | `02-database.md` §10 | Add `idx_shipments_status_created_at_id (status, created_at DESC, id DESC)` | `GET /admin/shipments` |
+| # | Document | Change | Reason | Status |
+|---|---|---|---|---|
+| O-1 | `00-overview.md` §2 | Table names: `otp_codes` → `verification_codes`; finance `seller_payouts` → `finance_accounts`, `ledger_entries`, `cod_remittances`, `payouts`; add the history/settings tables listed in `02-database.md` §1 | Align with the approved schema | **Pending** |
+| O-2 | `00-overview.md` §6 | API surface: replace with specs 03–12 (new: invite accept, password change, admin admins, resend invite, user suspend/reactivate, seller reapply, settings endpoints, `DELETE /cart`, agent profile, finance self-service, stock adjustments) | Detailed specs | **Pending** (with the module specs) |
+| O-3 | `00-overview.md` §7 | Event list: replace with `02-events.md` | Detailed specs | **Applied** (v1.1), implied by approving `02-events.md` |
+| A-1 | `01-architecture.md` §3, §5 | Event names and queue bindings as in `02-events.md` | E-1…E-7 | **Applied** (v1.1), implied by approving `02-events.md` |
+| A-2 | `01-architecture.md` §2 | Dependency edges: `customers → identity`, `sellers → identity` (self-registration routes live in the profile modules, so identity depends on nobody); `cart → sellers` (display names); `finance → sellers, delivery` (profile resolution, display names) | Still acyclic | **Pending** |
+| A-3 | `01-architecture.md` §7.1 | Checkout inserts the order rows **before** `inventory.reserve` (a reservation references `order_item_id`); same transaction, so a shortfall still rolls everything back | Schema FK | **Pending** |
+| D-1 | `02-database.md` §9 | `payments.status`: add `cancelled` (COD) | S-12 | **Applied** (v1.1), implied by accepting S-12 |
+| D-2 | `02-database.md` §10 | `shipments`: add `payment_method VARCHAR(20)` (CHECK), `order_number VARCHAR(20)`, `order_delivery_fee money`, `pickup_business_name VARCHAR(150)`; drop `agent_fee_share` (ordering computes it, and the ledger records it) | Fee carrier + agent screen need them, and delivery can't call ordering | **Pending** |
+| D-3 | `02-database.md` §10 | Add `idx_shipments_status_created_at_id (status, created_at DESC, id DESC)` | `GET /admin/shipments` | **Pending** |
 
 ## 9. Answered log (2026-10-07)
 
@@ -297,3 +299,29 @@ All overview-level questions are answered. New questions found during system des
 | Q-37 | Undelivered shipment's agent-share portion stays with the platform |
 | Q-41 | Agents cannot reject assignments; only admins reassign |
 | Q-42 | No product images in R1 (confirmed, R2) |
+
+### 9.1 Answered log: per-module spec questions (2026-10-08)
+
+The user accepted every recommendation in §8.1.
+
+| Q | Answer |
+|---|---|
+| S-1 | Secret email variables (OTP, invite URL) are AES-256-GCM encrypted in the outbox/broker (`02-events.md` §3.1) |
+| S-2 | Admin suspend/reactivate user accounts in R1 (customers, admins); agents via deactivation; sellers via seller suspension |
+| S-3 | COD fee gap accepted in R1: only fees actually collected are booked; `COD_DELIVERY_FEE_UNCOLLECTED` logged |
+| S-4 | Kashier failure webhooks are recorded only; the payment stays `initiated` until success or expiry |
+| S-5 | Adding an attribute to a category whose subtree has products is blocked |
+| S-6 | Stock changes are deltas via `POST /seller/variants/:id/stock-adjustments` (Idempotency-Key) |
+| S-7 | No re-approval after an approved seller edits the profile |
+| S-8 | `expectedTotal` required at checkout (`409 ORDER_TOTAL_CHANGED`) |
+| S-9 | No admin order cancellation in R1 |
+| S-10 | Deactivating an agent also suspends their login |
+| S-11 | Sellers see no customer PII, only the drop-off governorate |
+| S-12 | New COD payment status `cancelled` (D-1) |
+| S-13 | Agent-share remainder goes to the delivery that closes the order, else stays with the platform |
+| S-14 | Seller/agent read-only finance self-service endpoints in R1 |
+| S-15 | Email templates live in the repo |
+| S-16 | OTP 10 min, 5 attempts, 60 s resend cooldown · invite 72 h · access token 15 min · refresh token 30 days (env values) |
+| S-17 | All product writes require an `approved` seller |
+| S-18 | No shipment reassignment after pickup in R1 |
+| S-19 | Add `POST /auth/password/change` (revokes other sessions) |

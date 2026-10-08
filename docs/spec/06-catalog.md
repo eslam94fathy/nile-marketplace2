@@ -250,7 +250,7 @@ Consumed: `seller.approved`, `seller.suspended`, `inventory.stock_status_changed
 | `COMPARE_AT_PRICE_INVALID` | 422 | `compareAtPrice <= price` |
 | `STOCK_ADJUSTMENT_INVALID` | 422 | Result would be negative or below `reserved` |
 
-## 7. Open questions
-- **S-5** Adding attributes to a category that already has products.
-- **S-6** Stock as deltas (route change).
-- **S-17** Only approved sellers can create/edit products (no drafts while pending).
+## 7. Decisions (answered 2026-10-08, `00-overview.md` §9.1). No open questions.
+- **S-5** Adding an attribute to a subtree with products is blocked.
+- **S-6** Stock changes are deltas (stock-adjustments route).
+- **S-17** All product writes require an `approved` seller.
