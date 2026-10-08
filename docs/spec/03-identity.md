@@ -1,0 +1,191 @@
+# Spec 03 — identity
+
+Status: **DRAFT v0.1 (2026-10-08), under review.** [PROPOSED] unless it restates the overview / design.
+Conventions: `01-api-conventions.md`. Events: `02-events.md`.
+
+## 1. Scope & owned tables
+
+Authentication identity only (G12): accounts, credentials, email verification, sessions (refresh tokens), password reset, invites, admin accounts.
+Tables: `users`, `refresh_tokens`, `verification_codes`.
+Not here: role profiles (`customers`, `sellers`, `delivery_agents` belong to their modules). **Self-registration endpoints are owned by `customers` and `sellers`**, which call `identity.createPendingUser` in their own transaction. This keeps `identity` free of dependencies on the profile modules (it calls no other module).
+
+Enums:
+- `UserStatus`: `pending_email_verification, invited, active, suspended`
+- `VerificationPurpose`: `email_verification, password_reset, account_invite`
+
+Config (env, no defaults): `OTP_TTL_MINUTES` (proposed 10), `OTP_MAX_ATTEMPTS` (5), `OTP_RESEND_COOLDOWN_SECONDS` (60), `INVITE_TTL_HOURS` (72), `INVITE_URL_BASE` (app deep link), `ACCESS_TOKEN_TTL_MINUTES` (15), `REFRESH_TOKEN_TTL_DAYS` (30), `BCRYPT_COST`, JWT key pair + `kid`, `JWT_ISSUER`, `JWT_AUDIENCE`.
+
+## 2. Public API (`index.ts`)
+
+Every write method takes `trx` and uses it.
+
+| Method | Used by | Notes |
+|---|---|---|
+| `createPendingUser({ email, password, role }, trx) → { userId }` | customers, sellers | Hashes the password, `status = pending_email_verification`, issues an email-verification OTP + `notification.email_requested`. Throws `EMAIL_ALREADY_REGISTERED` |
+| `createInvitedUser({ email, role }, trx) → { userId }` | delivery (agents), identity itself (admins) | `status = invited`, `password_hash = null`, issues an invite token + email |
+| `getUsersByIds(ids) → UserSummary[]` | customers, sellers, delivery | `{ id, email, role, status, emailVerifiedAt }`, batched |
+| `setUserStatus(userId, 'active' \| 'suspended', actorUserId, trx)` | delivery (agent deactivation, S-10) | Suspending revokes all of the user's refresh tokens |
+
+## 3. Use cases
+
+### UC-ID-1 Verify email
+1. Find the user by email with `status = pending_email_verification` and the latest unconsumed `email_verification` code.
+2. If any is missing, expired, or `attempts >= OTP_MAX_ATTEMPTS` → `INVALID_OTP` (one generic code, so the response doesn't reveal whether the account exists).
+3. Compare SHA-256(otp) with `code_hash` in constant time. Wrong → `attempts + 1` (conditional update) → `INVALID_OTP`.
+4. One transaction: consume the code, `status = active`, `email_verified_at = now()`, create a refresh-token family.
+5. Respond with a token pair (the user is logged in straight after verifying).
+
+### UC-ID-2 Resend verification OTP
+Always answers `200` with the same body. Work is done only when the user exists, is `pending_email_verification`, and the last code is older than `OTP_RESEND_COOLDOWN_SECONDS`. A new code invalidates older ones (only the latest unconsumed code is accepted, architecture §10).
+
+### UC-ID-3 Login
+1. Look up by email. If the user is missing or `invited` (no password), still run `bcrypt.compare` against a fixed dummy hash, so the response time doesn't reveal it → `INVALID_CREDENTIALS`.
+2. Wrong password → `INVALID_CREDENTIALS`.
+3. Correct password and `pending_email_verification` → `EMAIL_NOT_VERIFIED`. `suspended` → `ACCOUNT_SUSPENDED`. These are returned only after a correct password, so they don't enable enumeration.
+4. New refresh-token family, `last_login_at = now()`, token pair.
+- Sellers in `pending_approval` / `rejected` / `suspended` **can** log in (they need to see their status and finish open orders, Q-36). Business status is enforced by the sellers module.
+
+### UC-ID-4 Refresh (rotation + reuse detection)
+1. SHA-256 the token and find it in `refresh_tokens`. Unknown or expired → `INVALID_REFRESH_TOKEN`.
+2. Already revoked (reuse) → revoke the **whole family**, log `warn` (`event: REFRESH_TOKEN_REUSE`, userId, familyId) → `INVALID_REFRESH_TOKEN`.
+3. User not `active` → revoke the family → `INVALID_REFRESH_TOKEN`.
+4. One transaction: `UPDATE … SET revoked_at = now() WHERE id = ? AND revoked_at IS NULL` (0 rows = a concurrent use → treat as reuse, step 2), insert the new token (same family), set `replaced_by_id`.
+- No grace window in R1: the mobile app must serialise refresh calls.
+
+### UC-ID-5 Logout
+Revokes the presented refresh token's family (this device's session). Always `204`, even for an unknown token.
+
+### UC-ID-6 Forgot / reset password
+- Forgot: always `200`, same body. For an `active` user (cooldown as UC-ID-2), issue a `password_reset` OTP + email.
+- Reset: verify the OTP like UC-ID-1 (`INVALID_OTP`). One transaction: new hash, consume the code, **revoke all refresh tokens** of the user. `204`. The user then logs in.
+
+### UC-ID-7 Admin invites (admins and agents)
+- An admin creates another admin: `createInvitedUser(role = admin)`. Delivery agents are created by the delivery module (spec 11), which calls the same method.
+- Accept invite: find an unconsumed, unexpired `account_invite` code by `code_hash` → set the password, `status = active`, `email_verified_at = now()` (the email link proves ownership), consume the code, token pair.
+- Resend invite: only for `status = invited`. A new token invalidates the old one.
+
+### UC-ID-8 Seed the first admin (CLI)
+`npm run seed:admin -- --email <email>` creates an `invited` admin and writes the invite email to the outbox. Refuses if the email exists. Never prints the token.
+
+## 4. Endpoints
+
+### 4.1 Shared response DTOs
+```ts
+interface AuthTokensDto {
+  accessToken: string;
+  accessTokenExpiresAt: string;
+  refreshToken: string;
+  refreshTokenExpiresAt: string;
+  user: { id: string; email: string; role: UserRole; status: UserStatus };
+}
+interface MessageDto { message: string }   // generic, same text for every outcome
+```
+
+### 4.2 `POST /auth/email/verify`   auth: public · rate: strict-auth · idem: –
+| field | rules |
+|---|---|
+| email | `email` |
+| otp | `otp` |
+
+`200 AuthTokensDto`. Errors: `INVALID_OTP` 400.
+
+### 4.3 `POST /auth/email/resend-otp`   auth: public · rate: strict-auth
+| field | rules |
+|---|---|
+| email | `email` |
+
+`200 MessageDto`. No domain errors (generic answer).
+
+### 4.4 `POST /auth/login`   auth: public · rate: strict-auth
+| field | rules |
+|---|---|
+| email | `email` |
+| password | `str(1..)` + `@MaxBytes(72)` (no policy check on login) |
+| deviceName | `opt`, `str(1..100)`. Stored as `refresh_tokens.user_agent` for session auditing |
+
+`200 AuthTokensDto`. Errors: `INVALID_CREDENTIALS` 401, `EMAIL_NOT_VERIFIED` 403, `ACCOUNT_SUSPENDED` 403.
+
+### 4.5 `POST /auth/refresh`   auth: public · rate: refresh
+| field | rules |
+|---|---|
+| refreshToken | `str(43..43)` (base64url of 32 bytes) |
+
+`200 AuthTokensDto`. Errors: `INVALID_REFRESH_TOKEN` 401.
+
+### 4.6 `POST /auth/logout`   auth: public (the access token may already be expired) · rate: refresh
+| field | rules |
+|---|---|
+| refreshToken | `str(43..43)` |
+
+`204`.
+
+### 4.7 `POST /auth/password/forgot`   auth: public · rate: strict-auth
+| field | rules |
+|---|---|
+| email | `email` |
+
+`200 MessageDto`.
+
+### 4.8 `POST /auth/password/reset`   auth: public · rate: strict-auth
+| field | rules |
+|---|---|
+| email | `email` |
+| otp | `otp` |
+| newPassword | `password` |
+
+`204`. Errors: `INVALID_OTP` 400.
+
+### 4.9 `POST /auth/invite/accept`   auth: public · rate: strict-auth
+| field | rules |
+|---|---|
+| token | `str(43..43)` |
+| password | `password` |
+
+`200 AuthTokensDto`. Errors: `INVALID_INVITE_TOKEN` 400.
+
+### 4.10 `POST /admin/admins`   auth: admin · rate: general
+| field | rules |
+|---|---|
+| email | `email` |
+
+`201 { id: string; email: string; role: 'admin'; status: 'invited'; createdAt: string }`. Errors: `EMAIL_ALREADY_REGISTERED` 409.
+
+### 4.11 `GET /admin/admins`   auth: admin
+Whitelist: `status` (enum, `eq,in`), `createdAt` (date, `gte,lte`, sort: yes). Default sort `-createdAt`.
+`200 { id, email, status, emailVerifiedAt, lastLoginAt, createdAt }[]` + meta.
+
+### 4.12 `POST /admin/users/:userId/resend-invite`   auth: admin
+Params: `userId` `uuid`. `204`. Errors: `USER_NOT_FOUND` 404, `USER_NOT_INVITED` 409.
+
+### 4.13 `POST /admin/users/:userId/suspend` · `POST /admin/users/:userId/reactivate`   auth: admin — **pending S-2**
+Params: `userId` `uuid`. Body (suspend only): `reason` `str(3..500)`.
+`200 { id, email, role, status }`. Errors: `USER_NOT_FOUND` 404, `USER_INVALID_STATUS_TRANSITION` 409, `CANNOT_SUSPEND_SELF` 409.
+Not used for sellers (seller suspension is a business status in spec 05 and doesn't block login).
+
+## 5. Events
+
+Published: `notification.email_requested` (registration OTP, resend, forgot password, invite, resend invite).
+Consumed: none.
+
+## 6. Error codes
+
+| Code | HTTP | When |
+|---|---|---|
+| `EMAIL_ALREADY_REGISTERED` | 409 | `uq_users_email` |
+| `INVALID_CREDENTIALS` | 401 | Unknown email, wrong password, or invited account |
+| `EMAIL_NOT_VERIFIED` | 403 | Correct password, email not verified |
+| `ACCOUNT_SUSPENDED` | 403 | Correct password, user suspended |
+| `INVALID_OTP` | 400 | Missing/expired/consumed/wrong OTP, or too many attempts |
+| `INVALID_REFRESH_TOKEN` | 401 | Unknown, expired, revoked or reused token |
+| `INVALID_INVITE_TOKEN` | 400 | Unknown, expired or consumed invite |
+| `USER_NOT_FOUND` | 404 | Admin action on a missing user |
+| `USER_NOT_INVITED` | 409 | Resend invite for a user who isn't `invited` |
+| `USER_INVALID_STATUS_TRANSITION` | 409 | e.g. suspend an already suspended user |
+| `CANNOT_SUSPEND_SELF` | 409 | Admin suspends their own account |
+
+## 7. Open questions
+
+- **S-1** Plain-text secrets in the outbox: see `00-overview.md` §8.
+- **S-2** Admin suspend/reactivate users in R1: see §8.
+- **S-16** OTP / invite / token parameters: see §8.
+- **S-19** Change password while logged in: see §8.

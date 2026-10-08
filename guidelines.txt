@@ -1,0 +1,30 @@
+1. Logs should be production level (missing level, timestamps, metadata, unfiled, no emojis)
+2. Defined time utils instead of inline Numbers calculations in pkg
+3. Health check shall check on dependencies connections
+4. Errors should be logged with more formal context, stack trace, production level context
+5. Defined constants and enums instead of use of literal strings around code base
+6. Assume the jwt and all envs are complete, dont put defaults, dont start the app if required env vars are not there
+7. Never expose such info in the codebase like the rounds of hashing for security purposes
+8. Missing db func like ping
+9. We need a repository layer for cleaner code
+10. Use classes to benefit from DI
+11. Define status codes and reuse it across all controllers
+12. We need customers table to ref user
+13. Dont use defaults on the DB, because in a lot of incidents it silences the errors
+    (for example one forgot to pass stocks/price)
+14. Missing naming conventions for idx, fkey constraints (idx_tablename_columnname) (fk_tablename_columnname)
+15. Migrations to be written in raw sql;
+16. Limit strings on db to realistic limits
+17. Use indexes according to READ query patterns (normal indexes, or composite index or any other suitable)
+18. Rate limiting (especially on sensitive endpoints like login etc...)
+20. Avoid N+1 queries
+22. For pure existence checks use exists query instead of selecting the record
+23. Reusable pagination and queries provide a flexible query language for list endpoints (whitelist) ?createdAt[lte]=2025-1-15...
+24. NEVER use select *
+25. Idempotency
+26. CorrelationID (to appear in logs)
+27. Folder structure (lib, pkg, app)
+28. Define strict DTOs
+29. Unit and integration tests missing
+30. Init CI to check tests and to check build
+31. Typescript, postgres, express, knex
