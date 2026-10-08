@@ -52,6 +52,11 @@ services:
       timeout: 10s
       retries: 20
 
+  # Local inbox for development email (EMAIL_PROVIDER=mailpit): web UI at http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:v1.31.2
+    ports: ['8025:8025']
+
   migrate:
     <<: *app
     environment:
@@ -83,10 +88,13 @@ services:
       REDIS_URL: redis://redis:6379
       RABBITMQ_URL: amqp://nile:nile@rabbitmq:5672
       SERVICE_NAME: nile-worker
+      MAILPIT_URL: http://mailpit:8025
     command: ['node', 'dist/worker.js']
     depends_on:
       migrate:
         condition: service_completed_successfully
+      mailpit:
+        condition: service_started
     # The worker serves no HTTP: its liveness is the process itself.
     healthcheck:
       disable: true

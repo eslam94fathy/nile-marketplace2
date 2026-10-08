@@ -13,6 +13,7 @@ export const TOKENS = {
   Redis: Symbol.for('Redis'),
   MessageBroker: Symbol.for('MessageBroker'),
   Outbox: Symbol.for('Outbox'),
+  SecretBox: Symbol.for('SecretBox'),
   JwtVerifier: Symbol.for('JwtVerifier'),
   RateLimiters: Symbol.for('RateLimiters'),
   OpenApiRegistry: Symbol.for('OpenApiRegistry'),

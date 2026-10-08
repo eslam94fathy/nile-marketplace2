@@ -9,7 +9,7 @@ import {
   requireIdempotency,
   requireRole,
 } from '../../src/lib/middleware';
-import { type Infrastructure } from '../../src/infrastructure';
+import { type ApiInfrastructure } from '../../src/infrastructure';
 
 export const TEST_ROUTES_PATH = '/__test';
 
@@ -28,7 +28,7 @@ class EchoDto {
  * Routes that exist only in tests (mounted via createApp's `extraRouters`, never by server.ts),
  * to exercise the shared middlewares before any business endpoint exists.
  */
-export function createTestRouter(infra: Infrastructure): Router {
+export function createTestRouter(infra: ApiInfrastructure): Router {
   const router = Router();
   const auth = authenticate(infra.jwtVerifier);
   const idempotent = requireIdempotency(infra.cache, infra.env, infra.logger);

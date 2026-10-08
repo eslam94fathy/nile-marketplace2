@@ -1,17 +1,18 @@
 import 'reflect-metadata';
-import { createContainer } from './container';
+import { createWorkerContainer } from './container';
 import { createEventHandlers } from './event-handlers';
-import { closeInfrastructure, createInfrastructure } from './infrastructure';
+import { closeInfrastructure, createWorkerInfrastructure } from './infrastructure';
+import { workerEnvSchema } from './lib/config';
 import { createLogger, createShutdown, installProcessHandlers, loadEnvOrExit } from './lib/bootstrap';
 import { EventConsumerHost, OutboxDrainer } from './lib/events';
 import { createCleanupJobs, JobRunner } from './lib/jobs';
 
 /** Background entrypoint: `node dist/worker.js` (outbox drain, event consumers, scheduled jobs). */
 async function main(): Promise<void> {
-  const env = loadEnvOrExit('nile-worker');
+  const env = loadEnvOrExit('nile-worker', workerEnvSchema);
   const logger = createLogger(env);
-  const infra = await createInfrastructure(env, logger);
-  const container = createContainer(infra);
+  const infra = await createWorkerInfrastructure(env, logger);
+  const container = createWorkerContainer(infra);
   const knex = infra.db.knex;
 
   const jobs = new JobRunner(knex, infra.clock, logger);

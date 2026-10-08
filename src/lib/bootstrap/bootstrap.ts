@@ -1,4 +1,5 @@
 import { SystemClock } from '../clock';
+import { type z } from 'zod';
 import { type Env, EnvValidationError, loadEnvFromProcess } from '../config';
 import { type ILogger, JsonLogger, StdoutLogWriter } from '../logger';
 
@@ -6,9 +7,9 @@ import { type ILogger, JsonLogger, StdoutLogWriter } from '../logger';
  * Loads the environment or exits with a fatal log naming the bad keys (never their values, CLAUDE.md §4).
  * `serviceName` is used for this single log line only, because SERVICE_NAME itself may be the bad key.
  */
-export function loadEnvOrExit(serviceName: string): Readonly<Env> {
+export function loadEnvOrExit<S extends z.ZodType>(serviceName: string, schema: S): Readonly<z.output<S>> {
   try {
-    return loadEnvFromProcess();
+    return loadEnvFromProcess(schema);
   } catch (error) {
     const logger = new JsonLogger({
       level: 'fatal',

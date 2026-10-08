@@ -12,13 +12,14 @@ import {
 } from '../../src/lib/events';
 import { deadLetterQueueName } from '../../src/pkg/messaging';
 import { AmqpProbe, waitFor } from '../helpers/amqp-probe';
-import { startTestInfra, type TestInfra } from '../helpers/test-infra';
+import { type WorkerInfrastructure } from '../../src/infrastructure';
+import { startTestWorkerInfra, type TestInfra } from '../helpers/test-infra';
 
 // testEnvInput: MQ_RETRY_DELAYS_MS = 100,200 → 3 tries, then the DLQ.
 type Behaviour = 'ok' | 'fail-once' | 'always-fail' | 'permanent';
 
 describe('event consumers: dedupe, retry/backoff, DLQ, correlation (architecture §3.2, §5)', () => {
-  let t: TestInfra;
+  let t: TestInfra<WorkerInfrastructure>;
   let probe: AmqpProbe;
   const QUEUE = 'test.consumer';
   const calls: { eventId: string; correlationId: string | undefined; attempt: number }[] = [];
@@ -65,7 +66,7 @@ describe('event consumers: dedupe, retry/backoff, DLQ, correlation (architecture
     );
 
   beforeAll(async () => {
-    t = await startTestInfra();
+    t = await startTestWorkerInfra();
     probe = await AmqpProbe.open(t.infra.env.RABBITMQ_URL);
     await new EventConsumerHost(t.infra.broker, t.infra.db, t.infra.logger, t.infra.env).start(handler);
   });

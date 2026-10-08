@@ -1,25 +1,29 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createInfrastructure, closeInfrastructure } from '../../src/infrastructure';
+import {
+  closeInfrastructure,
+  createWorkerInfrastructure,
+  type WorkerInfrastructure,
+} from '../../src/infrastructure';
 import { OUTBOX_TABLE, PROCESSED_EVENTS_TABLE } from '../../src/lib/events';
 import { createCleanupJobs, JobRunner } from '../../src/lib/jobs';
 import { createMemoryLogger } from '../helpers/memory-logger';
-import { startTestInfra, type TestInfra } from '../helpers/test-infra';
+import { startTestWorkerInfra, type TestInfra } from '../helpers/test-infra';
 
 const DAY_MS = 86_400_000;
 
 describe('scheduled jobs (architecture §6)', () => {
-  let t: TestInfra;
+  let t: TestInfra<WorkerInfrastructure>;
 
   beforeAll(async () => {
-    t = await startTestInfra();
+    t = await startTestWorkerInfra();
   });
   afterAll(async () => {
     await t.close();
   });
 
   it('pg_try_advisory_lock: with two workers, a job runs on only one at a time', async () => {
-    const otherWorker = await createInfrastructure(t.infra.env, createMemoryLogger().logger);
+    const otherWorker = await createWorkerInfrastructure(t.infra.env, createMemoryLogger().logger);
     try {
       let executions = 0;
       const job = {

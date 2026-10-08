@@ -2,10 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { runWithContext } from '../../src/lib/context';
 import { Outbox, OUTBOX_TABLE, OutboxDrainer, SellerApproved, SellerSuspended } from '../../src/lib/events';
-import { closeInfrastructure, createInfrastructure } from '../../src/infrastructure';
+import {
+  closeInfrastructure,
+  createWorkerInfrastructure,
+  type WorkerInfrastructure,
+} from '../../src/infrastructure';
 import { AmqpProbe } from '../helpers/amqp-probe';
 import { createMemoryLogger } from '../helpers/memory-logger';
-import { startTestInfra, type TestInfra } from '../helpers/test-infra';
+import { startTestWorkerInfra, type TestInfra } from '../helpers/test-infra';
 
 interface OutboxRow {
   id: string;
@@ -18,7 +22,7 @@ interface OutboxRow {
 }
 
 describe('transactional outbox + drain (architecture §5, CLAUDE.md §6.4)', () => {
-  let t: TestInfra;
+  let t: TestInfra<WorkerInfrastructure>;
   let probe: AmqpProbe;
   let tapQueue: string;
   let outbox: Outbox;
@@ -40,7 +44,7 @@ describe('transactional outbox + drain (architecture §5, CLAUDE.md §6.4)', () 
     );
 
   beforeAll(async () => {
-    t = await startTestInfra();
+    t = await startTestWorkerInfra();
     outbox = new Outbox(t.infra.clock);
     await t.infra.broker.assertExchange(t.infra.env.RABBITMQ_EXCHANGE);
     probe = await AmqpProbe.open(t.infra.env.RABBITMQ_URL);
@@ -131,7 +135,7 @@ describe('transactional outbox + drain (architecture §5, CLAUDE.md §6.4)', () 
   /** A second worker process: own connections, same database/vhost. */
   async function startTestInfraSharingDb() {
     const { logger, writer } = createMemoryLogger();
-    const infra = await createInfrastructure(t.infra.env, logger);
+    const infra = await createWorkerInfrastructure(t.infra.env, logger);
     await infra.broker.assertExchange(infra.env.RABBITMQ_EXCHANGE);
     return { infra, logs: writer, closeInfraOnly: () => closeInfrastructure(infra) };
   }

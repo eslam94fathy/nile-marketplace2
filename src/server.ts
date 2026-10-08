@@ -1,15 +1,16 @@
 import 'reflect-metadata';
 import { createApp } from './http-app';
-import { createContainer } from './container';
-import { closeInfrastructure, createInfrastructure } from './infrastructure';
+import { createApiContainer } from './container';
+import { closeInfrastructure, createApiInfrastructure } from './infrastructure';
+import { apiEnvSchema } from './lib/config';
 import { createLogger, createShutdown, installProcessHandlers, loadEnvOrExit } from './lib/bootstrap';
 
 /** HTTP entrypoint: `node dist/server.js`. */
 async function main(): Promise<void> {
-  const env = loadEnvOrExit('nile-api');
+  const env = loadEnvOrExit('nile-api', apiEnvSchema);
   const logger = createLogger(env);
-  const infra = await createInfrastructure(env, logger);
-  const container = createContainer(infra);
+  const infra = await createApiInfrastructure(env, logger);
+  const container = createApiContainer(infra);
   const app = createApp(infra, container);
 
   const server = app.listen(env.PORT, () => logger.info('http server listening', { port: env.PORT }));

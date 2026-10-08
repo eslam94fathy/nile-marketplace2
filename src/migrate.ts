@@ -1,4 +1,5 @@
 import { createLogger, loadEnvOrExit } from './lib/bootstrap';
+import { migrateEnvSchema } from './lib/config';
 import { createKnex } from './lib/db';
 import { migrateLatest, migrateRollback } from './lib/db/migrator';
 import { MIGRATIONS } from './migrations';
@@ -10,7 +11,7 @@ import { MIGRATIONS } from './migrations';
 const Command = { LATEST: 'latest', ROLLBACK: 'rollback' } as const;
 
 async function main(): Promise<void> {
-  const env = loadEnvOrExit('nile-migrate');
+  const env = loadEnvOrExit('nile-migrate', migrateEnvSchema);
   const logger = createLogger(env).child({ component: 'migrate' });
   const command = process.argv[2];
   if (command !== Command.LATEST && command !== Command.ROLLBACK) {

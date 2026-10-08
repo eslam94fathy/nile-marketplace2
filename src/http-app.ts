@@ -6,7 +6,7 @@ import { createHealthRouter, HEALTH_BASE_PATH } from './app/health';
 import { createErrorHandler } from './lib/error';
 import { createDocsRouter, recordMountPath } from './lib/http';
 import { byIp, correlationId, notFound, RateLimitClass, requestLogger } from './lib/middleware';
-import { type Infrastructure } from './infrastructure';
+import { type ApiInfrastructure } from './infrastructure';
 
 export const API_BASE_PATH = '/api/v1';
 export const DOCS_PATH = `${API_BASE_PATH}/docs`;
@@ -23,7 +23,7 @@ export interface AppOptions {
 
 /** The Express pipeline, in the order of architecture §4. */
 export function createApp(
-  infra: Infrastructure,
+  infra: ApiInfrastructure,
   container: DependencyContainer,
   options: AppOptions = {},
 ): Express {

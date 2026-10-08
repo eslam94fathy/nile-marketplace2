@@ -1,7 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import knex from 'knex';
 import { inject } from 'vitest';
-import { type Env, loadEnv } from '../../src/lib/config';
+import {
+  type ApiEnv,
+  apiEnvSchema,
+  loadEnv,
+  type SeedAdminEnv,
+  seedAdminEnvSchema,
+  type WorkerEnv,
+  workerEnvSchema,
+} from '../../src/lib/config';
 import { testEnvInput } from './test-env';
 
 const RABBIT_AUTH = `Basic ${Buffer.from('guest:guest').toString('base64')}`;
@@ -9,7 +17,12 @@ const TEMPLATE_DB = 'nile_template';
 const PG_OBJECT_IN_USE = '55006';
 
 export interface TestResources {
-  env: Readonly<Env>;
+  /** Same resources, seen by each process. */
+  env: Readonly<ApiEnv>;
+  workerEnv: Readonly<WorkerEnv>;
+  seedAdminEnv: Readonly<SeedAdminEnv>;
+  /** The raw key/values, e.g. to pass to a child process. */
+  rawEnv: Record<string, string>;
   id: string;
   cleanup(): Promise<void>;
 }
@@ -61,18 +74,19 @@ export async function createTestResources(overrides: Record<string, string> = {}
   const amqpUrl = new URL(inject('amqpBaseUrl'));
   amqpUrl.pathname = `/${vhost}`;
 
-  const env = loadEnv(
-    testEnvInput({
-      DATABASE_URL: databaseUrl.toString(),
-      REDIS_URL: inject('redisUrl'),
-      REDIS_KEY_PREFIX: `t:${id}:`,
-      RABBITMQ_URL: amqpUrl.toString(),
-      ...overrides,
-    }),
-  );
+  const rawEnv = testEnvInput({
+    DATABASE_URL: databaseUrl.toString(),
+    REDIS_URL: inject('redisUrl'),
+    REDIS_KEY_PREFIX: `t:${id}:`,
+    RABBITMQ_URL: amqpUrl.toString(),
+    ...overrides,
+  });
 
   return {
-    env,
+    env: loadEnv(apiEnvSchema, rawEnv),
+    workerEnv: loadEnv(workerEnvSchema, rawEnv),
+    seedAdminEnv: loadEnv(seedAdminEnvSchema, rawEnv),
+    rawEnv,
     id,
     cleanup: async () => {
       const admin = knex({ client: 'pg', connection: inject('pgAdminUrl') });
