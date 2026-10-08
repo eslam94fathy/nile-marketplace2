@@ -21,6 +21,14 @@ export const TOKENS = {
   RateLimiters: Symbol.for('RateLimiters'),
   OpenApiRegistry: Symbol.for('OpenApiRegistry'),
 
+  // identity module
+  UserRepository: Symbol.for('UserRepository'),
+  RefreshTokenRepository: Symbol.for('RefreshTokenRepository'),
+  VerificationCodeRepository: Symbol.for('VerificationCodeRepository'),
+  TokenService: Symbol.for('TokenService'),
+  VerificationCodeService: Symbol.for('VerificationCodeService'),
+  IdentityEmailNotifier: Symbol.for('IdentityEmailNotifier'),
+
   // health module
   HealthService: Symbol.for('HealthService'),
   HealthController: Symbol.for('HealthController'),

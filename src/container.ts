@@ -1,5 +1,6 @@
 import { container as rootContainer, type DependencyContainer } from 'tsyringe';
 import { registerHealthModule } from './app/health';
+import { registerIdentityModule } from './app/identity';
 import { TOKENS } from './lib/di';
 import { Outbox } from './lib/events';
 import { type ApiInfrastructure, type CoreInfrastructure, type WorkerInfrastructure } from './infrastructure';
@@ -33,6 +34,7 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
   container.register(TOKENS.OpenApiRegistry, { useValue: infra.openApi });
 
   registerHealthModule(container);
+  registerIdentityModule(container);
   return container;
 }
 
