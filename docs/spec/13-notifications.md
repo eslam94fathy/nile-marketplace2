@@ -1,6 +1,6 @@
 # Spec 13 — notifications (minimal)
 
-Status: **DRAFT v0.1 (2026-10-08), under review.** [PROPOSED].
+Status: **v1.0 APPROVED (2026-10-08).** Approved by the user. Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -10,7 +10,7 @@ Tables: `notification_log`.
 Depends on: nothing. The recipient address and every template variable come in the event payload (architecture §2).
 Runs only in the **worker**. It has no HTTP endpoints.
 
-Config: `MAILJET_API_KEY`, `MAILJET_API_SECRET`, `MAIL_FROM_EMAIL`, `MAIL_FROM_NAME`, HTTP timeout, `SECRETS_ENCRYPTION_KEYS` (decryption, S-1).
+Config (worker only, P1-Q1): `EMAIL_PROVIDER` (`mailjet` | `mailpit`, P1-Q2), `MAILJET_API_KEY`, `MAILJET_SECRET_KEY`, `MAILJET_FROM_EMAIL`, `MAILJET_FROM_NAME`, `MAILPIT_URL` (when `mailpit`), HTTP timeout, `SECRETS_ENCRYPTION_KEYS` (decryption, S-1).
 
 ## 2. Public API (`index.ts`)
 None.

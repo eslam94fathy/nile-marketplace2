@@ -1,6 +1,6 @@
 # Implementation Plan (Release 1)
 
-Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) DRAFT v0.1, under review.** Later phases are detailed when their specs are approved.
+Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08).** Later phases are detailed when their specs are approved.
 Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.1, `docs/design/02-database.md` v1.1, `docs/spec/01-api-conventions.md` v1.0, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
 
 ---
@@ -140,7 +140,7 @@ Test-only routes (a `/__test` router mounted only by the test app factory) exerc
 
 ## 3. Phase 1: identity + notifications
 
-Status: **DRAFT v0.1 (2026-10-08), under review.**
+Status: **v1.0 APPROVED (2026-10-08).** All P1-Q recommendations accepted; P1-Q8 answered (Mailjet account available, sender verified as Active).
 Needs approved: spec `03-identity.md` and spec `13-notifications.md` (both still DRAFT v0.1), plus the P1-Q decisions below. It does **not** need A-2 / D-2 / D-3: identity and notifications call no other module.
 
 ### 3.1 What P1 delivers, and what it can't yet
@@ -159,7 +159,7 @@ Needs approved: spec `03-identity.md` and spec `13-notifications.md` (both still
 | P1-Q5 | JWT signing keys | **Rec:** `JWT_PRIVATE_KEY` (PEM, api only) + `JWT_ACTIVE_KID`; the matching public key must be in `JWT_PUBLIC_KEYS`. Rotation: add the new public key, deploy, switch `JWT_ACTIVE_KID`, remove the old public key after the access-token TTL |
 | P1-Q6 | Invite link format (`INVITE_URL_BASE`) | The app opens it, so the mobile team must agree. **Rec:** an https universal/app link (e.g. `https://<domain>/invite?token=…`), which email clients handle better than a custom scheme. The code only appends `?token=`; the value can be decided before staging |
 | P1-Q7 | First-admin seed | **Rec:** `node dist/seed-admin.js --email <email>` (in Docker: `docker compose run --rm api node dist/seed-admin.js --email …`). Creates an invited admin and queues the invite email. Refuses an existing email; never prints the token |
-| P1-Q8 | Mailjet account | Needed before staging (not for P1 development): API key/secret and a verified sender address/domain. Do you have one? |
+| P1-Q8 | Mailjet account | **Answered:** account available; sender address verified (status Active, checked 2026-10-08). Keys live only in the git-ignored `.env` locally and in Secrets Manager for staging/prod |
 
 ### 3.3 Scope
 

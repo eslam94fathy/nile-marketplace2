@@ -254,6 +254,9 @@ D1 Node 24 LTS · D2 class-validator DTOs · D3 own custom logger · D4 Vitest �
 ### 14.1b Decided (2026-10-08, Phase 0 plan)
 P0-Q1 Node 24 locally via nvm (`.nvmrc`, `engines`, `engine-strict`) · P0-Q2 CommonJS output · P0-Q3 dev = `tsc --watch` + `node --watch`, tests = Vitest + `unplugin-swc` (decorator metadata), every constructor param uses `@inject(TOKEN)` · P0-Q4 API docs behind `API_DOCS_ENABLED`, off in production · P0-Q5 `jose` · P0-Q6 `rate-limiter-flexible` · P0-Q7 `amqplib` + `amqp-connection-manager` · P0-Q8 own advisory-locked interval job runner · P0-Q9 test DB per test file from a migrated template, Redis prefix and RabbitMQ vhost per file · P0-Q10 git, `main` branch · P0-Q11 dependency list in `docs/plan/00-implementation-plan.md` §2.3
 
+### 14.1c Decided (2026-10-08, Phase 1 plan)
+P1-Q1 env schema split per process (JWT private key api-only, email keys worker-only) · P1-Q2 `EMAIL_PROVIDER` mailjet | mailpit (Mailpit for local dev, in-memory sender in tests) · P1-Q3 `bcrypt@6.0.0` · P1-Q4 bcrypt cost 12, OTP 10 min / 5 attempts / 60 s cooldown, invite 72 h, access 15 min, refresh 30 days · P1-Q5 `JWT_PRIVATE_KEY` + `JWT_ACTIVE_KID` with documented rotation · P1-Q6 invite link = https app link via `INVITE_URL_BASE` (value agreed with the mobile team before staging) · P1-Q7 `seed-admin` CLI · P1-Q8 Mailjet account and verified sender available
+
 ### 14.2 Still open
 
 | # | Topic | Options / recommendation |

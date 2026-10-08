@@ -1,6 +1,6 @@
 # Spec 03 — identity
 
-Status: **DRAFT v0.1 (2026-10-08), under review.** [PROPOSED] unless it restates the overview / design.
+Status: **v1.0 APPROVED (2026-10-08).** Approved by the user. Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
