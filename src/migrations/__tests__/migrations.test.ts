@@ -17,6 +17,7 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261008123200_create_users',
       '20261008123202_create_refresh_tokens',
       '20261008123204_create_verification_codes',
+      '20261008134257_create_notification_log',
     ]);
   });
 

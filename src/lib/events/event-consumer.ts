@@ -19,10 +19,17 @@ export interface EventHandlerDefinition {
   name: string;
   events: readonly EventContract<object>[];
   /**
+   * Optional effect that must not run inside a DB transaction (an HTTP call, CLAUDE.md §6.4).
+   * Runs first, outside the transaction, and is skipped when the event was already processed;
+   * its result is passed to `handle`. A crash between the two can repeat the effect once on
+   * redelivery, so use it only for effects where that is acceptable (spec 13 UC-NO-1).
+   */
+  beforeTransaction?(envelope: EventEnvelope): Promise<unknown>;
+  /**
    * Runs inside the same transaction as the `processed_events` insert (architecture §3.2):
    * effects + dedupe commit together. Must be state-machine guarded (stale events are a no-op).
    */
-  handle(envelope: EventEnvelope, trx: DbTransaction): Promise<void>;
+  handle(envelope: EventEnvelope, trx: DbTransaction, prepared?: unknown): Promise<void>;
 }
 
 type ConsumerEnv = Pick<Env, 'RABBITMQ_EXCHANGE' | 'RABBITMQ_PREFETCH' | 'MQ_RETRY_DELAYS_MS'>;
@@ -100,6 +107,14 @@ export class EventConsumerHost {
     return runWithContext({ correlationId }, async () => {
       const fields = { eventId: envelope.eventId, eventType: envelope.eventType, attempt: message.attempt };
       try {
+        let prepared: unknown;
+        if (definition.beforeTransaction) {
+          if (await this.isProcessed(definition.name, envelope.eventId)) {
+            logger.debug('duplicate event skipped', fields);
+            return 'ack';
+          }
+          prepared = await definition.beforeTransaction(envelope);
+        }
         const processed = await this.transactions.run(async (trx) => {
           const inserted = await trx(PROCESSED_EVENTS_TABLE)
             .insert({ consumer: definition.name, event_id: envelope.eventId })
@@ -107,7 +122,7 @@ export class EventConsumerHost {
             .ignore()
             .returning<{ event_id: string }[]>('event_id');
           if (inserted.length === 0) return false;
-          await definition.handle(envelope, trx);
+          await definition.handle(envelope, trx, prepared);
           return true;
         });
         if (processed) logger.info('event processed', fields);
@@ -121,6 +136,17 @@ export class EventConsumerHost {
         logger.warn('event handler failed, will retry', { ...fields, error });
         return 'retry';
       }
+    });
+  }
+
+  /** EXISTS check (G22) before a `beforeTransaction` effect. */
+  private isProcessed(consumer: string, eventId: string): Promise<boolean> {
+    return this.transactions.run(async (trx) => {
+      const result = await trx.raw<{ rows: { exists: boolean }[] }>(
+        `SELECT EXISTS (SELECT 1 FROM ${PROCESSED_EVENTS_TABLE} WHERE consumer = ? AND event_id = ?) AS "exists"`,
+        [consumer, eventId],
+      );
+      return result.rows[0]?.exists === true;
     });
   }
 }

@@ -1,6 +1,7 @@
 import { container as rootContainer, type DependencyContainer } from 'tsyringe';
 import { registerHealthModule } from './app/health';
 import { registerIdentityModule } from './app/identity';
+import { registerNotificationsModule } from './app/notifications';
 import { TOKENS } from './lib/di';
 import { Outbox } from './lib/events';
 import { type ApiInfrastructure, type CoreInfrastructure, type WorkerInfrastructure } from './infrastructure';
@@ -41,5 +42,7 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
 export function createWorkerContainer(infra: WorkerInfrastructure): DependencyContainer {
   const container = createCoreContainer(infra);
   container.register(TOKENS.EmailSender, { useValue: infra.emailSender });
+
+  registerNotificationsModule(container);
   return container;
 }

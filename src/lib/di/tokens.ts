@@ -36,6 +36,10 @@ export const TOKENS = {
   UserAdminService: Symbol.for('UserAdminService'),
   AdminController: Symbol.for('AdminController'),
 
+  // notifications module
+  NotificationLogRepository: Symbol.for('NotificationLogRepository'),
+  EmailNotificationService: Symbol.for('EmailNotificationService'),
+
   // health module
   HealthService: Symbol.for('HealthService'),
   HealthController: Symbol.for('HealthController'),
