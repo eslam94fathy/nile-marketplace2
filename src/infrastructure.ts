@@ -1,7 +1,7 @@
 import { type Redis } from 'ioredis';
-import { JwtVerifier } from './lib/auth';
+import { JwtSigner, JwtVerifier } from './lib/auth';
 import { type IClock, SystemClock } from './lib/clock';
-import { type ApiEnv, type WorkerEnv } from './lib/config';
+import { type ApiEnv, EmailProvider, type WorkerEnv } from './lib/config';
 import { createKnex, Database } from './lib/db';
 import { PgErrorMapper } from './lib/error';
 import { OpenApiRegistry } from './lib/http';
@@ -10,6 +10,8 @@ import { RateLimiters } from './lib/middleware';
 import { createRedis } from './lib/redis';
 import { type ICache, RedisCache } from './pkg/cache';
 import { AesGcmSecretBox, type ISecretBox } from './pkg/crypto';
+import { type IEmailSender, MailjetEmailSender, MailpitEmailSender } from './pkg/email';
+import { BcryptPasswordHasher, type IPasswordHasher } from './pkg/hashing';
 import { type IMessageBroker, RabbitMqBroker } from './pkg/messaging';
 import { toSeconds, TimeUnit } from './pkg/time';
 
@@ -31,12 +33,16 @@ export interface ApiInfrastructure extends CoreInfrastructure<ApiEnv> {
   redis: Redis;
   cache: ICache;
   jwtVerifier: JwtVerifier;
+  jwtSigner: JwtSigner;
+  passwordHasher: IPasswordHasher;
   rateLimiters: RateLimiters;
   openApi: OpenApiRegistry;
 }
 
-/** Background process: outbox drain, consumers, jobs. No Redis, no JWT, no HTTP. */
-export type WorkerInfrastructure = CoreInfrastructure<WorkerEnv>;
+/** Background process: outbox drain, consumers, jobs, email. No Redis, no JWT, no HTTP. */
+export interface WorkerInfrastructure extends CoreInfrastructure<WorkerEnv> {
+  emailSender: IEmailSender;
+}
 
 type CoreEnv = Pick<
   ApiEnv,
@@ -105,16 +111,35 @@ export async function createApiInfrastructure(
     redis,
     cache: new RedisCache(redis),
     jwtVerifier: await JwtVerifier.create(env),
+    jwtSigner: await JwtSigner.create(env, core.clock),
+    passwordHasher: new BcryptPasswordHasher(env.BCRYPT_COST),
     rateLimiters: new RateLimiters(redis, env, logger),
     openApi: new OpenApiRegistry(),
   };
 }
 
-export function createWorkerInfrastructure(
+export async function createWorkerInfrastructure(
   env: Readonly<WorkerEnv>,
   logger: ILogger,
 ): Promise<WorkerInfrastructure> {
-  return createCore(env, logger);
+  return { ...(await createCore(env, logger)), emailSender: createEmailSender(env) };
+}
+
+/** P1-Q2: Mailjet in staging/production, Mailpit locally (the env schema enforces the required keys). */
+export function createEmailSender(env: Readonly<WorkerEnv>): IEmailSender {
+  const from = { email: env.MAILJET_FROM_EMAIL, name: env.MAILJET_FROM_NAME };
+  if (env.EMAIL_PROVIDER === EmailProvider.MAILJET && env.MAILJET_API_KEY && env.MAILJET_SECRET_KEY) {
+    return new MailjetEmailSender({
+      apiKey: env.MAILJET_API_KEY,
+      secretKey: env.MAILJET_SECRET_KEY,
+      from,
+      timeoutMs: env.EMAIL_HTTP_TIMEOUT_MS,
+    });
+  }
+  if (env.EMAIL_PROVIDER === EmailProvider.MAILPIT && env.MAILPIT_URL) {
+    return new MailpitEmailSender({ url: env.MAILPIT_URL, from, timeoutMs: env.EMAIL_HTTP_TIMEOUT_MS });
+  }
+  throw new Error('Email provider configuration is incomplete');
 }
 
 /** Each close is independent, so one failure doesn't block the rest. */

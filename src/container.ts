@@ -27,6 +27,8 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
   container.register(TOKENS.Redis, { useValue: infra.redis });
   container.register(TOKENS.Cache, { useValue: infra.cache });
   container.register(TOKENS.JwtVerifier, { useValue: infra.jwtVerifier });
+  container.register(TOKENS.JwtSigner, { useValue: infra.jwtSigner });
+  container.register(TOKENS.PasswordHasher, { useValue: infra.passwordHasher });
   container.register(TOKENS.RateLimiters, { useValue: infra.rateLimiters });
   container.register(TOKENS.OpenApiRegistry, { useValue: infra.openApi });
 
@@ -35,5 +37,7 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
 }
 
 export function createWorkerContainer(infra: WorkerInfrastructure): DependencyContainer {
-  return createCoreContainer(infra);
+  const container = createCoreContainer(infra);
+  container.register(TOKENS.EmailSender, { useValue: infra.emailSender });
+  return container;
 }
