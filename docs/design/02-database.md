@@ -1,6 +1,6 @@
 # System Design 02 — Database Schema (Release 1)
 
-Status: **v1.3 APPROVED (2026-10-08).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1); open DB-Q6. Changes from now on need explicit approval and a version bump. Decisions: §13.
+Status: **v1.4 APPROVED (2026-10-08).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). Changes from now on need explicit approval and a version bump. Decisions: §13.
 Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §6. Business rules: `docs/spec/00-overview.md` v1.0.
 
 ---
@@ -52,6 +52,7 @@ Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §
 
 Indexes:
 - `uq_users_email (email)`: login, registration duplicate check, forgot password.
+- `idx_users_role_created_at (role, created_at DESC, id DESC)`: admin lists by role with keyset pagination (`WHERE role = ? … ORDER BY created_at DESC, id DESC`, spec 03 §4.11). Built `CONCURRENTLY` (DB-Q6, v1.4).
 
 ### refresh_tokens
 | column | type | rules |
@@ -515,9 +516,6 @@ Index: `idx_processed_events_processed_at`: the cleanup job.
 | DB-Q3 | Cart: max quantity **99** per line, max **50** lines |
 | DB-Q4 | Lengths: product `name` 200, `description` 5000, seller `business_name` 150 |
 | DB-Q5 | Retention: dispatched outbox 7 days, processed events 30 days, expired codes/tokens 30 days (all env config) |
+| DB-Q6 | `idx_users_role_created_at (role, created_at DESC, id DESC)` for the admin list (spec 03 §4.11), added in Phase 1 as a `CREATE INDEX CONCURRENTLY` migration (2026-10-08) |
 
-### 13.1 Open
-
-| # | Question | Options / recommendation |
-|---|---|---|
-| DB-Q6 | `GET /admin/admins` (spec 03 §4.11) reads `users WHERE role = 'admin' ORDER BY created_at DESC, id DESC` with no supporting index, so it scans `users` (fine while the table is small; admins are few and the endpoint is rare). | **Rec:** add `idx_users_role_created_at (role, created_at DESC, id DESC)` before launch (a `CREATE INDEX CONCURRENTLY` migration). Alternative: a partial index `WHERE role = 'admin'`, smaller but only serves this list · or leave it until the table grows |
+No open schema questions.

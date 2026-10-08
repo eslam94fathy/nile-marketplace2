@@ -1,6 +1,6 @@
 # Spec 03 — identity
 
-Status: **v1.1 APPROVED (2026-10-08).** Approved by the user. v1.1: Phase 1 implementation clarifications (§7.1, I-1…I-9). Changes from now on need explicit approval and a version bump.
+Status: **v1.2 APPROVED (2026-10-08).** Approved by the user. v1.1: Phase 1 implementation clarifications (§7.1, I-1…I-9). v1.2: §4.11 index reference (DB-Q6). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -166,7 +166,7 @@ Rate limit: the `email:` counter is the same one login uses for that address, so
 ### 4.11 `GET /admin/admins`   auth: admin
 Whitelist: `status` (enum, `eq,in`), `createdAt` (date, `gte,lte`, sort: yes). Default sort `-createdAt`.
 `200 { id, email, status, emailVerifiedAt, lastLoginAt, createdAt }[]` + meta.
-Query: `WHERE role = 'admin'` + filters, ordered by `(created_at, id)`. No dedicated index yet: see open item DB-Q6 (`02-database.md` §13).
+Query: `WHERE role = 'admin'` + filters, ordered by `(created_at, id)`, served by `idx_users_role_created_at` (DB-Q6, `02-database.md` v1.4).
 
 ### 4.12 `POST /admin/users/:userId/resend-invite`   auth: admin
 Params: `userId` `uuid`. `204`. Errors: `USER_NOT_FOUND` 404, `USER_NOT_INVITED` 409.

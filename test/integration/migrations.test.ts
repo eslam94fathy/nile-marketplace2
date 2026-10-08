@@ -52,6 +52,29 @@ describe('migrations on a real Postgres 18', () => {
   });
 
   describe('users', () => {
+    it('idx_users_role_created_at (DB-Q6) is valid and serves the admin list keyset query', async () => {
+      const index = await db.raw<{ rows: { valid: boolean; definition: string }[] }>(
+        `SELECT i.indisvalid AS valid, pg_get_indexdef(i.indexrelid) AS definition
+           FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+          WHERE c.relname = 'idx_users_role_created_at'`,
+      );
+      expect(index.rows[0]?.valid).toBe(true);
+      expect(index.rows[0]?.definition).toContain('(role, created_at DESC, id DESC)');
+
+      // The table is tiny here, so forbid the seq scan to see that the planner can use the index.
+      const plan = await db.transaction(async (trx) => {
+        await trx.raw('SET LOCAL enable_seqscan = off');
+        const result = await trx.raw<{ rows: { 'QUERY PLAN': string }[] }>(
+          `EXPLAIN SELECT id FROM users WHERE role = 'admin'
+             AND (created_at, id) < (now(), '0192f5e0-0000-7000-8000-000000000000')
+             ORDER BY created_at DESC, id DESC LIMIT 21`,
+        );
+        return result.rows.map((row) => row['QUERY PLAN']).join('\n');
+      });
+      expect(plan).toContain('idx_users_role_created_at');
+      expect(plan).not.toContain('Sort');
+    });
+
     it('stores lower-case emails only, unique', async () => {
       expect(await pgFailure(() => insertUser({ email: 'Mixed@Example.com' }))).toEqual({
         code: '23514',
