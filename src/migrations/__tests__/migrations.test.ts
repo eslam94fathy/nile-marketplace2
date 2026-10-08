@@ -1,3 +1,5 @@
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ListMigrationSource, type MigrationModule } from '../../lib/db';
 import { MIGRATIONS } from '..';
@@ -12,7 +14,17 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261008000001_enable_pg_trgm',
       '20261008000002_create_events_outbox',
       '20261008000003_create_processed_events',
+      '20261008123200_create_users',
+      '20261008123202_create_refresh_tokens',
+      '20261008123204_create_verification_codes',
     ]);
+  });
+
+  it('every migration file in the folder is registered (no forgotten migration)', () => {
+    const files = readdirSync(join(__dirname, '..'))
+      .filter((file) => /^\d{14}_[a-z0-9_]+\.ts$/.test(file))
+      .map((file) => file.replace(/\.ts$/, ''));
+    expect(MIGRATIONS.map((m) => m.name)).toEqual(files.sort());
   });
 
   it('every migration has an up and a down', () => {

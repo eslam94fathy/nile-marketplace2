@@ -1,6 +1,6 @@
 # System Design 02 — Database Schema (Release 1)
 
-Status: **v1.1 APPROVED (2026-10-08).** v1.1: COD payment status `cancelled` added (D-1, S-12). Changes from now on need explicit approval and a version bump. Decisions: §13.
+Status: **v1.2 APPROVED (2026-10-08).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). Changes from now on need explicit approval and a version bump. Decisions: §13.
 Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §6. Business rules: `docs/spec/00-overview.md` v1.0.
 
 ---
@@ -62,13 +62,14 @@ Indexes:
 | token_hash | CHAR(64) | SHA-256 hex of the opaque token |
 | expires_at | TIMESTAMPTZ | |
 | revoked_at | TIMESTAMPTZ null | |
-| replaced_by_id | UUID null | `fk_refresh_tokens_replaced_by_id` → refresh_tokens |
+| replaced_by_id | UUID null | `fk_refresh_tokens_replaced_by_id` → refresh_tokens, `ON DELETE SET NULL` (audit pointer; the retention cleanup may delete rows of a family in any order, D-4) |
 | user_agent | VARCHAR(255) null | for "active sessions" auditing |
 
 Indexes:
 - `uq_refresh_tokens_token_hash (token_hash)`: the refresh lookup.
 - `idx_refresh_tokens_family_id (family_id)`: revoke the whole family on reuse.
 - `idx_refresh_tokens_user_id (user_id) WHERE revoked_at IS NULL`: revoke all sessions on suspend or password reset.
+- `idx_refresh_tokens_expires_at (expires_at)`: retention cleanup `DELETE … WHERE expires_at < now() - retention`; every refresh inserts a row, so the table is large (D-4).
 
 ### verification_codes
 OTPs (email verification, password reset) and invite tokens.
