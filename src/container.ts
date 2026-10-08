@@ -1,6 +1,7 @@
 import { container as rootContainer, type DependencyContainer } from 'tsyringe';
 import { registerHealthModule } from './app/health';
 import { TOKENS } from './lib/di';
+import { Outbox } from './lib/events';
 import { type Infrastructure } from './infrastructure';
 
 /**
@@ -21,6 +22,7 @@ export function createContainer(infra: Infrastructure): DependencyContainer {
   container.register(TOKENS.JwtVerifier, { useValue: infra.jwtVerifier });
   container.register(TOKENS.RateLimiters, { useValue: infra.rateLimiters });
   container.register(TOKENS.OpenApiRegistry, { useValue: infra.openApi });
+  container.register(TOKENS.Outbox, { useValue: new Outbox(infra.clock) });
 
   registerHealthModule(container);
   return container;

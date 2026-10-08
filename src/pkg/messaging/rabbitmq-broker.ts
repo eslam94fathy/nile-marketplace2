@@ -50,6 +50,9 @@ export class RabbitMqBroker implements IMessageBroker {
       publishTimeout: this.options.publishTimeoutMs,
     });
     await this.manager.connect({ timeout: timeoutMs });
+    // Resolve only once the publisher channel is open too: closing a half-opened channel makes
+    // amqplib reject an internal reply nobody awaits (an unhandled rejection at shutdown).
+    await this.publisher.waitForConnect();
   }
 
   isConnected(): boolean {

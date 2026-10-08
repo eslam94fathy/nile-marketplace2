@@ -2,9 +2,10 @@ import { type Express, type Router } from 'express';
 import { type DependencyContainer } from 'tsyringe';
 import { createContainer } from '../../src/container';
 import { createApp } from '../../src/http-app';
-import { closeInfrastructure, createInfrastructure, type Infrastructure } from '../../src/infrastructure';
-import { createMemoryLogger, type MemoryLogWriter } from './memory-logger';
-import { createTestResources, type TestResources } from './test-resources';
+import { type Infrastructure } from '../../src/infrastructure';
+import { type MemoryLogWriter } from './memory-logger';
+import { startTestInfra } from './test-infra';
+import { type TestResources } from './test-resources';
 
 export interface TestApp {
   app: Express;
@@ -23,20 +24,9 @@ export interface TestAppOptions {
 
 /** A full app (real Postgres/Redis/RabbitMQ) on this file's isolated resources. */
 export async function startTestApp(options: TestAppOptions = {}): Promise<TestApp> {
-  const resources = await createTestResources(options.envOverrides);
-  const { logger, writer } = createMemoryLogger();
-  const infra = await createInfrastructure(resources.env, logger);
+  const testInfra = await startTestInfra(options.envOverrides);
+  const { infra, logs, resources } = testInfra;
   const container = createContainer(infra);
   const app = createApp(infra, container, { extraRouters: options.extraRouters?.(infra) ?? [] });
-  return {
-    app,
-    infra,
-    container,
-    logs: writer,
-    resources,
-    close: async () => {
-      await closeInfrastructure(infra);
-      await resources.cleanup();
-    },
-  };
+  return { app, infra, container, logs, resources, close: () => testInfra.close() };
 }
