@@ -71,3 +71,7 @@ export class IdentityEmailNotifier {
     });
   }
 }
+
+export function recipientOf(user: { id: string; email: string }): { userId: string; email: string } {
+  return { userId: user.id, email: user.email };
+}

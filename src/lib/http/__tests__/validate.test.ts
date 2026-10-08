@@ -2,7 +2,17 @@ import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsInt, IsOptional, IsString, Length, Max, Min, ValidateNested } from 'class-validator';
 import { describe, expect, it } from 'vitest';
 import { AppError } from '../../error';
-import { IsEgyptianMobile, IsMoney, IsRate, MaxBytes, NormalizeEmail, PatchDto, Trim, validateDto } from '..';
+import {
+  IsEgyptianMobile,
+  IsMoney,
+  IsRate,
+  MaxBytes,
+  NormalizeEmail,
+  Optional,
+  PatchDto,
+  Trim,
+  validateDto,
+} from '..';
 
 class LineDto {
   @IsMoney()
@@ -45,6 +55,12 @@ class UpdateDto extends PatchDto {
   @IsOptional()
   @IsRate()
   rate?: string;
+}
+
+class NoteDto {
+  @Optional()
+  @IsString()
+  note?: string;
 }
 
 async function detailsOf(promise: Promise<unknown>) {
@@ -132,5 +148,12 @@ describe('lib/http validateDto', () => {
     const details = await detailsOf(validateDto(UpdateDto, { phone: '+201312345678', rate: '1.5' }));
     expect(details.map((d) => d.field).sort()).toEqual(['phone', 'rate']);
     await expect(validateDto(UpdateDto, { phone: '+201012345678', rate: '0.1250' })).resolves.toBeDefined();
+  });
+
+  it('Optional() allows an absent field but rejects null (spec 01 §1.1 `opt`)', async () => {
+    await expect(validateDto(NoteDto, {})).resolves.toBeInstanceOf(NoteDto);
+    await expect(validateDto(NoteDto, { note: 'x' })).resolves.toBeInstanceOf(NoteDto);
+    const details = await detailsOf(validateDto(NoteDto, { note: null }));
+    expect(details).toContainEqual(expect.objectContaining({ field: 'note', constraint: 'isString' }));
   });
 });

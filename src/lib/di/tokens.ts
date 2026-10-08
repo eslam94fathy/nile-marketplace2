@@ -28,6 +28,10 @@ export const TOKENS = {
   TokenService: Symbol.for('TokenService'),
   VerificationCodeService: Symbol.for('VerificationCodeService'),
   IdentityEmailNotifier: Symbol.for('IdentityEmailNotifier'),
+  /** Public API of identity (spec 03 §2), injected into other modules. */
+  AccountService: Symbol.for('AccountService'),
+  AuthService: Symbol.for('AuthService'),
+  AuthController: Symbol.for('AuthController'),
 
   // health module
   HealthService: Symbol.for('HealthService'),

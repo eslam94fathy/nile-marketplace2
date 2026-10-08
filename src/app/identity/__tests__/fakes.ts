@@ -84,6 +84,11 @@ export function createFakes() {
   };
   const users = {
     findById: vi.fn((): Promise<User | undefined> => Promise.resolve(undefined)),
+    findByEmail: vi.fn((): Promise<User | undefined> => Promise.resolve(undefined)),
+    transitionStatus: vi.fn((): Promise<User | undefined> => Promise.resolve(undefined)),
+    touchLastLogin: vi.fn(() => Promise.resolve()),
+    updatePasswordHash: vi.fn(() => Promise.resolve(true)),
+    replacePasswordHash: vi.fn(() => Promise.resolve(true)),
   };
   const codes = {
     insert: vi.fn((code: NewVerificationCode) => Promise.resolve(makeCode({ ...code }))),
@@ -104,6 +109,11 @@ export function createFakes() {
     add: vi.fn((_trx: DbTransaction, _event: unknown) => Promise.resolve()),
     addMany: vi.fn((_trx: DbTransaction, _events: unknown[]) => Promise.resolve()),
   };
+  // 'hash:<plain>' stands in for bcrypt; verify compares against it.
+  const hasher = {
+    hash: vi.fn((plain: string) => Promise.resolve(`hash:${plain}`)),
+    verify: vi.fn((plain: string, hash: string) => Promise.resolve(hash === `hash:${plain}`)),
+  };
   const logger = new SpyLogger();
   const transactions = { run: <T>(work: (trx: DbTransaction) => Promise<T>) => work(FAKE_TRX) };
   const clock = { now: () => new Date(NOW) };
@@ -117,5 +127,6 @@ export function createFakes() {
   container.register(TOKENS.Logger, { useValue: logger });
   container.register(TOKENS.TransactionRunner, { useValue: transactions });
   container.register(TOKENS.Clock, { useValue: clock });
-  return { container, refreshTokens, users, codes, signer, outbox, logger };
+  container.register(TOKENS.PasswordHasher, { useValue: hasher });
+  return { container, refreshTokens, users, codes, signer, outbox, logger, hasher };
 }

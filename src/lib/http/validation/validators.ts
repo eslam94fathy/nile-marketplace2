@@ -1,5 +1,11 @@
 import { Transform } from 'class-transformer';
-import { Matches, ValidateBy, type ValidationArguments, type ValidationOptions } from 'class-validator';
+import {
+  Matches,
+  ValidateBy,
+  ValidateIf,
+  type ValidationArguments,
+  type ValidationOptions,
+} from 'class-validator';
 
 /**
  * Custom validators used by DTOs (docs/spec/01-api-conventions.md §1.1).
@@ -68,6 +74,12 @@ export abstract class PatchDto {
   })
   readonly [PATCH_RULE_PROPERTY]?: never;
 }
+
+/**
+ * `opt` in the spec notation (docs/spec/01-api-conventions.md §1.1): the field may be absent, but an
+ * explicit `null` is still validated (and rejected). `@IsOptional` would let `null` through.
+ */
+export const Optional = () => ValidateIf((_object: object, value: unknown) => value !== undefined);
 
 /** Trims strings before validation; non-strings pass through untouched (and fail @IsString). */
 export const Trim = () =>

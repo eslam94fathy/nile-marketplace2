@@ -34,21 +34,26 @@ type RateEnv = Pick<
   | 'RATE_LIMIT_CHECKOUT_WINDOW_SECONDS'
 >;
 
-/** Builds the counter keys for a request: every key is limited separately (e.g. IP and email). */
-export type RateLimitKeys = (req: Request) => readonly string[];
+/**
+ * Builds the counter keys for a request: every key is limited separately (e.g. IP and email).
+ * May be async when a key needs a lookup (e.g. the account email of an authenticated caller).
+ */
+export type RateLimitKeys = (req: Request) => readonly string[] | Promise<readonly string[]>;
 
-export const byIp: RateLimitKeys = (req) => [`ip:${req.ip ?? 'unknown'}`];
+export const byIp = (req: Request): readonly string[] => [`ip:${req.ip ?? 'unknown'}`];
+
+/** The per-account counter, shared by every strict-auth route that names the same email. */
+export const emailRateKey = (email: string): string => `email:${email.trim().toLowerCase()}`;
 
 /** IP and the normalised `email` from the body: two independent counters (strict-auth). */
-export const byIpAndEmail: RateLimitKeys = (req) => {
+export const byIpAndEmail = (req: Request): readonly string[] => {
   const email = (req.body as { email?: unknown } | undefined)?.email;
-  return typeof email === 'string' && email.length > 0
-    ? [...byIp(req), `email:${email.trim().toLowerCase()}`]
-    : byIp(req);
+  return typeof email === 'string' && email.length > 0 ? [...byIp(req), emailRateKey(email)] : byIp(req);
 };
 
 /** The authenticated user (must run after `authenticate`), falling back to IP. */
-export const byUser: RateLimitKeys = (req) => (req.auth ? [`user:${req.auth.userId}`] : byIp(req));
+export const byUser = (req: Request): readonly string[] =>
+  req.auth ? [`user:${req.auth.userId}`] : byIp(req);
 
 export class RateLimiters {
   private readonly limiters: ReadonlyMap<RateLimitClass, RateLimiterRedis>;
@@ -78,7 +83,7 @@ export class RateLimiters {
     if (!limiter) throw new Error(`Unknown rate-limit class ${cls}`);
     return async (req, res, next) => {
       try {
-        for (const key of keysOf(req)) await limiter.consume(key);
+        for (const key of await keysOf(req)) await limiter.consume(key);
       } catch (rejection) {
         if (rejection instanceof RateLimiterRes) {
           res.setHeader(HEADER.RETRY_AFTER, String(Math.max(1, Math.ceil(rejection.msBeforeNext / 1000))));

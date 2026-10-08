@@ -138,6 +138,19 @@ export class UserRepository {
     return count === 1;
   }
 
+  /** Conditional on the hash the caller verified: false if the password changed meanwhile. */
+  async replacePasswordHash(
+    id: string,
+    expectedHash: string,
+    passwordHash: string,
+    trx: DbTransaction,
+  ): Promise<boolean> {
+    const count = await trx<UserRow>(T)
+      .where({ id, password_hash: expectedHash })
+      .update({ password_hash: passwordHash, updated_at: trx.fn.now() });
+    return count === 1;
+  }
+
   async touchLastLogin(id: string, at: Date, trx: DbTransaction): Promise<void> {
     await trx<UserRow>(T).where({ id }).update({ last_login_at: at, updated_at: trx.fn.now() });
   }

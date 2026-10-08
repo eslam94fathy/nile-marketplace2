@@ -3,6 +3,7 @@ import express, { type Express, type Router } from 'express';
 import helmet from 'helmet';
 import { type DependencyContainer } from 'tsyringe';
 import { createHealthRouter, HEALTH_BASE_PATH } from './app/health';
+import { createIdentityRouter } from './app/identity';
 import { createErrorHandler } from './lib/error';
 import { createDocsRouter, recordMountPath } from './lib/http';
 import { byIp, correlationId, notFound, RateLimitClass, requestLogger } from './lib/middleware';
@@ -56,6 +57,7 @@ export function createApp(
 
   // 7. Routes.
   if (env.API_DOCS_ENABLED) app.use(DOCS_PATH, recordMountPath(), createDocsRouter(infra.openApi, API_INFO));
+  app.use(API_BASE_PATH, recordMountPath(), createIdentityRouter(container, API_BASE_PATH));
   for (const { path, router } of options.extraRouters ?? []) app.use(path, recordMountPath(), router);
 
   // 8. 404, then the global error handler.

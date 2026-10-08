@@ -15,3 +15,27 @@ export const INVITE_TOKEN_QUERY_PARAM = 'token';
 
 /** `refresh_tokens.user_agent` is VARCHAR(255). */
 export const MAX_DEVICE_NAME_LENGTH = 255;
+
+/** DTO limits (docs/spec/01-api-conventions.md §1.1, spec 03 §4). */
+export const EMAIL_MAX_LENGTH = 254;
+export const PASSWORD_MIN_LENGTH = 8;
+export const DEVICE_NAME_MAX_LENGTH = 100;
+
+/** Paths under /api/v1 (spec 03 §4). */
+export const IDENTITY_PATHS = {
+  VERIFY_EMAIL: '/auth/email/verify',
+  RESEND_OTP: '/auth/email/resend-otp',
+  LOGIN: '/auth/login',
+  REFRESH: '/auth/refresh',
+  LOGOUT: '/auth/logout',
+  FORGOT_PASSWORD: '/auth/password/forgot',
+  RESET_PASSWORD: '/auth/password/reset',
+  CHANGE_PASSWORD: '/auth/password/change',
+  ACCEPT_INVITE: '/auth/invite/accept',
+} as const;
+
+/** Same text for every outcome, so the answer doesn't reveal whether the account exists. */
+export const GENERIC_MESSAGES = {
+  OTP_SENT: 'If the account can receive a code, a new one has been sent',
+  PASSWORD_RESET_SENT: 'If an active account uses this email, a reset code has been sent',
+} as const;
