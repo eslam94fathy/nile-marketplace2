@@ -12,3 +12,12 @@ export * from './validation/validators';
 export { encodeCursor, decodeCursor, type CursorPayload, type CursorValue } from './pagination/cursor';
 export * from './query/list-query';
 export { applyListQuery, toPage } from './query/apply-list-query';
+export {
+  OpenApiRegistry,
+  type RouteDoc,
+  type ResponseDoc,
+  type ApiInfo,
+  type HttpMethod,
+} from './openapi/openapi-registry';
+export { createDocsRouter, OPENAPI_JSON_PATH } from './openapi/docs-router';
+export { recordMountPath, routeTemplate, requestPath } from './route-template';

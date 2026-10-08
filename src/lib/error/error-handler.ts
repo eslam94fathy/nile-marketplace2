@@ -1,7 +1,8 @@
-import { type ErrorRequestHandler, type Request } from 'express';
+import { type ErrorRequestHandler, type Request, type Response } from 'express';
 import { getContext } from '../context';
 import { type ILogger } from '../logger';
 import { buildErrorEnvelope } from '../http/response';
+import { routeTemplate } from '../http/route-template';
 import { HTTP_STATUS } from '../http/status-codes';
 import { type AppError, isAppError } from './app-error';
 import { internalError, malformedJson, payloadTooLarge } from './common-errors';
@@ -24,11 +25,11 @@ const WARN_STATUSES = new Set<number>([
   HTTP_STATUS.TOO_MANY_REQUESTS,
 ]);
 
-function requestFields(req: Request): Record<string, unknown> {
+function requestFields(req: Request, res: Response): Record<string, unknown> {
   // Never body, headers or cookies (CLAUDE.md §9.2).
   return {
     method: req.method,
-    route: req.route ? `${req.baseUrl}${(req.route as { path: string }).path}` : req.baseUrl || req.path,
+    route: routeTemplate(req, res),
     ip: req.ip,
   };
 }
@@ -50,14 +51,14 @@ export function createErrorHandler(logger: ILogger, pgErrorMapper: PgErrorMapper
     const status = appError.httpStatus;
     if (status >= HTTP_STATUS.INTERNAL_SERVER_ERROR) {
       logger.error('request failed', {
-        ...requestFields(req),
+        ...requestFields(req, res),
         statusCode: status,
         errorCode: appError.code,
         error: error instanceof Error ? error : String(error),
       });
     } else if (WARN_STATUSES.has(status)) {
       logger.warn('request rejected', {
-        ...requestFields(req),
+        ...requestFields(req, res),
         statusCode: status,
         errorCode: appError.code,
       });

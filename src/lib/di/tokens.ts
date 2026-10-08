@@ -13,4 +13,11 @@ export const TOKENS = {
   Redis: Symbol.for('Redis'),
   MessageBroker: Symbol.for('MessageBroker'),
   Outbox: Symbol.for('Outbox'),
+  JwtVerifier: Symbol.for('JwtVerifier'),
+  RateLimiters: Symbol.for('RateLimiters'),
+  OpenApiRegistry: Symbol.for('OpenApiRegistry'),
+
+  // health module
+  HealthService: Symbol.for('HealthService'),
+  HealthController: Symbol.for('HealthController'),
 } as const;
