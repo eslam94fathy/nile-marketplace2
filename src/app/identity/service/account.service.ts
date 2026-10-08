@@ -6,17 +6,26 @@ import { type IPasswordHasher } from '../../../pkg/hashing';
 import { UserStatus, VerificationPurpose } from '../enums';
 import { type UserRepository } from '../repository/user.repository';
 import { type IdentityEmailNotifier, recipientOf } from './identity-email.notifier';
+import { type InvitationService, type InvitedRole } from './invitation.service';
+import { type UserAdminService } from './user-admin.service';
 import { type VerificationCodeService } from './verification-code.service';
 
 /** Self-registered roles (their modules own the register endpoints, spec 03 §1). */
 export type SelfRegisteredRole = typeof UserRole.CUSTOMER | typeof UserRole.SELLER;
-/** Roles created by an admin invite (spec 03 UC-ID-7). */
-export type InvitedRole = typeof UserRole.ADMIN | typeof UserRole.DELIVERY_AGENT;
+export type { InvitedRole } from './invitation.service';
 
 const SELF_REGISTERED_ROLES: ReadonlySet<UserRole> = new Set([UserRole.CUSTOMER, UserRole.SELLER]);
-const INVITED_ROLES: ReadonlySet<UserRole> = new Set([UserRole.ADMIN, UserRole.DELIVERY_AGENT]);
 
-/** Public account creation (spec 03 §2). Both run in the caller's transaction. */
+/** What other modules see of a user (spec 03 §2). */
+export interface UserSummary {
+  id: string;
+  email: string;
+  role: UserRole;
+  status: UserStatus;
+  emailVerifiedAt: Date | null;
+}
+
+/** Public API of identity (spec 03 §2). Every write runs in the caller's transaction. */
 export interface IAccountService {
   /** Throws EMAIL_ALREADY_REGISTERED (via the `uq_users_email` mapping). */
   createPendingUser(
@@ -27,6 +36,15 @@ export interface IAccountService {
     input: { email: string; role: InvitedRole },
     trx: DbTransaction,
   ): Promise<{ userId: string }>;
+  /** Batched (G20). Unknown ids are left out. */
+  getUsersByIds(ids: readonly string[]): Promise<UserSummary[]>;
+  /** Suspending revokes every session. USER_NOT_FOUND, USER_INVALID_STATUS_TRANSITION. */
+  setUserStatus(
+    userId: string,
+    status: typeof UserStatus.ACTIVE | typeof UserStatus.SUSPENDED,
+    actorUserId: string,
+    trx: DbTransaction,
+  ): Promise<void>;
 }
 
 @injectable()
@@ -36,6 +54,8 @@ export class AccountService implements IAccountService {
     @inject(TOKENS.VerificationCodeService) private readonly codes: VerificationCodeService,
     @inject(TOKENS.IdentityEmailNotifier) private readonly notifier: IdentityEmailNotifier,
     @inject(TOKENS.PasswordHasher) private readonly hasher: IPasswordHasher,
+    @inject(TOKENS.InvitationService) private readonly invitations: InvitationService,
+    @inject(TOKENS.UserAdminService) private readonly userAdmin: UserAdminService,
   ) {}
 
   /** `email` must already be normalised (the callers' DTOs trim and lower-case it). */
@@ -63,13 +83,27 @@ export class AccountService implements IAccountService {
     input: { email: string; role: InvitedRole },
     trx: DbTransaction,
   ): Promise<{ userId: string }> {
-    if (!INVITED_ROLES.has(input.role)) throw new Error(`Role ${input.role} cannot be invited`);
-    const user = await this.users.insert(
-      { email: input.email, passwordHash: null, role: input.role, status: UserStatus.INVITED },
-      trx,
-    );
-    const { token, expiresAt } = await this.codes.issueInvite(user.id, trx);
-    await this.notifier.requestInviteEmail(trx, recipientOf(user), user.role, token, expiresAt);
+    const user = await this.invitations.invite(input.email, input.role, trx);
     return { userId: user.id };
+  }
+
+  async getUsersByIds(ids: readonly string[]): Promise<UserSummary[]> {
+    const users = await this.users.findByIds(ids);
+    return users.map((user) => ({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      emailVerifiedAt: user.emailVerifiedAt,
+    }));
+  }
+
+  async setUserStatus(
+    userId: string,
+    status: typeof UserStatus.ACTIVE | typeof UserStatus.SUSPENDED,
+    actorUserId: string,
+    trx: DbTransaction,
+  ): Promise<void> {
+    await this.userAdmin.changeStatus(userId, status, { actorUserId }, trx);
   }
 }

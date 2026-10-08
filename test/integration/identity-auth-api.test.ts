@@ -5,6 +5,7 @@ import { type IAccountService } from '../../src/app/identity';
 import { type AuthTokensDto, type MessageDto } from '../../src/app/identity/dto/auth-response.dto';
 import { TOKENS } from '../../src/lib/di';
 import { errorBody, successBody } from '../helpers/http';
+import { API, identityFixtures, NEW_PASSWORD, newEmail, PASSWORD } from '../helpers/identity';
 import { signTestAccessToken } from '../helpers/jwt';
 import { startTestApp, type TestApp } from '../helpers/test-app';
 
@@ -12,65 +13,19 @@ import { startTestApp, type TestApp } from '../helpers/test-app';
  * Spec 03 §4.2–§4.9b over HTTP against real Postgres/Redis: happy path, validation, authz,
  * plus the security properties (generic answers, reuse detection, attempt counting, no plain secrets).
  */
-const API = '/api/v1';
-const PASSWORD = 'correct horse battery';
-const NEW_PASSWORD = 'another long passphrase';
-
-type Template = 'email_verification' | 'password_reset' | 'account_invite';
-
 describe('identity auth endpoints', () => {
   let t: TestApp;
-  let accounts: IAccountService;
+  let fx: ReturnType<typeof identityFixtures>;
 
   const post = (path: string, body: unknown) =>
     request(t.app)
       .post(`${API}${path}`)
       .send(body as object);
-  const newEmail = () => `user-${randomUUID()}@example.com`;
-
-  /** The decrypted secret of the latest email of `template` queued for `userId`. */
-  async function latestSecret(userId: string, template: Template): Promise<Record<string, string>> {
-    const row = await t.infra.db
-      .knex('events_outbox')
-      .select('payload')
-      .where({ aggregate_id: userId, event_type: 'notification.email_requested' })
-      .whereRaw("payload->>'template' = ?", [template])
-      .orderBy('id', 'desc')
-      .first<{ payload: { encryptedSecrets: string } } | undefined>();
-    if (!row) throw new Error(`no ${template} email for ${userId}`);
-    return JSON.parse(
-      t.infra.secretBox.open(row.payload.encryptedSecrets, `${userId}:${template}`),
-    ) as Record<string, string>;
-  }
-
-  async function createPending(email = newEmail()): Promise<{ userId: string; email: string; otp: string }> {
-    const { userId } = await t.infra.db.run((trx) =>
-      accounts.createPendingUser({ email, password: PASSWORD, role: 'customer' }, trx),
-    );
-    const { otp } = await latestSecret(userId, 'email_verification');
-    if (!otp) throw new Error('missing otp');
-    return { userId, email, otp };
-  }
-
-  /** A verified, logged-in customer. */
-  async function createActive(): Promise<{ userId: string; email: string; session: AuthTokensDto }> {
-    const { userId, email, otp } = await createPending();
-    const res = await post('/auth/email/verify', { email, otp });
-    expect(res.status).toBe(200);
-    return { userId, email, session: successBody<AuthTokensDto>(res).data };
-  }
-
-  async function createInvited(
-    email = newEmail(),
-  ): Promise<{ userId: string; email: string; token: string }> {
-    const { userId } = await t.infra.db.run((trx) =>
-      accounts.createInvitedUser({ email, role: 'admin' }, trx),
-    );
-    const { inviteUrl } = await latestSecret(userId, 'account_invite');
-    const token = new URL(inviteUrl ?? '').searchParams.get('token');
-    if (!token) throw new Error('missing invite token');
-    return { userId, email, token };
-  }
+  const latestSecret: ReturnType<typeof identityFixtures>['latestSecret'] = (...args) =>
+    fx.latestSecret(...args);
+  const createPending = () => fx.createPending();
+  const createActive = () => fx.createActive();
+  const createInvited = () => fx.createInvited();
 
   const login = (email: string, password = PASSWORD, deviceName?: string) =>
     post('/auth/login', deviceName === undefined ? { email, password } : { email, password, deviceName });
@@ -87,7 +42,7 @@ describe('identity auth endpoints', () => {
 
   beforeAll(async () => {
     t = await startTestApp({ envOverrides: { RATE_LIMIT_STRICT_AUTH_POINTS: '10000' } });
-    accounts = t.container.resolve<IAccountService>(TOKENS.AccountService);
+    fx = identityFixtures(t);
   });
   afterAll(async () => {
     await t.close();

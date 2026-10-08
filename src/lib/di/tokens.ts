@@ -32,6 +32,9 @@ export const TOKENS = {
   AccountService: Symbol.for('AccountService'),
   AuthService: Symbol.for('AuthService'),
   AuthController: Symbol.for('AuthController'),
+  InvitationService: Symbol.for('InvitationService'),
+  UserAdminService: Symbol.for('UserAdminService'),
+  AdminController: Symbol.for('AdminController'),
 
   // health module
   HealthService: Symbol.for('HealthService'),

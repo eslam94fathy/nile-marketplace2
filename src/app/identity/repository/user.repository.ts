@@ -2,6 +2,7 @@ import { inject, injectable } from 'tsyringe';
 import { type UserRole } from '../../../lib/auth';
 import { type DbExecutor, type DbTransaction, type IDatabase } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
+import { applyListQuery, type ParsedListQuery } from '../../../lib/http';
 import { IDENTITY_TABLES } from '../constants';
 import { type UserStatus } from '../enums';
 import { User } from '../model/user.model';
@@ -88,6 +89,27 @@ export class UserRepository {
     if (options.forUpdate) void query.forUpdate();
     const row = await query;
     return row ? toModel(row) : undefined;
+  }
+
+  /** EXISTS check (G22): the seed CLI refuses an existing email with a friendly message. */
+  async existsByEmail(email: string, trx?: DbTransaction): Promise<boolean> {
+    const result = await this.exec(trx).raw<{ rows: { exists: boolean }[] }>(
+      `SELECT EXISTS (SELECT 1 FROM ${T} WHERE email = ?) AS "exists"`,
+      [email],
+    );
+    return result.rows[0]?.exists === true;
+  }
+
+  /**
+   * One page of users of a role (admin lists). Filters and sort come from the endpoint whitelist.
+   * Returns `limit + 1` rows at most (`toPage` trims and builds the cursor).
+   */
+  async listByRole(role: UserRole, query: ParsedListQuery, trx?: DbTransaction): Promise<User[]> {
+    const qb = this.exec(trx)<UserRow>(T)
+      .select(...COLUMNS)
+      .where({ role });
+    const rows = (await applyListQuery(qb, query, 'id')) as UserRow[];
+    return rows.map(toModel);
   }
 
   /** Batched lookup for other modules (no N+1, G20). */

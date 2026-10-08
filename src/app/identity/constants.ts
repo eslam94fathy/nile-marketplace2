@@ -39,3 +39,13 @@ export const GENERIC_MESSAGES = {
   OTP_SENT: 'If the account can receive a code, a new one has been sent',
   PASSWORD_RESET_SENT: 'If an active account uses this email, a reset code has been sent',
 } as const;
+
+export const ADMIN_PATHS = {
+  ADMINS: '/admin/admins',
+  RESEND_INVITE: '/admin/users/:userId/resend-invite',
+  SUSPEND: '/admin/users/:userId/suspend',
+  REACTIVATE: '/admin/users/:userId/reactivate',
+} as const;
+
+export const SUSPEND_REASON_MIN_LENGTH = 3;
+export const SUSPEND_REASON_MAX_LENGTH = 500;

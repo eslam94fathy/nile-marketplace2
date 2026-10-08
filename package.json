@@ -18,6 +18,7 @@
     "migrate": "node dist/migrate.js latest",
     "migrate:rollback": "node dist/migrate.js rollback",
     "migrate:make": "node scripts/make-migration.js",
+    "seed:admin": "node dist/seed-admin.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",

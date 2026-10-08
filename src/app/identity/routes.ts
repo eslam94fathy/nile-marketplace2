@@ -1,15 +1,17 @@
 import { type Request, Router } from 'express';
-import { type JwtVerifier } from '../../lib/auth';
+import { type JwtVerifier, UserRole } from '../../lib/auth';
 import { type OpenApiRegistry, type RouteDoc } from '../../lib/http';
 import {
   authenticate,
+  requireRole,
   byIp,
   byIpAndEmail,
   emailRateKey,
   RateLimitClass,
   type RateLimiters,
 } from '../../lib/middleware';
-import { IDENTITY_PATHS as P } from './constants';
+import { ADMIN_PATHS as A, IDENTITY_PATHS as P } from './constants';
+import { type AdminController } from './controller/admin.controller';
 import { type AuthController } from './controller/auth.controller';
 import {
   AcceptInviteDto,
@@ -21,11 +23,15 @@ import {
   VerifyEmailDto,
 } from './dto/auth-request.dto';
 import { AuthTokensDto, MessageDto } from './dto/auth-response.dto';
+import { InviteAdminDto, SuspendUserDto } from './dto/admin-request.dto';
+import { AdminListItemDto, InvitedAdminDto, UserStatusDto } from './dto/admin-response.dto';
 
 const TAGS = ['auth'] as const;
+const ADMIN_TAGS = ['admin: users'] as const;
 
 export interface IdentityRouteDeps {
   auth: AuthController;
+  admin: AdminController;
   jwtVerifier: JwtVerifier;
   rateLimiters: RateLimiters;
   docs: OpenApiRegistry;
@@ -106,5 +112,71 @@ export function identityRoutes(deps: IdentityRouteDeps): Router {
     noContent,
     true,
   );
+
+  mountAdminRoutes(router, deps);
   return router;
+}
+
+/** Spec 03 §4.10–§4.13: admin only, general rate limit (applied globally). */
+function mountAdminRoutes(router: Router, deps: IdentityRouteDeps): void {
+  const { admin, docs, basePath } = deps;
+  const adminOnly = [authenticate(deps.jwtVerifier), requireRole(UserRole.ADMIN)];
+
+  router.post(A.ADMINS, ...adminOnly, admin.inviteAdmin);
+  router.get(A.ADMINS, ...adminOnly, admin.listAdmins);
+  router.post(A.RESEND_INVITE, ...adminOnly, admin.resendInvite);
+  router.post(A.SUSPEND, ...adminOnly, admin.suspend);
+  router.post(A.REACTIVATE, ...adminOnly, admin.reactivate);
+
+  const common = { tags: ADMIN_TAGS, auth: true } as const;
+  const userStatus = { 200: { description: 'The user after the change', body: UserStatusDto } };
+  docs.add({
+    ...common,
+    method: 'post',
+    path: `${basePath}${A.ADMINS}`,
+    summary: 'Invite another admin; the invite email is queued (EMAIL_ALREADY_REGISTERED)',
+    requestBody: InviteAdminDto,
+    responses: { 201: { description: 'The invited admin', body: InvitedAdminDto } },
+  });
+  docs.add({
+    ...common,
+    method: 'get',
+    path: `${basePath}${A.ADMINS}`,
+    summary: 'List admins. Filters: status[eq|in], createdAt[gte|lte]. Sort: createdAt (default -createdAt)',
+    query: [
+      { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1 } },
+      { name: 'cursor', in: 'query', schema: { type: 'string' } },
+      { name: 'sort', in: 'query', schema: { enum: ['createdAt', '-createdAt'] } },
+      { name: 'status[eq]', in: 'query', schema: { type: 'string' } },
+      { name: 'status[in]', in: 'query', schema: { type: 'string' }, description: 'comma-separated' },
+      { name: 'createdAt[gte]', in: 'query', schema: { type: 'string', format: 'date-time' } },
+      { name: 'createdAt[lte]', in: 'query', schema: { type: 'string', format: 'date-time' } },
+    ],
+    responses: {
+      200: { description: 'One page of admins', body: AdminListItemDto, isArray: true, paginated: true },
+    },
+  });
+  docs.add({
+    ...common,
+    method: 'post',
+    path: `${basePath}${A.RESEND_INVITE}`,
+    summary: 'Send a new invite link; the old one stops working (USER_NOT_FOUND, USER_NOT_INVITED)',
+    responses: { 204: { description: 'Invite queued' } },
+  });
+  docs.add({
+    ...common,
+    method: 'post',
+    path: `${basePath}${A.SUSPEND}`,
+    summary:
+      'Suspend a customer or admin; every session is revoked (USER_NOT_FOUND, USER_INVALID_STATUS_TRANSITION, CANNOT_SUSPEND_SELF)',
+    requestBody: SuspendUserDto,
+    responses: userStatus,
+  });
+  docs.add({
+    ...common,
+    method: 'post',
+    path: `${basePath}${A.REACTIVATE}`,
+    summary: 'Reactivate a suspended customer or admin (USER_NOT_FOUND, USER_INVALID_STATUS_TRANSITION)',
+    responses: userStatus,
+  });
 }
