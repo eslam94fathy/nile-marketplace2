@@ -16,6 +16,10 @@ export type { InvitedRole } from './invitation.service';
 
 const SELF_REGISTERED_ROLES: ReadonlySet<UserRole> = new Set([UserRole.CUSTOMER, UserRole.SELLER]);
 
+declare const passwordHashBrand: unique symbol;
+/** A bcrypt hash made by `hashPassword`. Branded so a caller can't pass a plain password by mistake. */
+export type PasswordHash = string & { readonly [passwordHashBrand]: true };
+
 /** What other modules see of a user (spec 03 §2). */
 export interface UserSummary {
   id: string;
@@ -27,9 +31,11 @@ export interface UserSummary {
 
 /** Public API of identity (spec 03 §2). Every write runs in the caller's transaction. */
 export interface IAccountService {
+  /** bcrypt is slow on purpose: call it before opening the transaction (spec 03 I-4, I-10). */
+  hashPassword(password: string): Promise<PasswordHash>;
   /** Throws EMAIL_ALREADY_REGISTERED (via the `uq_users_email` mapping). */
   createPendingUser(
-    input: { email: string; password: string; role: SelfRegisteredRole },
+    input: { email: string; passwordHash: PasswordHash; role: SelfRegisteredRole },
     trx: DbTransaction,
   ): Promise<{ userId: string }>;
   createInvitedUser(
@@ -58,9 +64,13 @@ export class AccountService implements IAccountService {
     @inject(TOKENS.UserAdminService) private readonly userAdmin: UserAdminService,
   ) {}
 
+  async hashPassword(password: string): Promise<PasswordHash> {
+    return (await this.hasher.hash(password)) as PasswordHash;
+  }
+
   /** `email` must already be normalised (the callers' DTOs trim and lower-case it). */
   async createPendingUser(
-    input: { email: string; password: string; role: SelfRegisteredRole },
+    input: { email: string; passwordHash: PasswordHash; role: SelfRegisteredRole },
     trx: DbTransaction,
   ): Promise<{ userId: string }> {
     // Guards against a cast at the call site: other roles never self-register.
@@ -68,7 +78,7 @@ export class AccountService implements IAccountService {
     const user = await this.users.insert(
       {
         email: input.email,
-        passwordHash: await this.hasher.hash(input.password),
+        passwordHash: input.passwordHash,
         role: input.role,
         status: UserStatus.PENDING_EMAIL_VERIFICATION,
       },

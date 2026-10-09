@@ -44,8 +44,9 @@ export function identityFixtures(t: TestApp) {
     email = newEmail(),
     role: 'customer' | 'seller' = 'customer',
   ): Promise<{ userId: string; email: string; otp: string }> {
+    const passwordHash = await accounts().hashPassword(PASSWORD);
     const { userId } = await t.infra.db.run((trx) =>
-      accounts().createPendingUser({ email, password: PASSWORD, role }, trx),
+      accounts().createPendingUser({ email, passwordHash, role }, trx),
     );
     const { otp } = await latestSecret(userId, 'email_verification');
     if (!otp) throw new Error('missing otp');

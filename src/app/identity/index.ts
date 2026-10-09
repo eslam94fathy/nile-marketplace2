@@ -35,6 +35,7 @@ export { IdentityErrorCode } from './errors';
 /** Inject with `TOKENS.AccountService`. */
 export type {
   IAccountService,
+  PasswordHash,
   SelfRegisteredRole,
   InvitedRole,
   UserSummary,

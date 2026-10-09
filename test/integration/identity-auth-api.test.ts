@@ -403,8 +403,9 @@ describe('identity auth rate limits', () => {
     try {
       const accounts = fresh.container.resolve<IAccountService>(TOKENS.AccountService);
       const email = `limited-${randomUUID()}@example.com`;
+      const passwordHash = await accounts.hashPassword(PASSWORD);
       const { userId } = await fresh.infra.db.run((trx) =>
-        accounts.createPendingUser({ email, password: PASSWORD, role: 'customer' }, trx),
+        accounts.createPendingUser({ email, passwordHash, role: 'customer' }, trx),
       );
       const accessToken = await signTestAccessToken({ sub: userId });
       const body = { currentPassword: PASSWORD, newPassword: NEW_PASSWORD, refreshToken: 'F'.repeat(43) };
