@@ -23,6 +23,10 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261009192353_create_delivery_settings',
       '20261009194352_create_customers',
       '20261009194354_create_customer_addresses',
+      '20261009202641_create_sellers',
+      '20261009202643_create_seller_status_history',
+      '20261009202644_create_seller_commission_history',
+      '20261009202646_create_seller_settings',
     ]);
   });
 

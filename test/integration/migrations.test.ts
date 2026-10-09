@@ -298,4 +298,54 @@ describe('migrations on a real Postgres 18', () => {
       );
     });
   });
+
+  describe('sellers + seller_settings', () => {
+    const seller = async (overrides: Record<string, unknown> = {}) => ({
+      user_id: await insertUser({ role: 'seller' }),
+      business_name: `Shop ${randomUUID()}`,
+      contact_phone: '+201221234567',
+      pickup_governorate_id: (
+        await db('governorates').select('id').where({ code: 'EG-C' }).first<{ id: string }>()
+      )?.id,
+      pickup_city: 'Cairo',
+      pickup_area: 'Nasr City',
+      pickup_street: 'Street',
+      pickup_building: '5',
+      status: 'pending_approval',
+      commission_rate: '0.1000',
+      ...overrides,
+    });
+
+    it('business names are unique case-insensitively', async () => {
+      await db('sellers').insert(await seller({ business_name: 'Nile Crafts' }));
+      expect(
+        (await pgFailure(async () => db('sellers').insert(await seller({ business_name: 'NILE crafts' }))))
+          .constraint,
+      ).toBe('uq_sellers_business_name_lower');
+    });
+
+    it('enforces the status whitelist, the rate range and a reason for rejected sellers', async () => {
+      const fails = async (overrides: Record<string, unknown>) =>
+        (await pgFailure(async () => db('sellers').insert(await seller(overrides)))).constraint;
+      expect(await fails({ status: 'banned' })).toBe('chk_sellers_status');
+      expect(await fails({ commission_rate: '1.5' })).toBe('chk_sellers_commission_rate');
+      expect(await fails({ status: 'rejected' })).toBe('chk_sellers_rejection_reason');
+      await expect(
+        db('sellers').insert(await seller({ status: 'rejected', rejection_reason: 'Docs' })),
+      ).resolves.toBeDefined();
+    });
+
+    it('seller_settings holds exactly one seeded row (0.1000)', async () => {
+      expect(await db('seller_settings').select('default_commission_rate')).toEqual([
+        { default_commission_rate: '0.1000' },
+      ]);
+      expect(
+        (
+          await pgFailure(() =>
+            db('seller_settings').insert({ is_singleton: true, default_commission_rate: 0.2 }),
+          )
+        ).constraint,
+      ).toBe('uq_seller_settings_is_singleton');
+    });
+  });
 });

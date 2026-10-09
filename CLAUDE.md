@@ -268,6 +268,7 @@ P2-Q1 specs 04, 05 v1.0, spec 11 v1.0 for the reference-data part only, A-2 appl
 | # | Topic | Options / recommendation |
 |---|---|---|
 | SD-3d | AWS region | Rec `eu-central-1`; see `docs/design/01-architecture.md` §12.2 |
+| P2-O1 | `ON DELETE RESTRICT` violations raise SQLSTATE `23001` (restrict_violation) on Postgres 18, not `23503`, so the error handler (§9.1) returns `500` for them | Found 2026-10-09 (`test/integration/migrations.test.ts`). No P2 endpoint deletes a referenced row. **Rec:** map `23001` → `409 CONFLICT` (plus per-constraint registrations) in `PgErrorMapper` when the first endpoint that can hit it lands, and add it to §9.1 |
 
 New ones go here as rows of this table.
 
