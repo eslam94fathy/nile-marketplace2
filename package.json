@@ -20,6 +20,7 @@
     "migrate:make": "node scripts/make-migration.js",
     "postman:generate": "node scripts/make-postman.js",
     "seed:admin": "node dist/seed-admin.js",
+    "seed:dev": "node --env-file=.env scripts/dev-seed.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",

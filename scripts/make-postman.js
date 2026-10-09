@@ -49,10 +49,10 @@ if (pm.response.code === 200) {
 const API = '/api/v1';
 const collection = {
   info: {
-    name: 'Nile Marketplace API (Phase 1)',
+    name: 'Nile Marketplace API (Phases 1–2)',
     _postman_id: 'c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01',
     description: [
-      'Every endpoint built so far: health, API docs, identity auth (spec 03 §4.2–§4.9b) and identity admin (§4.10–§4.13).',
+      'Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05) and delivery reference data (spec 11 §4.1, §4.3).',
       '',
       'Variables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.',
       '',
@@ -62,7 +62,11 @@ const collection = {
       '3. Auth → "Accept invite" (sets your password and logs you in).',
       '4. Admin requests now work with the stored access token.',
       '',
-      'Self-registration (customers, sellers) arrives in Phase 2, so "Verify email" and "Resend OTP" only apply to accounts created through identity\'s public API until then.',
+      'Customer / seller flow: set `email` to a fresh address → "Register customer" (or "Register seller") → Local helpers → "Latest email" → "Extract OTP / invite token" → Auth → "Verify email" (logs you in). "Delivery" → "List governorates" stores Cairo in `governorateId` first, because addresses and pickup addresses need one.',
+      '',
+      'Sample delivery fees for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees).',
+      '',
+      'Tokens are per account: log in as the admin again (Auth → Login) before the "Admin: …" folders.',
       '',
       'Errors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.',
     ].join('\n'),
@@ -97,6 +101,10 @@ const collection = {
     { key: 'targetUserId', value: '' },
     { key: 'cursor', value: '' },
     { key: 'mailpitMessageId', value: '' },
+    { key: 'governorateId', value: '' },
+    { key: 'addressId', value: '' },
+    { key: 'businessName', value: 'Nile Crafts' },
+    { key: 'sellerId', value: '' },
   ],
   item: [
     {
@@ -290,6 +298,302 @@ const collection = {
           auth: true,
           description:
             'suspended → active. 200 { id, email, role, status }. Errors: USER_NOT_FOUND 404, USER_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Delivery',
+      description: 'spec 11 §4.1. Public, general rate limit.',
+      item: [
+        req({
+          name: 'List governorates',
+          method: 'GET',
+          path: `${API}/governorates`,
+          description:
+            'All 27, ordered by name (English; localize by `code`, ISO 3166-2:EG). `deliveryFee` null = not deliverable. Cached in Redis. The test stores Cairo (EG-C) in `governorateId`.',
+          tests: `${expect(200)}\nconst cairo = pm.response.json().data.find((g) => g.code === 'EG-C');\nif (cairo) pm.collectionVariables.set('governorateId', cairo.id);`,
+        }),
+      ],
+    },
+    {
+      name: 'Customer',
+      description:
+        'spec 04. Registration is public (strict-auth rate limit); everything else needs a customer token (403 for other roles).',
+      item: [
+        req({
+          name: 'Register customer',
+          method: 'POST',
+          path: `${API}/auth/register/customer`,
+          body: {
+            email: '{{email}}',
+            password: '{{password}}',
+            firstName: 'Mona',
+            lastName: 'Ali',
+            phone: '+201001234567',
+          },
+          description:
+            '201 { userId, email, status: pending_email_verification }. A verification OTP is emailed; no tokens until Auth → "Verify email". Errors: EMAIL_ALREADY_REGISTERED 409. Phone: Egyptian mobile in E.164 (+2010/11/12/15…).',
+          tests: expect(201),
+        }),
+        req({ name: 'My profile', method: 'GET', path: `${API}/me`, auth: true, tests: expect(200) }),
+        req({
+          name: 'Update my profile',
+          method: 'PATCH',
+          path: `${API}/me`,
+          auth: true,
+          body: { firstName: 'Salma', phone: '+201111234567' },
+          description: 'At least one of firstName, lastName, phone. The email cannot be changed.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'List my addresses',
+          method: 'GET',
+          path: `${API}/me/addresses`,
+          auth: true,
+          description: 'No pagination (max CUSTOMER_MAX_ADDRESSES). The default first, then newest first.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Add address',
+          method: 'POST',
+          path: `${API}/me/addresses`,
+          auth: true,
+          body: {
+            label: 'Home',
+            recipientName: 'Mona Ali',
+            recipientPhone: '+201001234567',
+            governorateId: '{{governorateId}}',
+            city: 'Cairo',
+            area: 'Zamalek',
+            street: '26th of July St',
+            building: '12',
+            floor: '3',
+            apartment: null,
+            landmark: null,
+            isDefault: true,
+          },
+          description:
+            '201. Becomes the default when isDefault=true or when there is no default yet. Errors: ADDRESS_LIMIT_REACHED 422, GOVERNORATE_NOT_FOUND 422. The test stores the id in `addressId`.',
+          tests: `${expect(201)}\nif (pm.response.code === 201) pm.collectionVariables.set('addressId', pm.response.json().data.id);`,
+        }),
+        req({
+          name: 'Get address',
+          method: 'GET',
+          path: `${API}/me/addresses/{{addressId}}`,
+          auth: true,
+          description: "ADDRESS_NOT_FOUND 404 when missing, deleted or another customer's.",
+          tests: expect(200),
+        }),
+        req({
+          name: 'Update address',
+          method: 'PATCH',
+          path: `${API}/me/addresses/{{addressId}}`,
+          auth: true,
+          body: { label: 'Work', floor: null },
+          description:
+            'Any subset of the fields; null clears floor / apartment / landmark. isDefault=true moves the default here; isDefault=false on the default → DEFAULT_ADDRESS_UNSET_NOT_ALLOWED 422.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Delete address',
+          method: 'DELETE',
+          path: `${API}/me/addresses/{{addressId}}`,
+          auth: true,
+          description:
+            'Soft delete, 204. Deleting the default leaves no default. Past orders keep their copy.',
+          tests: expect(204),
+        }),
+      ],
+    },
+    {
+      name: 'Seller',
+      description:
+        'spec 05 §4.2–§4.3. Registration is public (strict-auth rate limit); the rest needs a seller token.',
+      item: [
+        req({
+          name: 'Register seller',
+          method: 'POST',
+          path: `${API}/auth/register/seller`,
+          body: {
+            email: '{{email}}',
+            password: '{{password}}',
+            businessName: '{{businessName}}',
+            contactPhone: '+201221234567',
+            pickupAddress: {
+              governorateId: '{{governorateId}}',
+              city: 'Cairo',
+              area: 'Nasr City',
+              street: 'Abbas El Akkad St',
+              building: '5',
+              landmark: null,
+            },
+          },
+          description:
+            '201 { userId, sellerId, email, status: pending_email_verification, sellerStatus: pending_approval }. Verify the email, then an admin approves. Errors: EMAIL_ALREADY_REGISTERED 409, BUSINESS_NAME_TAKEN 409 (case-insensitive), GOVERNORATE_NOT_FOUND 422. The test stores `sellerId`.',
+          tests: `${expect(201)}\nif (pm.response.code === 201) pm.collectionVariables.set('sellerId', pm.response.json().data.sellerId);`,
+        }),
+        req({
+          name: 'My seller profile',
+          method: 'GET',
+          path: `${API}/seller/profile`,
+          auth: true,
+          description: 'Includes status, rejectionReason (after a rejection) and commissionRate.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Update my seller profile',
+          method: 'PATCH',
+          path: `${API}/seller/profile`,
+          auth: true,
+          body: { contactPhone: '+201551234567' },
+          description:
+            'Any status; no re-approval. pickupAddress (optional) replaces the whole address. Errors: BUSINESS_NAME_TAKEN 409, GOVERNORATE_NOT_FOUND 422.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Re-apply',
+          method: 'POST',
+          path: `${API}/seller/profile/reapply`,
+          auth: true,
+          description: 'rejected → pending_approval. Otherwise SELLER_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: sellers',
+      description: 'spec 05 §4.4. Admin role only. Every decision returns the seller detail.',
+      item: [
+        req({
+          name: 'List sellers',
+          method: 'GET',
+          path: `${API}/admin/sellers`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'sort', value: '-createdAt' },
+            { key: 'status[eq]', value: 'pending_approval', description: 'eq | in' },
+            { key: 'businessName[like]', value: 'nile', disabled: true },
+            { key: 'pickupGovernorateId[eq]', value: '{{governorateId}}', disabled: true },
+            { key: 'createdAt[gte]', value: '2026-01-01', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description:
+            'The approval queue by default here (status=pending_approval). Cursor pagination; INVALID_QUERY 400 for anything off the whitelist. The test stores the first id in `sellerId` and nextCursor in `cursor`.',
+          tests: `${expect(200)}\nconst body = pm.response.json();\nif (body.data?.[0]) pm.collectionVariables.set('sellerId', body.data[0].id);\nif (body.meta) pm.collectionVariables.set('cursor', body.meta.nextCursor ?? '');`,
+        }),
+        req({
+          name: 'Seller detail',
+          method: 'GET',
+          path: `${API}/admin/sellers/{{sellerId}}`,
+          auth: true,
+          description:
+            'Pickup address, emailVerified, and the newest 50 status / commission history entries.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Approve',
+          method: 'POST',
+          path: `${API}/admin/sellers/{{sellerId}}/approve`,
+          auth: true,
+          description:
+            'pending_approval → approved; publishes seller.approved. Errors: SELLER_EMAIL_NOT_VERIFIED 409, SELLER_INVALID_STATUS_TRANSITION 409, SELLER_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Reject',
+          method: 'POST',
+          path: `${API}/admin/sellers/{{sellerId}}/reject`,
+          auth: true,
+          body: { reason: 'Please add a clearer business name' },
+          description:
+            'pending_approval → rejected. `reason` 3..500, shown to the seller until the next decision.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Suspend',
+          method: 'POST',
+          path: `${API}/admin/sellers/{{sellerId}}/suspend`,
+          auth: true,
+          body: { reason: 'Reported counterfeit products' },
+          description:
+            'approved → suspended; publishes seller.suspended (catalog hides the products). Open orders continue; login still works.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Reinstate',
+          method: 'POST',
+          path: `${API}/admin/sellers/{{sellerId}}/reinstate`,
+          auth: true,
+          body: { reason: 'Appeal accepted' },
+          description:
+            'suspended → approved; publishes seller.approved (previousStatus suspended). The body is optional.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Change commission rate',
+          method: 'PUT',
+          path: `${API}/admin/sellers/{{sellerId}}/commission-rate`,
+          auth: true,
+          body: { commissionRate: '0.1250' },
+          description:
+            'Rate string 0..1, up to 4 decimals. New checkouts only. COMMISSION_RATE_UNCHANGED 409 for the current rate.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Commission settings',
+          method: 'GET',
+          path: `${API}/admin/settings/commission`,
+          auth: true,
+          tests: expect(200),
+        }),
+        req({
+          name: 'Change default commission',
+          method: 'PUT',
+          path: `${API}/admin/settings/commission`,
+          auth: true,
+          body: { defaultCommissionRate: '0.1000' },
+          description: 'Applies to sellers who register afterwards; existing sellers keep their own rate.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: delivery',
+      description: 'spec 11 §4.3 (reference data). Admin role only.',
+      item: [
+        req({
+          name: 'List governorates (admin)',
+          method: 'GET',
+          path: `${API}/admin/governorates`,
+          auth: true,
+          tests: expect(200),
+        }),
+        req({
+          name: 'Set delivery fee',
+          method: 'PATCH',
+          path: `${API}/admin/governorates/{{governorateId}}`,
+          auth: true,
+          body: { deliveryFee: '50.00' },
+          description:
+            'Money string, or null to stop delivering there. New checkouts only; clears the cached list. GOVERNORATE_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Delivery settings',
+          method: 'GET',
+          path: `${API}/admin/settings/delivery`,
+          auth: true,
+          tests: expect(200),
+        }),
+        req({
+          name: 'Change agent fee share',
+          method: 'PUT',
+          path: `${API}/admin/settings/delivery`,
+          auth: true,
+          body: { agentFeeShareRate: '0.7000' },
+          description: "The agents' share of the delivery fee (Q-34). New checkouts only.",
           tests: expect(200),
         }),
       ],
