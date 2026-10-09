@@ -11,12 +11,15 @@ import { TOKENS } from '../../lib/di';
 import { type PgErrorMapper } from '../../lib/error';
 import { type OpenApiRegistry } from '../../lib/http';
 import { type RateLimiters } from '../../lib/middleware';
+import { SellerAdminController } from './controller/seller-admin.controller';
 import { SellerController } from './controller/seller.controller';
 import { registerSellersConstraintErrors } from './errors';
+import { SellerCommissionHistoryRepository } from './repository/seller-commission-history.repository';
 import { SellerSettingsRepository } from './repository/seller-settings.repository';
 import { SellerStatusHistoryRepository } from './repository/seller-status-history.repository';
 import { SellerRepository } from './repository/seller.repository';
 import { sellersRoutes } from './routes';
+import { SellerAdminService } from './service/seller-admin.service';
 import { SellerDirectory } from './service/seller-directory.service';
 import { SellerService } from './service/seller.service';
 
@@ -35,9 +38,12 @@ export function registerSellersModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.SellerRepository, SellerRepository);
   container.registerSingleton(TOKENS.SellerStatusHistoryRepository, SellerStatusHistoryRepository);
   container.registerSingleton(TOKENS.SellerSettingsRepository, SellerSettingsRepository);
+  container.registerSingleton(TOKENS.SellerCommissionHistoryRepository, SellerCommissionHistoryRepository);
   container.registerSingleton(TOKENS.SellerService, SellerService);
   container.registerSingleton(TOKENS.SellerDirectory, SellerDirectory);
+  container.registerSingleton(TOKENS.SellerAdminService, SellerAdminService);
   container.registerSingleton(TOKENS.SellerController, SellerController);
+  container.registerSingleton(TOKENS.SellerAdminController, SellerAdminController);
   registerSellersConstraintErrors(container.resolve<PgErrorMapper>(TOKENS.PgErrorMapper));
 }
 
@@ -45,6 +51,7 @@ export function registerSellersModule(container: DependencyContainer): void {
 export function createSellersRouter(container: DependencyContainer, basePath: string): Router {
   return sellersRoutes({
     sellers: container.resolve<SellerController>(TOKENS.SellerController),
+    admin: container.resolve<SellerAdminController>(TOKENS.SellerAdminController),
     jwtVerifier: container.resolve<JwtVerifier>(TOKENS.JwtVerifier),
     rateLimiters: container.resolve<RateLimiters>(TOKENS.RateLimiters),
     docs: container.resolve<OpenApiRegistry>(TOKENS.OpenApiRegistry),

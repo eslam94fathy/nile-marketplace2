@@ -20,6 +20,7 @@ describe('sellers endpoints (registration and self-service)', () => {
   let fx: ReturnType<typeof sellerFixtures>;
   let cairoId: string;
   let gizaId: string;
+  let adminToken: string;
 
   const register = (body: object) => request(t.app).post(`${API}/auth/register/seller`).send(body);
   const as = (token: string | undefined) => {
@@ -37,6 +38,7 @@ describe('sellers endpoints (registration and self-service)', () => {
     fx = sellerFixtures(t);
     cairoId = await fx.governorateId('EG-C');
     gizaId = await fx.governorateId('EG-GZ');
+    adminToken = (await fx.createActiveAdmin()).session.accessToken;
   });
   afterAll(async () => {
     await t.close();
@@ -237,7 +239,10 @@ describe('sellers endpoints (registration and self-service)', () => {
 
     it('200: rejected → pending_approval, the reason is kept, one history row; a second call → 409', async () => {
       const seller = await fx.createVerifiedSeller();
-      await fx.forceRejected(seller.sellerId, 'Missing documents');
+      const reject = await as(adminToken).post(`/admin/sellers/${seller.sellerId}/reject`, {
+        reason: 'Missing documents',
+      });
+      expect(reject.status).toBe(200);
 
       const res = await as(seller.accessToken).post('/seller/profile/reapply');
       expect(res.status).toBe(200);

@@ -1,6 +1,7 @@
 import { inject, injectable } from 'tsyringe';
 import { type DbExecutor, type DbTransaction, type IDatabase } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
+import { applyListQuery, type ParsedListQuery } from '../../../lib/http';
 import { Rate } from '../../../lib/money';
 import { SELLERS_TABLES } from '../constants';
 import { type SellerStatus } from '../enums';
@@ -174,7 +175,8 @@ export class SellerRepository {
     from: SellerStatus,
     to: SellerStatus,
     trx: DbTransaction,
-    extra: { rejectionReason?: string; setApprovedAtIfNull?: boolean } = {},
+    /** `rejectionReason: null` clears it; `setApprovedAtIfNull` stamps the first approval only. */
+    extra: { rejectionReason?: string | null; setApprovedAtIfNull?: boolean } = {},
   ): Promise<Seller | undefined> {
     const [row] = await trx<SellerRow>(T)
       .where({ id, status: from })
@@ -186,5 +188,23 @@ export class SellerRepository {
       })
       .returning(COLUMNS);
     return row ? toModel(row) : undefined;
+  }
+
+  async updateCommissionRate(id: string, rate: Rate, trx: DbTransaction): Promise<Seller | undefined> {
+    const [row] = await trx<SellerRow>(T)
+      .where({ id })
+      .update({ commission_rate: rate.toString(), updated_at: trx.fn.now() })
+      .returning(COLUMNS);
+    return row ? toModel(row) : undefined;
+  }
+
+  /**
+   * One page of the admin list (spec 05 §4.4). Filters and sort come from the endpoint whitelist.
+   * Returns `limit + 1` rows at most (`toPage` trims and builds the cursor).
+   */
+  async list(query: ParsedListQuery, trx?: DbTransaction): Promise<Seller[]> {
+    const qb = this.exec(trx)<SellerRow>(T).select(...COLUMNS);
+    const rows = (await applyListQuery(qb, query, 'id')) as SellerRow[];
+    return rows.map(toModel);
   }
 }

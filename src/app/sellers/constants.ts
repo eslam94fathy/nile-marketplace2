@@ -22,3 +22,22 @@ export const PICKUP_LIMITS = {
   BUILDING: 50,
   LANDMARK: 200,
 } as const;
+
+/** Admin paths under /api/v1 (spec 05 §4.4). */
+export const SELLERS_ADMIN_PATHS = {
+  SELLERS: '/admin/sellers',
+  SELLER: '/admin/sellers/:sellerId',
+  APPROVE: '/admin/sellers/:sellerId/approve',
+  REJECT: '/admin/sellers/:sellerId/reject',
+  SUSPEND: '/admin/sellers/:sellerId/suspend',
+  REINSTATE: '/admin/sellers/:sellerId/reinstate',
+  COMMISSION_RATE: '/admin/sellers/:sellerId/commission-rate',
+  COMMISSION_SETTINGS: '/admin/settings/commission',
+} as const;
+
+/** Admin decision reasons: `str(3..500)`, the column is VARCHAR(500). */
+export const REASON_MIN_LENGTH = 3;
+export const REASON_MAX_LENGTH = 500;
+
+/** The admin detail shows the newest 50 entries of each history (spec 05 §4.4). */
+export const ADMIN_HISTORY_LIMIT = 50;

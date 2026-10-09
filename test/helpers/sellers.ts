@@ -57,13 +57,5 @@ export function sellerFixtures(t: TestApp) {
     };
   }
 
-  /** Puts a seller straight into `rejected`, bypassing the API (for re-apply tests). */
-  async function forceRejected(sellerId: string, reason: string): Promise<void> {
-    await t.infra.db
-      .knex('sellers')
-      .where({ id: sellerId })
-      .update({ status: 'rejected', rejection_reason: reason });
-  }
-
-  return { ...base, createVerifiedSeller, forceRejected };
+  return { ...base, createVerifiedSeller };
 }
