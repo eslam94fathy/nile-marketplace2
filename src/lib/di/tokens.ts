@@ -36,6 +36,16 @@ export const TOKENS = {
   UserAdminService: Symbol.for('UserAdminService'),
   AdminController: Symbol.for('AdminController'),
 
+  // customers module
+  CustomerRepository: Symbol.for('CustomerRepository'),
+  CustomerAddressRepository: Symbol.for('CustomerAddressRepository'),
+  CustomerService: Symbol.for('CustomerService'),
+  CustomerAddressService: Symbol.for('CustomerAddressService'),
+  /** Public API of customers (spec 04 §2), injected into other modules. */
+  CustomerDirectory: Symbol.for('CustomerDirectory'),
+  CustomerController: Symbol.for('CustomerController'),
+  CustomerAddressController: Symbol.for('CustomerAddressController'),
+
   // delivery module (reference data: governorates, settings)
   GovernorateRepository: Symbol.for('GovernorateRepository'),
   DeliverySettingsRepository: Symbol.for('DeliverySettingsRepository'),

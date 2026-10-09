@@ -93,6 +93,8 @@ const values = {
   OTP_RESEND_COOLDOWN_SECONDS: '60',
   INVITE_TTL_HOURS: '72',
   INVITE_URL_BASE: 'http://localhost:3000/invite',
+  // customers (spec 04)
+  CUSTOMER_MAX_ADDRESSES: '20',
   // delivery reference data (P2-Q5)
   GOVERNORATES_CACHE_TTL_SECONDS: '3600',
   // email: local inbox by default (P1-Q2); switch EMAIL_PROVIDER to mailjet to send real mail

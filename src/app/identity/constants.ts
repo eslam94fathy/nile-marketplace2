@@ -16,9 +16,7 @@ export const INVITE_TOKEN_QUERY_PARAM = 'token';
 /** `refresh_tokens.user_agent` is VARCHAR(255). */
 export const MAX_DEVICE_NAME_LENGTH = 255;
 
-/** DTO limits (docs/spec/01-api-conventions.md §1.1, spec 03 §4). */
-export const EMAIL_MAX_LENGTH = 254;
-export const PASSWORD_MIN_LENGTH = 8;
+/** DTO limits (spec 03 §4). The email and password rules are shared shorthands in `lib/http`. */
 export const DEVICE_NAME_MAX_LENGTH = 100;
 
 /** Paths under /api/v1 (spec 03 §4). */

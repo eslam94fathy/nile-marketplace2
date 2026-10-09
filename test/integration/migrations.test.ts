@@ -230,4 +230,72 @@ describe('migrations on a real Postgres 18', () => {
       ).toBe('chk_delivery_settings_agent_fee_share_rate');
     });
   });
+
+  describe('customers + customer_addresses', () => {
+    const newCustomer = async () => {
+      const userId = await insertUser();
+      const [row] = await db('customers')
+        .insert({ user_id: userId, first_name: 'Mona', last_name: 'Ali', phone: '+201001234567' })
+        .returning<{ id: string }[]>('id');
+      return { userId, customerId: row?.id ?? '' };
+    };
+    const governorateId = async () =>
+      (await db('governorates').select('id').where({ code: 'EG-C' }).first<{ id: string }>())?.id ?? '';
+    const address = (customerId: string, governorate: string, overrides: Record<string, unknown> = {}) => ({
+      customer_id: customerId,
+      governorate_id: governorate,
+      label: 'Home',
+      recipient_name: 'Mona',
+      recipient_phone: '+201001234567',
+      city: 'Cairo',
+      area: 'Zamalek',
+      street: 'Street',
+      building: '1',
+      is_default: false,
+      ...overrides,
+    });
+
+    it('one profile per user, E.164 phones', async () => {
+      const { userId } = await newCustomer();
+      const duplicate = () =>
+        db('customers').insert({ user_id: userId, first_name: 'A', last_name: 'B', phone: '+201001234567' });
+      expect((await pgFailure(duplicate)).constraint).toBe('uq_customers_user_id');
+      const badPhone = async () =>
+        db('customers').insert({
+          user_id: await insertUser(),
+          first_name: 'A',
+          last_name: 'B',
+          phone: '0100',
+        });
+      expect((await pgFailure(badPhone)).constraint).toBe('chk_customers_phone');
+    });
+
+    it('at most one live default per customer; a deleted default does not count', async () => {
+      const { customerId } = await newCustomer();
+      const governorate = await governorateId();
+      const [first] = await db('customer_addresses')
+        .insert(address(customerId, governorate, { is_default: true }))
+        .returning<{ id: string }[]>('id');
+      const secondDefault = () =>
+        db('customer_addresses').insert(address(customerId, governorate, { is_default: true }));
+      expect((await pgFailure(secondDefault)).constraint).toBe('uq_customer_addresses_customer_id_default');
+
+      await db('customer_addresses').where({ id: first?.id }).update({ deleted_at: new Date() });
+      await expect(secondDefault()).resolves.toBeDefined();
+    });
+
+    it('the governorate FK is enforced and restricts deleting a used governorate', async () => {
+      const { customerId } = await newCustomer();
+      const unknown = '0192f5e0-0000-7000-8000-000000000000';
+      expect(
+        (await pgFailure(() => db('customer_addresses').insert(address(customerId, unknown)))).constraint,
+      ).toBe('fk_customer_addresses_governorate_id');
+      const governorate = await governorateId();
+      await db('customer_addresses').insert(address(customerId, governorate));
+      // ON DELETE RESTRICT raises restrict_violation (23001), not foreign_key_violation (23503).
+      expect((await pgFailure(() => db('governorates').where({ id: governorate }).delete())).code).toBe(
+        '23001',
+      );
+    });
+  });
 });

@@ -9,6 +9,7 @@ export {
 } from './response';
 export { validateDto, toErrorDetails, STRICT_VALIDATOR_OPTIONS } from './validation/validate';
 export * from './validation/validators';
+export * from './validation/fields';
 export { encodeCursor, decodeCursor, type CursorPayload, type CursorValue } from './pagination/cursor';
 export * from './query/list-query';
 export { applyListQuery, toPage } from './query/apply-list-query';

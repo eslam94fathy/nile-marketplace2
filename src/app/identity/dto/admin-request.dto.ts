@@ -1,14 +1,12 @@
-import { IsEmail, IsString, IsUUID, Length, MaxLength } from 'class-validator';
-import { FieldType, FilterOp, type ListSpec, NormalizeEmail, Trim } from '../../../lib/http';
-import { EMAIL_MAX_LENGTH, SUSPEND_REASON_MAX_LENGTH, SUSPEND_REASON_MIN_LENGTH } from '../constants';
+import { IsString, IsUUID, Length } from 'class-validator';
+import { EmailField, FieldType, FilterOp, type ListSpec, Trim } from '../../../lib/http';
+import { SUSPEND_REASON_MAX_LENGTH, SUSPEND_REASON_MIN_LENGTH } from '../constants';
 import { UserStatus } from '../enums';
 
 /** Request DTOs for spec 03 §4.10–§4.13. */
 
 export class InviteAdminDto {
-  @NormalizeEmail()
-  @IsEmail()
-  @MaxLength(EMAIL_MAX_LENGTH)
+  @EmailField()
   email!: string;
 }
 

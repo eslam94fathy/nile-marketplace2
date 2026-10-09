@@ -9,6 +9,8 @@ import * as m20261008134257 from './20261008134257_create_notification_log';
 import * as m20261008135708 from './20261008135708_add_users_role_created_at_index';
 import * as m20261009192351 from './20261009192351_create_governorates';
 import * as m20261009192353 from './20261009192353_create_delivery_settings';
+import * as m20261009194352 from './20261009194352_create_customers';
+import * as m20261009194354 from './20261009194354_create_customer_addresses';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -23,5 +25,7 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261008135708_add_users_role_created_at_index', module: m20261008135708 },
   { name: '20261009192351_create_governorates', module: m20261009192351 },
   { name: '20261009192353_create_delivery_settings', module: m20261009192353 },
+  { name: '20261009194352_create_customers', module: m20261009194352 },
+  { name: '20261009194354_create_customer_addresses', module: m20261009194354 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

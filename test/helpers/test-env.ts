@@ -77,6 +77,8 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     OTP_RESEND_COOLDOWN_SECONDS: '60',
     INVITE_TTL_HOURS: '72',
     INVITE_URL_BASE: 'https://app.nile.test/invite',
+    // customers
+    CUSTOMER_MAX_ADDRESSES: '20',
     // delivery reference data
     GOVERNORATES_CACHE_TTL_SECONDS: '3600',
     // secrets in event payloads

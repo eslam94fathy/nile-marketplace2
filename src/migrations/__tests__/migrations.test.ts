@@ -21,6 +21,8 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261008135708_add_users_role_created_at_index',
       '20261009192351_create_governorates',
       '20261009192353_create_delivery_settings',
+      '20261009194352_create_customers',
+      '20261009194354_create_customer_addresses',
     ]);
   });
 

@@ -173,6 +173,11 @@ const identityShape = {
   OTP_RESEND_COOLDOWN_SECONDS: positiveInt(3_600),
 };
 
+/** customers (spec 04 §1). */
+const customersShape = {
+  CUSTOMER_MAX_ADDRESSES: positiveInt(100),
+};
+
 /** delivery reference data (spec 11 DE-3, P2-Q5). */
 const deliveryShape = {
   GOVERNORATES_CACHE_TTL_SECONDS: positiveInt(86_400),
@@ -260,6 +265,7 @@ export const apiEnvSchema = z
     ...rateLimitShape,
     ...idempotencyShape,
     ...identityShape,
+    ...customersShape,
     ...deliveryShape,
     ...inviteShape,
     ...secretsShape,
