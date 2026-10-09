@@ -129,7 +129,9 @@ describe('notifications: transactional email pipeline', () => {
     const fx = identityFixtures(t);
     const { userId, email } = await fx.createPending();
     await drain();
-    await waitFor(() => sender.to(email).length === 1);
+    // Wait for the commit, not just the send: notification_log is committed with processed_events,
+    // and a redelivery that arrives before that commit may legitimately send again (architecture §3.2).
+    await waitFor(async () => (await logRows(userId)).length === 1);
     const [row] = await t.infra.db
       .knex('events_outbox')
       .where({ aggregate_id: userId })
