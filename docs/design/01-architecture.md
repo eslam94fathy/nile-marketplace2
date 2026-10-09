@@ -1,6 +1,6 @@
 # System Design 01 — Architecture (Release 1)
 
-Status: **v1.2 APPROVED (2026-10-08).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). SD-3d (region, §12.2) is still open and only blocks Terraform provisioning. Changes from now on need explicit approval and a version bump.
+Status: **v1.3 APPROVED (2026-10-09).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). SD-3d (region, §12.2) is still open and only blocks Terraform provisioning. Changes from now on need explicit approval and a version bump.
 Inputs: `CLAUDE.md` (engineering rules), `docs/spec/00-overview.md` v1.0 (business). Schema: `02-database.md`.
 
 ---
@@ -58,8 +58,21 @@ Synchronous calls go through a module's public API (`index.ts`, resolved by DI t
            │        ▲                         │
            └─── ordering ──► catalog, sellers, customers, inventory, payments, delivery(fee lookup only)
 
-     payments ──► (none)          finance ──► (none)          notifications ──► (none: the recipient email is in the event payload)
+     payments ──► (none)          finance ──► sellers, delivery          notifications ──► (none: the recipient email is in the event payload)
 ```
+
+The full edge list (A-2, v1.3), which `module-graph.js` enforces:
+
+| Module | May call |
+|---|---|
+| customers | identity |
+| sellers | identity |
+| delivery | identity |
+| catalog | sellers, inventory |
+| cart | catalog, inventory, sellers (display names) |
+| ordering | customers, cart, catalog, sellers, inventory, payments, delivery |
+| finance | sellers, delivery (profile resolution, display names) |
+| identity, inventory, payments, notifications | none |
 
 The rules:
 - `ordering` is the orchestrator of checkout and may call the others. Nobody calls `ordering` synchronously.
@@ -163,7 +176,7 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 | Data | Strategy | Invalidation |
 |---|---|---|
 | Category tree + attributes | Cache-aside, TTL from env | Deleted on any admin category/attribute change (same request, after commit) |
-| Governorates + fees | Cache-aside | Deleted on fee change |
+| Governorates + fees | Cache-aside, TTL `GOVERNORATES_CACHE_TTL_SECONDS` [v1.3] | Deleted on fee change (after commit) |
 | Product detail (public) | Cache-aside, short TTL | Deleted after commit on product/variant change. Stock is **not** taken from cache at checkout |
 | Product lists / search | **Not cached in R1.** Indexed queries are enough at the target load | n/a |
 

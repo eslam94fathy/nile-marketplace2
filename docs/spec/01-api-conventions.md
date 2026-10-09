@@ -1,6 +1,6 @@
 # Spec 01 — API Conventions (shared by all module specs)
 
-Status: **v1.1 APPROVED (2026-10-08).** Approved by the user. v1.1: passwords are never trimmed; `opt` implemented by a shared `Optional()` decorator (Phase 1). Changes from now on need explicit approval and a version bump.
+Status: **v1.2 APPROVED (2026-10-09).** Approved by the user. v1.1: passwords are never trimmed; `opt` implemented by a shared `Optional()` decorator (Phase 1). v1.2: `GOVERNORATE_NOT_FOUND` is a common code (§6, P2-Q7). Changes from now on need explicit approval and a version bump.
 Inputs: `CLAUDE.md` §7–§10, `docs/design/01-architecture.md` v1.0, `docs/design/02-database.md` v1.0.
 
 Module specs: `03-identity.md` · `04-customers.md` · `05-sellers.md` · `06-catalog.md` · `07-inventory.md` · `08-cart.md` · `09-ordering.md` · `10-payments.md` · `11-delivery.md` · `12-finance.md` · `13-notifications.md`. Events: `02-events.md`.
@@ -99,12 +99,13 @@ All paths are under `/api/v1`.
 | `IDEMPOTENCY_REQUEST_IN_PROGRESS` | 409 | Same key is still being processed |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | Same key, different request |
 | `REFERENCE_NOT_FOUND` | 422 | Unmapped FK violation (`23503`) |
+| `GOVERNORATE_NOT_FOUND` | 404 / 422 | Governorate in the path (404) or referenced from a body (422). Shared because delivery owns `governorates` while customers and sellers reference it through FKs and may not import delivery [v1.2, P2-Q7] |
 | `CONSTRAINT_VIOLATION` | 422 | Unmapped check violation (`23514`) |
 | `RATE_LIMITED` | 429 | Over the limit. `Retry-After` header set |
 | `INTERNAL_ERROR` | 500 | Anything unexpected. Generic message |
 | `SERVICE_UNAVAILABLE` | 503 | A fail-closed dependency (Redis on auth/checkout) is down |
 
-Module error codes are **globally unique** and listed in each module spec. Repositories map known constraint names to module codes (e.g. `uq_users_email` → `EMAIL_ALREADY_REGISTERED`). Anything unmapped falls back to the generic codes above.
+Module error codes are **globally unique** and listed in each module spec. A code raised by several modules lives here instead (e.g. `GOVERNORATE_NOT_FOUND`); each module still maps its own constraint names to it. Repositories map known constraint names to module codes (e.g. `uq_users_email` → `EMAIL_ALREADY_REGISTERED`). Anything unmapped falls back to the generic codes above.
 
 ## 7. Rate-limit classes (values from env)
 

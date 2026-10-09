@@ -1,6 +1,6 @@
 # Spec 04 — customers
 
-Status: **DRAFT v0.1 (2026-10-08), under review.** [PROPOSED].
+Status: **v1.0 APPROVED (2026-10-09).** Approved by the user with the Phase 2 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -9,7 +9,7 @@ Customer self-registration, profile, delivery addresses.
 Tables: `customers`, `customer_addresses` (soft delete).
 Depends on: `identity` (create the user, read the email).
 
-Config: `CUSTOMER_MAX_ADDRESSES` (proposed 20).
+Config: `CUSTOMER_MAX_ADDRESSES` (env, value 20, no default).
 
 ## 2. Public API (`index.ts`)
 
@@ -23,10 +23,11 @@ Config: `CUSTOMER_MAX_ADDRESSES` (proposed 20).
 ## 3. Use cases
 
 ### UC-CU-1 Register as a customer
-One transaction: `identity.createPendingUser(role = customer)` → insert `customers` → (identity has already written the OTP email to the outbox). Response: the account is `pending_email_verification`; no tokens until UC-ID-1.
+`identity.hashPassword` first (outside any transaction, C-1), then one transaction: `identity.createPendingUser(role = customer, passwordHash)` → insert `customers` → (identity has already written the OTP email to the outbox). Response: the account is `pending_email_verification`; no tokens until UC-ID-1.
 
 ### UC-CU-2 Manage addresses
-- The first address a customer creates becomes the default whatever `isDefault` says.
+- Every address write first locks the customer row (`SELECT … FROM customers WHERE id = ? FOR UPDATE`), so the limit check, the default rule and clearing the old default can't race (C-2).
+- A new address becomes the default whatever `isDefault` says **whenever the customer has no live default** (the first address, or any address created after the default was deleted) (C-3).
 - Setting `isDefault = true` clears the previous default in the same transaction (`uq_customer_addresses_customer_id_default` guarantees one).
 - Deleting is soft. Deleting the default leaves the customer with no default (no automatic promotion). Checkout always sends an explicit `addressId`, so nothing depends on a default.
 - Past orders aren't affected by edits or deletes (they keep a snapshot).
@@ -105,7 +106,16 @@ Published: none. Consumed: none.
 | `GOVERNORATE_NOT_FOUND` | 422 | FK `fk_customer_addresses_governorate_id` |
 | `DEFAULT_ADDRESS_UNSET_NOT_ALLOWED` | 422 | Unsetting the default without choosing another |
 
-(`EMAIL_ALREADY_REGISTERED` comes from identity.)
+(`EMAIL_ALREADY_REGISTERED` comes from identity. `GOVERNORATE_NOT_FOUND` is a common code, `01-api-conventions.md` §6 v1.2; this module maps its FK to it.)
 
 ## 7. Open questions
 None specific to this module.
+
+### 7.1 Clarifications (v1.0, Phase 2 plan, 2026-10-09)
+
+| # | Clarification | Where |
+|---|---|---|
+| C-1 | The password is hashed before the registration transaction opens (spec 03 I-10, P2-Q2) | UC-CU-1 |
+| C-2 | Address writes lock the customer row first (P2-Q6) | UC-CU-2 |
+| C-3 | A new address becomes the default whenever the customer has no live default; deleting the default still promotes nothing (P2-Q6) | UC-CU-2 |
+| C-4 | `GOVERNORATE_NOT_FOUND` is the common code from `lib/error` (P2-Q7) | §6 |

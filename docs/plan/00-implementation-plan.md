@@ -1,7 +1,7 @@
 # Implementation Plan (Release 1)
 
-Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6).** Later phases are detailed when their specs are approved.
-Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.2, `docs/design/02-database.md` v1.4, `docs/spec/01-api-conventions.md` v1.1, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
+Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09).** Later phases are detailed when their specs are approved.
+Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.3, `docs/design/02-database.md` v1.4, `docs/spec/01-api-conventions.md` v1.2, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
 
 ---
 
@@ -21,7 +21,7 @@ Each phase ends green in CI (lint, type-check, unit, integration, build, Docker 
 | P7 | finance | Spec 12 |
 | P8 | Hardening: load test against the targets, security review, Terraform (`infra/terraform`), staging deploy | SD-3d (region) |
 
-Only **P0** is detailed below. P1–P8 get their own section when their specs are approved.
+P0 and P1 are detailed below, and P2 is drafted in §4. P3–P8 get their own section when their specs are approved.
 
 ---
 
@@ -201,3 +201,69 @@ Needs approved: spec `03-identity.md` and spec `13-notifications.md` (both still
 - No plain-text OTP, invite token, password or refresh token in any log line, outbox row or broker message (asserted by tests).
 
 **P1 status (2026-10-08): implemented** on branch `p1-identity` (§3.5 steps 1–7, plus docs and DB-Q6; PR stacked on `p0-foundation`). Locally green: lint, type-check, Prettier, unit (144), integration (122), build, `npm audit` (0). Manual local walkthrough **passed (2026-10-08)** on the docker-compose stack rebuilt from this branch: `seed-admin` → invite email in Mailpit (`notification_log` `sent`) → accept (a second accept `INVALID_INVITE_TOKEN`) → login → admin route `200` → refresh (reusing the old token revokes the session) → logout (refresh afterwards `401`); the invite token and the password appeared in no api/worker log line and no outbox row. **Still to do for "done when":** a green CI run on the PR. Deviations from §3.3–§3.5: none in scope. Clarifications made during implementation and accepted: spec 01 v1.1 (passwords never trimmed, `Optional()`), spec 03 v1.1 §7.1 (I-1…I-9), spec 13 v1.1 §7.1 (N-1…N-5), architecture v1.2 §3.2 (`beforeTransaction` for external effects), database v1.3 (`notification_log` FK + failure check). Extra shared code: async rate-limit keys (`emailRateKey`), `InvitationService` without bcrypt (for the CLI). DB-Q6 (admin list index) decided and added as migration `20261008135708` (database v1.4).
+
+---
+
+## 4. Phase 2: delivery reference data · customers · sellers
+
+Status: **v1.0 APPROVED (2026-10-09).** All P2-Q recommendations accepted; the branch `p2-customers-sellers` is stacked on `p1-identity`.
+Needs approved: spec `04-customers.md`, spec `05-sellers.md`, the P2 part of spec `11-delivery.md` (§1 governorates + `delivery_settings`, §2 `getGovernorateFees` / `getAgentFeeShareRate`, UC-DE-7, §4.1, and the four admin governorate/settings endpoints in §4.3), all three still DRAFT v0.1, plus **A-2** (architecture §2 dependency edges). It does **not** need D-2 / D-3 (shipments, P6) or A-3 (checkout, P5).
+
+### 4.1 What P2 delivers, and what it can't yet
+- **delivery (reference data only):** the 27 governorates with their fees, the agent fee-share setting, `GET /governorates`, and the admin endpoints that change fees and the setting. Agents, shipments, and assignment stay in P6.
+- **customers:** self-registration, profile, and addresses, plus the public API that cart and ordering will call.
+- **sellers:** self-registration, profile, re-apply, the admin approval lifecycle, per-seller and default commission, and the `seller.approved` / `seller.suspended` events. These events have no consumer until catalog lands in P3. They are published anyway (spec 02 §2).
+- The self-registration → verify OTP → login HTTP end-to-end test that P1 deferred (§3.1) lands here.
+
+### 4.2 Decisions to approve (P2-Q)
+
+| # | Topic | Options / recommendation |
+|---|---|---|
+| P2-Q1 | Approvals | Approve specs 04 and 05, the P2 part of spec 11 (listed above), and A-2. A-2 also adds `cart → sellers` and `finance → sellers, delivery`. Those edges only matter in P4/P7, but approving A-2 as a whole keeps `module-graph.js` to one edit. **Rec:** approve all four as written, plus the clarifications in P2-Q2…Q8 |
+| P2-Q2 | bcrypt runs inside the registration transaction | `identity.createPendingUser` hashes the password itself, and the caller passes in its transaction. So bcrypt (cost 12, ~250 ms) holds a pooled connection while the new user row is locked, which breaks P1-I2. **Rec:** identity exposes `hashPassword(plain) → PasswordHash` (a branded type only identity can create). customers/sellers call it **before** opening the transaction, and `createPendingUser` takes `passwordHash: PasswordHash` instead of `password` (spec 03 §2 v1.2) · or identity runs the transaction and takes a callback for the profile insert (hands identity control of another module's transaction, so not recommended) |
+| P2-Q3 | Governorate name language | The schema has one `name VARCHAR(100)`. **Rec:** English names (ISO 3166-2:EG), with the app showing its own Arabic label keyed by `code`, which never changes · or add `name_ar VARCHAR(100)` and return both (DB change D-5, plus a response-shape change in spec 11 §4.1) |
+| P2-Q4 | Seeded delivery fees | **Rec:** the migration seeds all 27 governorates with `delivery_fee = NULL`, so nothing is deliverable until an admin sets fees (real fees are business data, not code). A `dev-seed` script sets sample fees for local dev only · or you give me the real fee for each governorate and the migration seeds them |
+| P2-Q5 | Governorates cache | Architecture §4 says cache-aside, deleted on fee change, but defines no TTL. **Rec:** Redis key `v1:delivery:governorates`, new env `GOVERNORATES_CACHE_TTL_SECONDS` (value 3600, no default), deleted after commit on a fee change. `delivery_settings` is not cached (a one-row lookup) |
+| P2-Q6 | Address concurrency + the "first address is default" rule | Spec 04 UC-CU-2 is read-then-write (count for the limit, "is this the first?", clear the old default). **Rec:** every address write first locks the customer row (`SELECT … FROM customers WHERE id = ? FOR UPDATE`). Default rule: a new address becomes the default **whenever the customer has no live default**. That covers the first address and the case where the default was deleted · or only when the customer has zero live addresses (then, after the default is deleted, new addresses stay non-default until the customer picks one) |
+| P2-Q7 | `GOVERNORATE_NOT_FOUND` used by three modules | customers and sellers may not import delivery, yet all three raise this code (customers/sellers through their FK). **Rec:** put the code and factory in the `lib/error` common errors (shared kernel, CLAUDE.md §2.2 rule 6), and have each module register its own FK constraint name against it · or each module declares the same string in its own `errors.ts` |
+| P2-Q8 | Public API methods that only later phases call | customers `getAddressSnapshot`, sellers `getStatuses` / `getSummaries` / `getCheckoutSnapshots`, delivery `getGovernorateFees` / `getAgentFeeShareRate`. **Rec:** build and test them now through the public API, so each module is finished in one go and P3–P5 can rely on them · or add each one in the phase that first calls it |
+
+### 4.3 Scope
+
+| Area | Content |
+|---|---|
+| Docs | Specs 04, 05 → v1.0; spec 11 → v1.0 for the P2 parts (agent/shipment parts unchanged); spec 03 → v1.2 (P2-Q2); architecture → v1.3 (A-2); overview §8.2 A-2 → Applied; `module-graph.js` gains the A-2 edges |
+| Migrations (in FK order) | `governorates` (+ 27-row seed), `delivery_settings` (+ seed `0.7000`), `customers`, `customer_addresses`, `sellers`, `seller_status_history`, `seller_commission_history`, `seller_settings` (+ seed `0.1000`). One migration per table, exactly as in `02-database.md` §3, §4, §10 |
+| `lib/` | `GOVERNORATE_NOT_FOUND` common error (P2-Q7); `money` / `rate` DTO decorators if P1 didn't already add them |
+| `app/identity` | `hashPassword` + `createPendingUser(passwordHash)` (P2-Q2), with tests updated |
+| `app/delivery` | Module skeleton (reference-data part only): governorate + settings repositories, `GovernorateService` with cache, `GET /governorates`, `GET/PATCH /admin/governorates…`, `GET/PUT /admin/settings/delivery`, public API, OpenAPI |
+| `app/customers` | `POST /auth/register/customer`, `GET/PATCH /me`, the five `/me/addresses` endpoints, public API, constraint mapping (`fk_customer_addresses_governorate_id` → `GOVERNORATE_NOT_FOUND`), env `CUSTOMER_MAX_ADDRESSES` (20) |
+| `app/sellers` | `POST /auth/register/seller`, `/seller/profile` (get, patch, reapply), every `/admin/sellers…` and `/admin/settings/commission` endpoint, the status machine with history rows, commission history, the `seller.approved` / `seller.suspended` outbox events, public API, constraint mappings (`uq_sellers_business_name_lower` → `BUSINESS_NAME_TAKEN`, `fk_sellers_pickup_governorate_id` → `GOVERNORATE_NOT_FOUND`) |
+| Indexes | Only those in `02-database.md`. `businessName like` on the admin seller list runs without a trigram index (~2k sellers in year 1; revisit if it shows up in the P8 load tests) |
+| Tooling | Postman collection regenerated (`scripts/make-postman.js`); `dev-seed` for local governorate fees (P2-Q4) |
+
+### 4.4 Tests
+- **Unit:** seller state machine (every allowed and refused transition), commission change and `COMMISSION_RATE_UNCHANGED` (compared as `Decimal`, so `"0.1"` equals `"0.1000"`), address default rules, governorate cache hit / miss / invalidation.
+- **Integration, per endpoint** (CLAUDE.md §12): happy path, validation failure, authz failure (wrong role and anonymous), not-found. Plus:
+  - registration end to end: register a customer / seller → OTP email in the fake sender → verify → login. Duplicate email `409`. Duplicate business name (different case) `409` with **no** user row left behind (one transaction). Unknown governorate `422`
+  - registration never puts the plain password or OTP in a log line or outbox row
+  - addresses: the limit holds under parallel creates; parallel "set default" leaves exactly one default; another customer's address `404`; deleting the default leaves none
+  - sellers: approving before email verification `409`; two parallel approvals → one `200`, one `409`; each transition writes one history row; approve / reinstate / suspend write the right outbox event with the right payload; reject / suspend without a reason `400`
+  - the default commission applies only to sellers registered after the change
+  - admin seller list: filters, `like`, cursor pagination, emails filled from one batched identity call
+  - governorates: a fee change invalidates the cache (the next public read shows it); `null` fee → `isDeliverable: false`
+  - strict-auth rate limits on both register endpoints
+
+### 4.5 Order of work (one commit each)
+1. Docs: approvals applied (spec versions, A-2, `module-graph.js`).
+2. identity: `hashPassword` + `createPendingUser(passwordHash)` (P2-Q2) + tests.
+3. delivery: governorates + `delivery_settings` migrations and seeds, module skeleton, cache, endpoints, public API, tests.
+4. customers: migrations, registration + profile + addresses, public API, tests (including the deferred P1 end-to-end).
+5. sellers: migrations and seed, registration + self-service + reapply, public API, tests.
+6. sellers admin: list, detail, transitions, events, commission, settings, tests.
+7. Postman collection, `dev-seed`, `.env.example`, plan status.
+
+### 4.6 Done when
+- CI green; every P2 endpoint is in the OpenAPI document with its DTOs.
+- Locally (docker-compose + Mailpit): register a seller → OTP in Mailpit → verify → admin approves → `seller.approved` row in the outbox, published to RabbitMQ. Register a customer → verify → login → add two addresses → switch the default.
+- No plain-text password or OTP in any log line, outbox row, or broker message (asserted by tests).

@@ -1,6 +1,6 @@
 # Spec 11 — delivery
 
-Status: **DRAFT v0.1 (2026-10-08), under review.** [PROPOSED] unless it restates overview §4.6 / §4.7, SD-2, DB-Q1.
+Status: **v1.0 APPROVED (2026-10-09) for the reference-data part** (§1 governorates + `delivery_settings`, §2 `getGovernorateFees` / `getAgentFeeShareRate`, UC-DE-7, §4.1, and the admin governorate/settings endpoints in §4.3), with the clarifications in §7.1. **The rest (agents, shipments, assignment) is still DRAFT v0.1** [PROPOSED] unless it restates overview §4.6 / §4.7, SD-2, DB-Q1; it is approved with Phase 6.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -177,3 +177,12 @@ Consumed: `seller_order.ready_for_pickup`, `seller_order.items_cancelled`, `sell
 - **S-10** Agent deactivation suspends the login.
 - **S-18** No reassignment after pickup.
 - **S-3** The COD fee gap in DB-Q1 is accepted for R1 (§3, UC-DE-3).
+
+### 7.1 Clarifications for the reference-data part (v1.0, Phase 2 plan, 2026-10-09)
+
+| # | Clarification | Where |
+|---|---|---|
+| DE-1 | Governorate `name` is English (ISO 3166-2:EG). The app shows its own localized label keyed by `code`, which never changes (P2-Q3) | §4.1 |
+| DE-2 | The migration seeds all 27 governorates with `delivery_fee = NULL`: nothing is deliverable until an admin sets fees. A dev-only seed script sets sample fees locally (P2-Q4) | UC-DE-7 |
+| DE-3 | Governorates cache: Redis key `v1:delivery:governorates`, TTL `GOVERNORATES_CACHE_TTL_SECONDS` (env, value 3600, no default), deleted after commit on a fee change. `delivery_settings` is not cached (P2-Q5) | §2, §4.1, UC-DE-7 |
+| DE-4 | `GOVERNORATE_NOT_FOUND` is the common code from `lib/error` (P2-Q7) | §6 |

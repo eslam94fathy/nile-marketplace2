@@ -1,6 +1,6 @@
 # Spec 03 — identity
 
-Status: **v1.2 APPROVED (2026-10-08).** Approved by the user. v1.1: Phase 1 implementation clarifications (§7.1, I-1…I-9). v1.2: §4.11 index reference (DB-Q6). Changes from now on need explicit approval and a version bump.
+Status: **v1.3 APPROVED (2026-10-09).** Approved by the user. v1.1: Phase 1 implementation clarifications (§7.1, I-1…I-9). v1.2: §4.11 index reference (DB-Q6). v1.3: `hashPassword` + `createPendingUser(passwordHash)` (§2, I-10, P2-Q2). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -23,7 +23,8 @@ Every write method takes `trx` and uses it.
 
 | Method | Used by | Notes |
 |---|---|---|
-| `createPendingUser({ email, password, role }, trx) → { userId }` | customers, sellers | Hashes the password, `status = pending_email_verification`, issues an email-verification OTP + `notification.email_requested`. Throws `EMAIL_ALREADY_REGISTERED` |
+| `hashPassword(password) → PasswordHash` | customers, sellers | bcrypt with the env cost. Called **before** the caller opens its transaction (I-4, I-10). `PasswordHash` is a branded type that only identity can create |
+| `createPendingUser({ email, passwordHash, role }, trx) → { userId }` | customers, sellers | `status = pending_email_verification`, issues an email-verification OTP + `notification.email_requested`. Throws `EMAIL_ALREADY_REGISTERED` [v1.3] |
 | `createInvitedUser({ email, role }, trx) → { userId }` | delivery (agents), identity itself (admins) | `status = invited`, `password_hash = null`, issues an invite token + email |
 | `getUsersByIds(ids) → UserSummary[]` | customers, sellers, delivery | `{ id, email, role, status, emailVerifiedAt }`, batched |
 | `setUserStatus(userId, 'active' \| 'suspended', actorUserId, trx)` | delivery (agent deactivation, S-10) | Suspending revokes all of the user's refresh tokens. Only `active ⇄ suspended` (I-6). No role restriction here (the admin endpoints add one, I-5). Errors: `USER_NOT_FOUND`, `USER_INVALID_STATUS_TRANSITION` |
@@ -223,3 +224,4 @@ Choices made where the text above was silent, accepted by the user when Phase 1 
 | I-7 | Change password on an account that is no longer `active` → `INVALID_REFRESH_TOKEN` (its sessions are revoked anyway) | §4.9b |
 | I-8 | Change-password rate limit: IP + the account email looked up from the access token's user id; it shares the login counter of that email. If the lookup fails, the limiter fails closed (`503`) like the other strict-auth limits | §4.9b |
 | I-9 | The suspend `reason` is kept only in the `USER_SUSPENDED` audit log line (no column) | §4.13 |
+| I-10 | Self-registration hashes the password through `hashPassword` before the profile module opens its transaction; `createPendingUser` takes the hash (v1.3, Phase 2, P2-Q2) | §2 |

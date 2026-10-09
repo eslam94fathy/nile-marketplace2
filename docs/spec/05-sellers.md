@@ -1,6 +1,6 @@
 # Spec 05 — sellers
 
-Status: **DRAFT v0.1 (2026-10-08), under review.** [PROPOSED].
+Status: **v1.0 APPROVED (2026-10-09).** Approved by the user with the Phase 2 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -30,7 +30,7 @@ Every transition is a conditional update (`WHERE id = ? AND status = <expected>`
 ## 3. Use cases
 
 ### UC-SE-1 Register as a seller
-One transaction: `identity.createPendingUser(role = seller)` → insert `sellers` with `status = pending_approval`, `commission_rate = seller_settings.default_commission_rate`, a history row (`from_status = null`). `uq_sellers_business_name_lower` → `BUSINESS_NAME_TAKEN`.
+`identity.hashPassword` first (outside any transaction, SE-1), then one transaction: `identity.createPendingUser(role = seller, passwordHash)` → insert `sellers` with `status = pending_approval`, `commission_rate = seller_settings.default_commission_rate`, a history row (`from_status = null`). `uq_sellers_business_name_lower` → `BUSINESS_NAME_TAKEN`.
 
 ### UC-SE-2 Edit profile / re-apply
 - The seller can edit the profile in any status. Edits affect **new** orders only (the pickup address is snapshotted per seller order).
@@ -138,7 +138,17 @@ Consumed: none.
 | `SELLER_EMAIL_NOT_VERIFIED` | 409 | Approve before email verification (Q-40) |
 | `SELLER_NOT_APPROVED` | 403 | Thrown by other modules' guards (catalog writes) when the seller isn't `approved` |
 | `BUSINESS_NAME_TAKEN` | 409 | `uq_sellers_business_name_lower` |
+
+(`GOVERNORATE_NOT_FOUND` 422 is a common code, `01-api-conventions.md` §6 v1.2; this module maps `fk_sellers_pickup_governorate_id` to it.)
 | `COMMISSION_RATE_UNCHANGED` | 409 | New rate equals the current one |
 
 ## 7. Decisions (answered 2026-10-08, `00-overview.md` §9.1). No open questions.
 - **S-7** No re-approval after an approved seller edits the profile.
+
+### 7.1 Clarifications (v1.0, Phase 2 plan, 2026-10-09)
+
+| # | Clarification | Where |
+|---|---|---|
+| SE-1 | The password is hashed before the registration transaction opens (spec 03 I-10, P2-Q2) | UC-SE-1 |
+| SE-2 | `GOVERNORATE_NOT_FOUND` is the common code from `lib/error` (P2-Q7) | §6 |
+| SE-3 | The whole public API (§2) is built in Phase 2, including the methods only later phases call (P2-Q8) | §2 |

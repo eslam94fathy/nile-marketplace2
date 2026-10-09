@@ -3,16 +3,16 @@
 /**
  * Allowed synchronous module-to-module imports (docs/design/01-architecture.md §2).
  * Key = importing module, value = modules whose index.ts it may import.
- * A module not listed here may import no other module.
- *
- * Pending: A-2 (00-overview.md §8.2) adds customers → identity, sellers → identity,
- * cart → sellers, finance → sellers + delivery. Add them only once A-2 is approved.
+ * A module not listed here may import no other module. Includes A-2 (architecture v1.3).
  */
 const MODULE_GRAPH = {
-  catalog: ['sellers', 'inventory'],
-  cart: ['catalog', 'inventory'],
-  ordering: ['customers', 'cart', 'catalog', 'sellers', 'inventory', 'payments', 'delivery'],
+  customers: ['identity'],
+  sellers: ['identity'],
   delivery: ['identity'],
+  catalog: ['sellers', 'inventory'],
+  cart: ['catalog', 'inventory', 'sellers'],
+  ordering: ['customers', 'cart', 'catalog', 'sellers', 'inventory', 'payments', 'delivery'],
+  finance: ['sellers', 'delivery'],
 };
 
 /** Throws at lint start-up if the graph has a cycle, so a bad edit can't slip in. */
