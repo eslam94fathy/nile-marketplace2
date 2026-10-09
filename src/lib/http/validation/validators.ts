@@ -81,6 +81,12 @@ export abstract class PatchDto {
  */
 export const Optional = () => ValidateIf((_object: object, value: unknown) => value !== undefined);
 
+/**
+ * `nullable` in the spec notation: an explicit `null` is accepted and skips the other validators.
+ * A missing field is still validated (and rejected) unless `@Optional()` is stacked on top.
+ */
+export const Nullable = () => ValidateIf((_object: object, value: unknown) => value !== null);
+
 /** Trims strings before validation; non-strings pass through untouched (and fail @IsString). */
 export const Trim = () =>
   Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value));

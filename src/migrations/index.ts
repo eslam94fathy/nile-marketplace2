@@ -7,6 +7,8 @@ import * as m20261008123202 from './20261008123202_create_refresh_tokens';
 import * as m20261008123204 from './20261008123204_create_verification_codes';
 import * as m20261008134257 from './20261008134257_create_notification_log';
 import * as m20261008135708 from './20261008135708_add_users_role_created_at_index';
+import * as m20261009192351 from './20261009192351_create_governorates';
+import * as m20261009192353 from './20261009192353_create_delivery_settings';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -19,5 +21,7 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261008123204_create_verification_codes', module: m20261008123204 },
   { name: '20261008134257_create_notification_log', module: m20261008134257 },
   { name: '20261008135708_add_users_role_created_at_index', module: m20261008135708 },
+  { name: '20261009192351_create_governorates', module: m20261009192351 },
+  { name: '20261009192353_create_delivery_settings', module: m20261009192353 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

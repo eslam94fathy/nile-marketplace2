@@ -181,4 +181,53 @@ describe('migrations on a real Postgres 18', () => {
       expect(await db('verification_codes').where({ user_id: userId })).toHaveLength(0);
     });
   });
+
+  describe('governorates', () => {
+    it('seeds the 27 governorates with ISO codes and no fee (spec 11 DE-2)', async () => {
+      const rows = await db('governorates').select<{ code: string; delivery_fee: string | null }[]>(
+        'code',
+        'delivery_fee',
+      );
+      expect(rows).toHaveLength(27);
+      expect(new Set(rows.map((r) => r.code)).size).toBe(27);
+      expect(rows.every((r) => r.delivery_fee === null)).toBe(true);
+      expect(rows.map((r) => r.code)).toContain('EG-C');
+    });
+
+    it('enforces the code format, unique codes and a non-negative fee', async () => {
+      const insert = (code: string, fee: string | null = null) =>
+        db('governorates').insert({ code, name: 'Test', delivery_fee: fee });
+      expect((await pgFailure(() => insert('CAIRO'))).constraint).toBe('chk_governorates_code');
+      expect((await pgFailure(() => insert('EG-C'))).constraint).toBe('uq_governorates_code');
+      expect(
+        (await pgFailure(() => db('governorates').where({ code: 'EG-C' }).update({ delivery_fee: '-1' })))
+          .constraint,
+      ).toBe('chk_governorates_delivery_fee');
+    });
+  });
+
+  describe('delivery_settings', () => {
+    it('holds exactly one seeded row (0.7000) and refuses a second one or a rate over 1', async () => {
+      const rows =
+        await db('delivery_settings').select<{ agent_fee_share_rate: string }[]>('agent_fee_share_rate');
+      expect(rows).toEqual([{ agent_fee_share_rate: '0.7000' }]);
+      expect(
+        (
+          await pgFailure(() =>
+            db('delivery_settings').insert({ is_singleton: true, agent_fee_share_rate: 0.5 }),
+          )
+        ).constraint,
+      ).toBe('uq_delivery_settings_is_singleton');
+      expect(
+        (
+          await pgFailure(() =>
+            db('delivery_settings').insert({ is_singleton: false, agent_fee_share_rate: 0.5 }),
+          )
+        ).constraint,
+      ).toBe('chk_delivery_settings_is_singleton');
+      expect(
+        (await pgFailure(() => db('delivery_settings').update({ agent_fee_share_rate: 1.5 }))).constraint,
+      ).toBe('chk_delivery_settings_agent_fee_share_rate');
+    });
+  });
 });

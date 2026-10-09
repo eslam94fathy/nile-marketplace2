@@ -20,6 +20,8 @@ export const CommonErrorCode = {
   RATE_LIMITED: 'RATE_LIMITED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
   SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+  // Raised by delivery (owner of governorates), customers and sellers (their FKs) [spec 01 v1.2, P2-Q7].
+  GOVERNORATE_NOT_FOUND: 'GOVERNORATE_NOT_FOUND',
 } as const;
 
 export const validationFailed = (details: readonly ErrorDetail[]) =>
@@ -105,4 +107,17 @@ export const serviceUnavailable = (cause?: unknown) =>
     'The service is temporarily unavailable',
     HTTP_STATUS.SERVICE_UNAVAILABLE,
     { cause, isOperational: false },
+  );
+
+/** Governorate named in the path (404). */
+export const governorateNotFound = () =>
+  new AppError(CommonErrorCode.GOVERNORATE_NOT_FOUND, 'Governorate not found', HTTP_STATUS.NOT_FOUND);
+
+/** Governorate referenced from a request body (422); modules map their governorate FK to this. */
+export const governorateReferenceNotFound = (cause?: unknown) =>
+  new AppError(
+    CommonErrorCode.GOVERNORATE_NOT_FOUND,
+    'Governorate not found',
+    HTTP_STATUS.UNPROCESSABLE_ENTITY,
+    { cause },
   );

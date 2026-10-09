@@ -173,6 +173,11 @@ const identityShape = {
   OTP_RESEND_COOLDOWN_SECONDS: positiveInt(3_600),
 };
 
+/** delivery reference data (spec 11 DE-3, P2-Q5). */
+const deliveryShape = {
+  GOVERNORATES_CACHE_TTL_SECONDS: positiveInt(86_400),
+};
+
 /** Invites are also created by the seed-admin CLI. */
 const inviteShape = {
   INVITE_TTL_HOURS: positiveInt(24 * 30),
@@ -255,6 +260,7 @@ export const apiEnvSchema = z
     ...rateLimitShape,
     ...idempotencyShape,
     ...identityShape,
+    ...deliveryShape,
     ...inviteShape,
     ...secretsShape,
   })

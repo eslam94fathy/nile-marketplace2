@@ -36,6 +36,16 @@ export const TOKENS = {
   UserAdminService: Symbol.for('UserAdminService'),
   AdminController: Symbol.for('AdminController'),
 
+  // delivery module (reference data: governorates, settings)
+  GovernorateRepository: Symbol.for('GovernorateRepository'),
+  DeliverySettingsRepository: Symbol.for('DeliverySettingsRepository'),
+  GovernorateService: Symbol.for('GovernorateService'),
+  DeliverySettingsService: Symbol.for('DeliverySettingsService'),
+  /** Public API of delivery (spec 11 §2), injected into other modules. */
+  DeliveryReferenceService: Symbol.for('DeliveryReferenceService'),
+  GovernorateController: Symbol.for('GovernorateController'),
+  DeliverySettingsController: Symbol.for('DeliverySettingsController'),
+
   // notifications module
   NotificationLogRepository: Symbol.for('NotificationLogRepository'),
   EmailNotificationService: Symbol.for('EmailNotificationService'),
