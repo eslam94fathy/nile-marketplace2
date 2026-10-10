@@ -1,5 +1,5 @@
 import { container as rootContainer, type DependencyContainer } from 'tsyringe';
-import { registerCatalogModule } from './app/catalog';
+import { registerCatalogModule, registerCatalogProjections } from './app/catalog';
 import { registerCustomersModule } from './app/customers';
 import { registerDeliveryModule } from './app/delivery';
 import { registerSellersModule } from './app/sellers';
@@ -54,6 +54,9 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   container.register(TOKENS.EmailSender, { useValue: infra.emailSender });
 
   registerNotificationsModule(container);
+  // catalog.listing-projections reads seller statuses and stock (spec 06 UC-CA-7).
+  registerSellersModule(container);
   registerInventoryModule(container);
+  registerCatalogProjections(container);
   return container;
 }

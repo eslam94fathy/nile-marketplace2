@@ -1,6 +1,6 @@
 # Spec 06 — catalog
 
-Status: **v1.1 APPROVED (2026-10-10).** v1.0: approved with the Phase 3 clarifications in §7.1. v1.1: an active category always has an active parent (CA-13); attribute writes lock the whole subtree (CA-2). v1.2: product writes hold their category `FOR SHARE` (CA-2). Changes from now on need explicit approval and a version bump.
+Status: **v1.3 APPROVED (2026-10-10).** v1.0: approved with the Phase 3 clarifications in §7.1. v1.1: an active category always has an active parent (CA-13); attribute writes lock the whole subtree (CA-2). v1.2: product writes hold their category `FOR SHARE` (CA-2). v1.3: the product-detail cache holds neither visibility nor stock, so the consumers have nothing to invalidate (CA-8). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -68,8 +68,8 @@ Stock changes are **deltas**, not absolute values, because `on_hand` still inclu
 - `attr.*` filters: all of them must hold on **the same** active, non-deleted variant (one `EXISTS` over the product's variants carrying every condition). They require `categoryId`; codes resolve against the attributes of that category, its ancestors and its descendants, and an option code may map to several option ids (CA-5).
 
 ### UC-CA-7 Listing projections (event consumers)
-- `seller.approved` / `seller.suspended` → `sellers.getStatuses([sellerId])` → `UPDATE products SET seller_active = (status = 'approved'), updated_at = now() WHERE seller_id = ? AND seller_active <> ? RETURNING id`. Delete the product-detail cache keys of the returned ids (CA-8).
-- `inventory.stock_status_changed` → find the product of the variant (ignored if deleted) → lock it → `inventory.getStockByVariantIds(active variant ids)` → `in_stock = any sellable > 0` → delete its detail cache key. Always recomputed from current stock, so event order doesn't matter (CA-9).
+- `seller.approved` / `seller.suspended` → `sellers.getStatuses([sellerId])` → `UPDATE products SET seller_active = (status = 'approved'), updated_at = now() WHERE seller_id = ? AND seller_active <> ?` (live products). No cache to delete (CA-8).
+- `inventory.stock_status_changed` → find the product of the variant (ignored if deleted) → lock it → `inventory.getStockByVariantIds(active variant ids)` → `in_stock = any sellable > 0`. Always recomputed from current stock, so event order doesn't matter (CA-9).
 
 ## 4. Endpoints
 
@@ -274,7 +274,7 @@ Consumed: `seller.approved`, `seller.suspended`, `inventory.stock_status_changed
 | CA-5 | `attr.*`: same-variant semantics, needs `categoryId`, resolution over lineage + subtree (P3-Q5) | UC-CA-6, §4.1 |
 | CA-6 | Relevance is rounded to 6 decimals and carried in the cursor as a string (P3-Q6) | UC-CA-6 |
 | CA-7 | Public "newest" sorts on `published_at` (`publishedAt`), not `created_at`; the seller list keeps `createdAt` (P3-Q7, database D-5) | §4.1 |
-| CA-8 | Caches: `v1:catalog:category-tree` (full admin tree with attributes and options; public views derived in memory), TTL `CATEGORY_TREE_CACHE_TTL_SECONDS` (3600). `v1:catalog:product:<id>` (static detail, no stock), TTL `PRODUCT_DETAIL_CACHE_TTL_SECONDS` (60). A slug is resolved to the id by one indexed lookup. Deleted after commit by product/variant writes and both consumers (P3-Q9) | UC-CA-1, §4.1 |
+| CA-8 | Caches: `v1:catalog:category-tree` (full admin tree with attributes and options; public views derived in memory), TTL `CATEGORY_TREE_CACHE_TTL_SECONDS` (3600). `v1:catalog:product:<id>`: the static part of the detail (category path, seller name, attributes, active variants), TTL `PRODUCT_DETAIL_CACHE_TTL_SECONDS` (60). The product row (visibility, prices) is read fresh by id or slug on every request, and stock is read live, so neither is ever cached. Deleted after commit by every product/variant write. The listing-projection consumers change only visibility and `in_stock`, so they delete nothing, and the worker needs no Redis (v1.3). Category and seller renames show within the TTL (P3-Q9) | UC-CA-1, §4.1 |
 | CA-9 | `in_stock` is recomputed in the same transaction on variant create/update/delete, and through the consumer after stock adjustments (spec 07 IN-2, P3-Q10) | UC-CA-4, UC-CA-7 |
 | CA-10 | Slug fallbacks: product `product-<6 base36>`, category create → `CATEGORY_SLUG_REQUIRED` (P3-Q12 a) | UC-CA-1, UC-CA-3 |
 | CA-11 | `23001` (restrict violation) maps to `409` by default; the two `variant_attribute_values` FKs map to `OPTION_IN_USE` / `ATTRIBUTE_IN_USE` (P3-Q11, resolves CLAUDE.md P2-O1) | §6 |

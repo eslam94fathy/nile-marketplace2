@@ -138,6 +138,33 @@ export class ProductRepository {
     return toModel(row);
   }
 
+  /** A live product by id, any seller (event consumers). `forUpdate` requires `trx` (spec 06 CA-2). */
+  async findLiveById(
+    id: string,
+    trx: DbTransaction,
+    options: { forUpdate?: boolean } = {},
+  ): Promise<Product | null> {
+    const query = trx<ProductTable>(T)
+      .select(...COLUMNS)
+      .where({ id })
+      .whereNull('deleted_at');
+    if (options.forUpdate) void query.forUpdate();
+    const row = await query.first<ProductRow | undefined>();
+    return row ? toModel(row) : null;
+  }
+
+  /**
+   * Projection of the seller's status onto their live products (spec 06 UC-CA-7), over
+   * idx_products_seller_id_created_at_id. Only rows that change are written; returns their count.
+   */
+  async setSellerActive(sellerId: string, active: boolean, trx: DbTransaction): Promise<number> {
+    return trx<ProductTable>(T)
+      .where({ seller_id: sellerId })
+      .whereNull('deleted_at')
+      .whereNot({ seller_active: active })
+      .update({ seller_active: active, updated_at: trx.fn.now() });
+  }
+
   /**
    * A live (not deleted) product of this seller: another seller's product is "not found" (IDOR).
    * `forUpdate` (requires `trx`) serialises every write on the product (spec 06 CA-2).

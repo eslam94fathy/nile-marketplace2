@@ -92,6 +92,7 @@ export const TOKENS = {
   ProductController: Symbol.for('ProductController'),
   /** Public API of catalog (spec 06 §2), injected into other modules. */
   CatalogDirectory: Symbol.for('CatalogDirectory'),
+  ListingProjectionService: Symbol.for('ListingProjectionService'),
 
   // inventory module
   InventoryItemRepository: Symbol.for('InventoryItemRepository'),

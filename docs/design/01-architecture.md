@@ -177,7 +177,7 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 |---|---|---|
 | Category tree + attributes | Cache-aside, key `v1:catalog:category-tree`, TTL `CATEGORY_TREE_CACHE_TTL_SECONDS` [v1.4] | Deleted on any admin category/attribute change (same request, after commit) |
 | Governorates + fees | Cache-aside, TTL `GOVERNORATES_CACHE_TTL_SECONDS` [v1.3] | Deleted on fee change (after commit) |
-| Product detail (public) | Cache-aside, key `v1:catalog:product:<id>` (static part only), TTL `PRODUCT_DETAIL_CACHE_TTL_SECONDS` [v1.4] | Deleted after commit on product/variant change. Stock is **not** taken from cache at checkout |
+| Product detail (public) | Cache-aside, key `v1:catalog:product:<id>` (static part only: no visibility, prices or stock, which are read fresh), TTL `PRODUCT_DETAIL_CACHE_TTL_SECONDS` [v1.4] | Deleted after commit on product/variant change. Stock is **not** taken from cache at checkout |
 | Product lists / search | **Not cached in R1.** Indexed queries are enough at the target load | n/a |
 
 - Cache keys use constants with a version prefix (`v1:catalog:category-tree`).

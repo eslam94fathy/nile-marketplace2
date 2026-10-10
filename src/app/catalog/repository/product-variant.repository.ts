@@ -132,6 +132,15 @@ export class ProductVariantRepository {
   }
 
   /** A live variant of this seller (variants are deleted with their product, so its product is live too). */
+  /** The product of a variant, deleted variants included (event consumers). */
+  async findProductIdOf(variantId: string, trx: DbTransaction): Promise<string | null> {
+    const row = await trx<ProductVariantTable>(T)
+      .select('product_id')
+      .where({ id: variantId })
+      .first<Pick<ProductVariantTable, 'product_id'> | undefined>();
+    return row?.product_id ?? null;
+  }
+
   async findLiveForSeller(id: string, sellerId: string, trx?: DbTransaction): Promise<ProductVariant | null> {
     const row = await this.exec(trx)<ProductVariantTable>(T)
       .select(...COLUMNS)

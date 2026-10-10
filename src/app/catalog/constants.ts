@@ -85,3 +85,6 @@ export const MAX_ATTRIBUTE_FILTERS = 5;
 export const MAX_ATTRIBUTE_FILTER_VALUES = 20;
 /** Detail `availableQuantity` = min(sellable, 99): the cart line maximum (DB-Q3). */
 export const MAX_AVAILABLE_QUANTITY = 99;
+
+/** Queue = consumer name (spec 02 §2): seller.approved, seller.suspended, inventory.stock_status_changed. */
+export const CATALOG_LISTING_PROJECTIONS_QUEUE = 'catalog.listing-projections';
