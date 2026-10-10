@@ -271,6 +271,7 @@ P3-Q1 specs 06, 07 v1.0, spec 05 v1.1, database v1.5, architecture v1.4 · P3-Q2
 | # | Topic | Options / recommendation |
 |---|---|---|
 | SD-3d | AWS region | Rec `eu-central-1`; see `docs/design/01-architecture.md` §12.2 |
+| P3-O1 | Typo search misses multi-word names | Found 2026-10-10 in the P3 local walkthrough. Spec 06 UC-CA-6 uses `name % q` (pg_trgm `similarity` of the whole name, default threshold 0.3): "trial runer" vs "Trail Runner …" scores 0.28, "erbuds" vs "Wireless Earbuds" 0.263, so neither is found; typos in short names are. **Rec:** match on words, `q <% name` (`word_similarity`, same GIN index), with the threshold from a new env key set per search query (`SET LOCAL pg_trgm.word_similarity_threshold`), starting at 0.35 (the two examples score 0.389 and 0.571), and `word_similarity` in the relevance score; tune with real product names in P8 · or lower the `%` threshold · or keep the spec as is |
 
 New ones go here as rows of this table.
 
