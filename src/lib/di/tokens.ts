@@ -68,6 +68,12 @@ export const TOKENS = {
   GovernorateController: Symbol.for('GovernorateController'),
   DeliverySettingsController: Symbol.for('DeliverySettingsController'),
 
+  // inventory module
+  InventoryItemRepository: Symbol.for('InventoryItemRepository'),
+  InventoryMovementRepository: Symbol.for('InventoryMovementRepository'),
+  /** Public API of inventory (spec 07 §2), injected into other modules. */
+  InventoryService: Symbol.for('InventoryService'),
+
   // notifications module
   NotificationLogRepository: Symbol.for('NotificationLogRepository'),
   EmailNotificationService: Symbol.for('EmailNotificationService'),

@@ -4,6 +4,7 @@ import { registerDeliveryModule } from './app/delivery';
 import { registerSellersModule } from './app/sellers';
 import { registerHealthModule } from './app/health';
 import { registerIdentityModule } from './app/identity';
+import { registerInventoryModule } from './app/inventory';
 import { registerNotificationsModule } from './app/notifications';
 import { TOKENS } from './lib/di';
 import { Outbox } from './lib/events';
@@ -42,6 +43,7 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
   registerCustomersModule(container);
   registerSellersModule(container);
   registerDeliveryModule(container);
+  registerInventoryModule(container);
   return container;
 }
 
@@ -50,5 +52,6 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   container.register(TOKENS.EmailSender, { useValue: infra.emailSender });
 
   registerNotificationsModule(container);
+  registerInventoryModule(container);
   return container;
 }

@@ -3,6 +3,7 @@ import knex, { type Knex } from 'knex';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrateDownAll, migrateLatest } from '../../src/lib/db/migrator';
 import { MIGRATIONS } from '../../src/migrations';
+import { catalogFixtures, signatureOf } from '../helpers/catalog-fixtures';
 import { createTestResources, type TestResources } from '../helpers/test-resources';
 
 const HASH = (char: string) => char.repeat(64);
@@ -346,6 +347,144 @@ describe('migrations on a real Postgres 18', () => {
           )
         ).constraint,
       ).toBe('uq_seller_settings_is_singleton');
+    });
+  });
+
+  describe('catalog + inventory (P3)', () => {
+    const fx = () => catalogFixtures(db);
+
+    it('category names are unique per parent case-insensitively, root level included; depth 1..3', async () => {
+      const { insertCategory } = fx();
+      const name = `Phones ${randomUUID()}`;
+      const root = await insertCategory({ name });
+      expect((await pgFailure(() => insertCategory({ name: name.toUpperCase() }))).constraint).toBe(
+        'uq_categories_parent_id_name_lower',
+      );
+      // The same name under another parent is fine.
+      await insertCategory({ parentId: root, depth: 2, name });
+      expect((await pgFailure(() => insertCategory({ parentId: root, depth: 4 }))).constraint).toBe(
+        'chk_categories_depth',
+      );
+    });
+
+    it('products: status whitelist, price projections, generated search vector', async () => {
+      const { insertSeller, insertCategory, insertProduct } = fx();
+      const { sellerId } = await insertSeller();
+      const categoryId = await insertCategory();
+      const fails = async (overrides: Record<string, unknown>) =>
+        (await pgFailure(() => insertProduct(sellerId, categoryId, overrides))).constraint;
+      expect(await fails({ status: 'archived' })).toBe('chk_products_status');
+      expect(await fails({ min_price: '10.00', max_price: '5.00' })).toBe('chk_products_max_price');
+      expect(await fails({ description: 'x'.repeat(5001) })).toBe('chk_products_description');
+
+      const id = await insertProduct(sellerId, categoryId, {
+        name: 'Wireless headphones',
+        description: 'Bass',
+      });
+      const row = await db('products')
+        .where({ id })
+        .first<{ hit: boolean }>(
+          db.raw(`search_vector @@ websearch_to_tsquery('english', 'headphone') AS hit`),
+        );
+      expect(row?.hit).toBe(true);
+    });
+
+    it('variants: SKU unique per seller among live rows, one row per option combination', async () => {
+      const { insertSeller, insertCategory, insertProduct, insertVariant } = fx();
+      const { sellerId } = await insertSeller();
+      const productId = await insertProduct(sellerId, await insertCategory());
+      const signature = signatureOf([]);
+      const first = await insertVariant(productId, sellerId, { sku: 'ABC-1', option_signature: signature });
+      expect((await pgFailure(() => insertVariant(productId, sellerId, { sku: 'abc-1' }))).constraint).toBe(
+        'uq_product_variants_seller_id_sku_lower',
+      );
+      expect(
+        (await pgFailure(() => insertVariant(productId, sellerId, { option_signature: signature })))
+          .constraint,
+      ).toBe('uq_product_variants_product_id_option_signature');
+      // Soft-deleting frees the SKU and the combination.
+      await db('product_variants').where({ id: first }).update({ deleted_at: db.fn.now() });
+      await insertVariant(productId, sellerId, { sku: 'abc-1', option_signature: signature });
+
+      const fails = async (overrides: Record<string, unknown>) =>
+        (await pgFailure(() => insertVariant(productId, sellerId, overrides))).constraint;
+      expect(await fails({ price: '0.00' })).toBe('chk_product_variants_price');
+      expect(await fails({ price: '10.00', compare_at_price: '10.00' })).toBe(
+        'chk_product_variants_compare_at_price',
+      );
+      expect(await fails({ status: 'draft' })).toBe('chk_product_variants_status');
+    });
+
+    it('an option used by a variant cannot be deleted (23001, P3-Q11)', async () => {
+      const { insertVariantChain } = fx();
+      const { categoryId, variantId } = await insertVariantChain();
+      const [attribute] = await db('category_attributes')
+        .insert({ category_id: categoryId, name: 'Size', code: 'size', sort_order: 0 })
+        .returning<{ id: string }[]>('id');
+      const [option] = await db('category_attribute_options')
+        .insert({ attribute_id: attribute?.id, value: 'XL', code: 'xl', sort_order: 0 })
+        .returning<{ id: string }[]>('id');
+      await db('variant_attribute_values').insert({
+        variant_id: variantId,
+        attribute_id: attribute?.id,
+        option_id: option?.id,
+      });
+      expect(
+        await pgFailure(() => db('category_attribute_options').where({ id: option?.id }).delete()),
+      ).toEqual({
+        code: '23001',
+        constraint: 'fk_variant_attribute_values_option_id',
+      });
+      expect(
+        (await pgFailure(() => db('category_attributes').where({ id: attribute?.id }).delete())).code,
+      ).toBe('23001');
+    });
+
+    it('inventory_items: one row per variant, 0 <= reserved <= on_hand', async () => {
+      const { insertVariantChain } = fx();
+      const { variantId } = await insertVariantChain();
+      const fails = async (row: Record<string, unknown>) =>
+        (await pgFailure(() => db('inventory_items').insert({ variant_id: variantId, ...row }))).constraint;
+      expect(await fails({ on_hand: -1, reserved: 0 })).toBe('chk_inventory_items_on_hand');
+      expect(await fails({ on_hand: 1, reserved: 2 })).toBe('chk_inventory_items_reserved_lte_on_hand');
+      const [item] = await db('inventory_items')
+        .insert({ variant_id: variantId, on_hand: 5, reserved: 0 })
+        .returning<{ id: string }[]>('id');
+      expect(await fails({ on_hand: 1, reserved: 0 })).toBe('uq_inventory_items_variant_id');
+      expect(
+        (
+          await pgFailure(() =>
+            db('inventory_movements').insert({
+              inventory_item_id: item?.id,
+              type: 'restock',
+              quantity_delta: 1,
+              on_hand_after: 6,
+              reserved_after: 0,
+            }),
+          )
+        ).constraint,
+      ).toBe('chk_inventory_movements_type');
+    });
+
+    it('listing and stock-history indexes match D-5, D-6 and D-7', async () => {
+      const definitions = await db.raw<{ rows: { name: string; definition: string }[] }>(
+        `SELECT c.relname AS name, pg_get_indexdef(i.indexrelid) AS definition
+           FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+          WHERE c.relname IN ('idx_products_category_id_published_at_id', 'idx_products_published_at_id',
+                              'idx_inventory_movements_inventory_item_id_created_at_id',
+                              'idx_products_category_id')
+          ORDER BY c.relname`,
+      );
+      const byName = Object.fromEntries(definitions.rows.map((row) => [row.name, row.definition]));
+      expect(byName.idx_products_category_id_published_at_id).toMatch(
+        /\(category_id, published_at DESC, id DESC\) WHERE.*status.*'active'.*seller_active.*deleted_at IS NULL/,
+      );
+      expect(byName.idx_products_published_at_id).toMatch(/\(published_at DESC, id DESC\) WHERE/);
+      // D-7: not partial, so drafts and deleted products are covered too.
+      expect(byName.idx_products_category_id).toMatch(/\(category_id\)$/);
+      expect(byName.idx_inventory_movements_inventory_item_id_created_at_id).toMatch(
+        /\(inventory_item_id, created_at DESC, id DESC\)/,
+      );
     });
   });
 });

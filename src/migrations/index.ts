@@ -15,6 +15,14 @@ import * as m20261009202641 from './20261009202641_create_sellers';
 import * as m20261009202643 from './20261009202643_create_seller_status_history';
 import * as m20261009202644 from './20261009202644_create_seller_commission_history';
 import * as m20261009202646 from './20261009202646_create_seller_settings';
+import * as m20261010120001 from './20261010120001_create_categories';
+import * as m20261010120002 from './20261010120002_create_category_attributes';
+import * as m20261010120003 from './20261010120003_create_category_attribute_options';
+import * as m20261010120004 from './20261010120004_create_products';
+import * as m20261010120005 from './20261010120005_create_product_variants';
+import * as m20261010120006 from './20261010120006_create_variant_attribute_values';
+import * as m20261010120007 from './20261010120007_create_inventory_items';
+import * as m20261010120008 from './20261010120008_create_inventory_movements';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -35,5 +43,13 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261009202643_create_seller_status_history', module: m20261009202643 },
   { name: '20261009202644_create_seller_commission_history', module: m20261009202644 },
   { name: '20261009202646_create_seller_settings', module: m20261009202646 },
+  { name: '20261010120001_create_categories', module: m20261010120001 },
+  { name: '20261010120002_create_category_attributes', module: m20261010120002 },
+  { name: '20261010120003_create_category_attribute_options', module: m20261010120003 },
+  { name: '20261010120004_create_products', module: m20261010120004 },
+  { name: '20261010120005_create_product_variants', module: m20261010120005 },
+  { name: '20261010120006_create_variant_attribute_values', module: m20261010120006 },
+  { name: '20261010120007_create_inventory_items', module: m20261010120007 },
+  { name: '20261010120008_create_inventory_movements', module: m20261010120008 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

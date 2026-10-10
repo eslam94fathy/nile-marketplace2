@@ -27,6 +27,14 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261009202643_create_seller_status_history',
       '20261009202644_create_seller_commission_history',
       '20261009202646_create_seller_settings',
+      '20261010120001_create_categories',
+      '20261010120002_create_category_attributes',
+      '20261010120003_create_category_attribute_options',
+      '20261010120004_create_products',
+      '20261010120005_create_product_variants',
+      '20261010120006_create_variant_attribute_values',
+      '20261010120007_create_inventory_items',
+      '20261010120008_create_inventory_movements',
     ]);
   });
 
