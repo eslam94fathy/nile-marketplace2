@@ -1,10 +1,13 @@
-import { Router } from 'express';
+import { type RequestHandler, Router } from 'express';
 import { type JwtVerifier, UserRole } from '../../lib/auth';
 import { type OpenApiRegistry } from '../../lib/http';
 import { authenticate, requireRole } from '../../lib/middleware';
 import { CATALOG_ADMIN_PATHS as A, CATALOG_PATHS as P } from './constants';
 import { type CategoryAdminController } from './controller/category-admin.controller';
 import { type CategoryController } from './controller/category.controller';
+import { type SellerProductController } from './controller/seller-product.controller';
+import { type SellerVariantController } from './controller/seller-variant.controller';
+import { addCatalogSellerRoutes } from './seller-routes';
 import {
   CreateAttributeDto,
   CreateCategoryDto,
@@ -27,13 +30,16 @@ const ADMIN_TAGS = ['admin: catalog'] as const;
 export interface CatalogRouteDeps {
   categories: CategoryController;
   categoryAdmin: CategoryAdminController;
+  sellerProducts: SellerProductController;
+  sellerVariants: SellerVariantController;
   jwtVerifier: JwtVerifier;
+  idempotency: RequestHandler;
   docs: OpenApiRegistry;
   /** Where the router is mounted (`/api/v1`), for the documented paths. */
   basePath: string;
 }
 
-/** Spec 06 §4.1 (public) and §4.2 (admin). General rate limit (global). */
+/** Spec 06 §4.1 (public), §4.2 (admin) and §4.3 (seller). General rate limit (global). */
 export function catalogRoutes(deps: CatalogRouteDeps): Router {
   const { categories, categoryAdmin: admin, docs, basePath } = deps;
   const router = Router();
@@ -51,6 +57,15 @@ export function catalogRoutes(deps: CatalogRouteDeps): Router {
   router.post(A.ATTRIBUTE_OPTIONS, ...adminOnly, admin.addOption);
   router.patch(A.OPTION, ...adminOnly, admin.updateOption);
   router.delete(A.OPTION, ...adminOnly, admin.deleteOption);
+
+  addCatalogSellerRoutes(router, {
+    products: deps.sellerProducts,
+    variants: deps.sellerVariants,
+    jwtVerifier: deps.jwtVerifier,
+    idempotency: deps.idempotency,
+    docs,
+    basePath,
+  });
 
   docs.add({
     method: 'get',

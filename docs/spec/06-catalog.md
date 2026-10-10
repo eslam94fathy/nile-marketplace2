@@ -1,6 +1,6 @@
 # Spec 06 — catalog
 
-Status: **v1.1 APPROVED (2026-10-10).** v1.0: approved with the Phase 3 clarifications in §7.1. v1.1: an active category always has an active parent (CA-13); attribute writes lock the whole subtree (CA-2). Changes from now on need explicit approval and a version bump.
+Status: **v1.1 APPROVED (2026-10-10).** v1.0: approved with the Phase 3 clarifications in §7.1. v1.1: an active category always has an active parent (CA-13); attribute writes lock the whole subtree (CA-2). v1.2: product writes hold their category `FOR SHARE` (CA-2). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -39,7 +39,7 @@ Limits (constants in `constants.ts`; change = code review): effective attributes
 
 ### UC-CA-3 Seller manages products
 Guard on **every** seller write: `sellers.getSellerByUserId(userId, { trx, lockShared: true })` inside the write transaction → `status = approved`, else `403 SELLER_NOT_APPROVED` (CA-3). Reads (including stock history) are allowed in any seller status.
-Every product or variant write locks the product row `FOR UPDATE` before its checks and the projection recompute (CA-2).
+Every product or variant write locks the product row `FOR UPDATE` before its checks and the projection recompute; a product create or category change holds the category `FOR SHARE` (CA-2).
 - Create: `status = draft`, `seller_active = true`, `min_price/max_price = null`, `in_stock = false`. The category must exist and be active → `CATEGORY_NOT_FOUND` (422). `slug` = kebab(name) + `-` + 6 random base36 chars (`product-` + 6 chars when kebab-casing leaves nothing, CA-10), **immutable** (stable links even after a rename).
 - Update: `name`, `description`, `categoryId`. The category can change only while the product has **no non-deleted variant** → `PRODUCT_CATEGORY_LOCKED`.
 - Activate (`draft|inactive → active`): needs ≥1 active variant → `PRODUCT_HAS_NO_ACTIVE_VARIANT`. Sets `published_at` the first time.
@@ -268,7 +268,7 @@ Consumed: `seller.approved`, `seller.suspended`, `inventory.stock_status_changed
 | # | Clarification | Where |
 |---|---|---|
 | CA-1 | `inventory_reservations` and checkout reservations land in Phase 5; nothing in this spec depends on them before then (P3-Q2) | §1 |
-| CA-2 | Product/variant writes and the `in_stock` consumer lock the product row first. Category create locks the parent, category update the category itself, option add the attribute row. Attribute add/delete lock the category's **whole subtree** in id order (v1.1): an ancestor's subtree contains the descendant, so writes along one lineage serialise, which covers code uniqueness, the effective-attribute limit (checked against the largest count in the subtree) and "no products in the subtree". Lock order is product → inventory item (P3-Q3) | UC-CA-1…4 |
+| CA-2 | Product/variant writes and the `in_stock` consumer lock the product row first. Category create locks the parent, category update the category itself, option add the attribute row. Attribute add/delete lock the category's **whole subtree** in id order (v1.1): an ancestor's subtree contains the descendant, so writes along one lineage serialise, which covers code uniqueness, the effective-attribute limit (checked against the largest count in the subtree) and "no products in the subtree". Product create, and a product's category change, hold the category row `FOR SHARE` until commit (v1.2): a concurrent deactivation or attribute add (both `FOR UPDATE`) waits for the product write and then sees the product. Lock order is seller (`FOR SHARE`) → product → category / inventory item (P3-Q3) | UC-CA-1…4 |
 | CA-3 | The seller guard reads the seller `FOR SHARE` inside the write transaction (spec 05 SE-4, P3-Q4) | UC-CA-3 |
 | CA-4 | The list query language is extended generically in `lib/http/query` (prefix fields, per-field apply hooks, expression sorts) (P3-Q6) | §4.1 |
 | CA-5 | `attr.*`: same-variant semantics, needs `categoryId`, resolution over lineage + subtree (P3-Q5) | UC-CA-6, §4.1 |

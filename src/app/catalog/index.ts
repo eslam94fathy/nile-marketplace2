@@ -8,37 +8,57 @@
 import { type Router } from 'express';
 import { type DependencyContainer } from 'tsyringe';
 import { type JwtVerifier } from '../../lib/auth';
+import { type ApiEnv } from '../../lib/config';
 import { TOKENS } from '../../lib/di';
 import { type PgErrorMapper } from '../../lib/error';
 import { type OpenApiRegistry } from '../../lib/http';
+import { type ILogger } from '../../lib/logger';
+import { requireIdempotency } from '../../lib/middleware';
+import { type ICache } from '../../pkg/cache';
 import { CategoryAdminController } from './controller/category-admin.controller';
 import { CategoryController } from './controller/category.controller';
+import { SellerProductController } from './controller/seller-product.controller';
+import { SellerVariantController } from './controller/seller-variant.controller';
 import { registerCatalogConstraintErrors } from './errors';
 import { CategoryAttributeOptionRepository } from './repository/category-attribute-option.repository';
 import { CategoryAttributeRepository } from './repository/category-attribute.repository';
 import { CategoryRepository } from './repository/category.repository';
+import { ProductVariantRepository } from './repository/product-variant.repository';
 import { ProductRepository } from './repository/product.repository';
 import { VariantAttributeValueRepository } from './repository/variant-attribute-value.repository';
 import { catalogRoutes } from './routes';
 import { CategoryAdminService } from './service/category-admin.service';
 import { CategoryTreeService } from './service/category-tree.service';
 import { CategoryService } from './service/category.service';
+import { ProductProjectionService } from './service/product-projection.service';
+import { SellerGuard } from './service/seller-guard.service';
+import { SellerProductService } from './service/seller-product.service';
+import { SellerVariantService } from './service/seller-variant.service';
+import { VariantViewService } from './service/variant-view.service';
 
 export { ProductStatus, VariantStatus } from './enums';
 export { CatalogErrorCode } from './errors';
 
-/** api process. */
+/** api process. Needs sellers' SellerDirectory and inventory's InventoryService registered first. */
 export function registerCatalogModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.CategoryRepository, CategoryRepository);
   container.registerSingleton(TOKENS.CategoryAttributeRepository, CategoryAttributeRepository);
   container.registerSingleton(TOKENS.CategoryAttributeOptionRepository, CategoryAttributeOptionRepository);
   container.registerSingleton(TOKENS.ProductRepository, ProductRepository);
+  container.registerSingleton(TOKENS.ProductVariantRepository, ProductVariantRepository);
   container.registerSingleton(TOKENS.VariantAttributeValueRepository, VariantAttributeValueRepository);
   container.registerSingleton(TOKENS.CategoryTreeService, CategoryTreeService);
   container.registerSingleton(TOKENS.CategoryService, CategoryService);
   container.registerSingleton(TOKENS.CategoryAdminService, CategoryAdminService);
+  container.registerSingleton(TOKENS.SellerGuard, SellerGuard);
+  container.registerSingleton(TOKENS.VariantViewService, VariantViewService);
+  container.registerSingleton(TOKENS.ProductProjectionService, ProductProjectionService);
+  container.registerSingleton(TOKENS.SellerProductService, SellerProductService);
+  container.registerSingleton(TOKENS.SellerVariantService, SellerVariantService);
   container.registerSingleton(TOKENS.CategoryController, CategoryController);
   container.registerSingleton(TOKENS.CategoryAdminController, CategoryAdminController);
+  container.registerSingleton(TOKENS.SellerProductController, SellerProductController);
+  container.registerSingleton(TOKENS.SellerVariantController, SellerVariantController);
   registerCatalogConstraintErrors(container.resolve<PgErrorMapper>(TOKENS.PgErrorMapper));
 }
 
@@ -47,7 +67,14 @@ export function createCatalogRouter(container: DependencyContainer, basePath: st
   return catalogRoutes({
     categories: container.resolve<CategoryController>(TOKENS.CategoryController),
     categoryAdmin: container.resolve<CategoryAdminController>(TOKENS.CategoryAdminController),
+    sellerProducts: container.resolve<SellerProductController>(TOKENS.SellerProductController),
+    sellerVariants: container.resolve<SellerVariantController>(TOKENS.SellerVariantController),
     jwtVerifier: container.resolve<JwtVerifier>(TOKENS.JwtVerifier),
+    idempotency: requireIdempotency(
+      container.resolve<ICache>(TOKENS.Cache),
+      container.resolve<ApiEnv>(TOKENS.Env),
+      container.resolve<ILogger>(TOKENS.Logger),
+    ),
     docs: container.resolve<OpenApiRegistry>(TOKENS.OpenApiRegistry),
     basePath,
   });

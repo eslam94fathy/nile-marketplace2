@@ -54,6 +54,15 @@ export class CategoryAttributeOptionRepository {
     return row ? toModel(row) : null;
   }
 
+  /** Batched by primary key; unknown ids are left out. */
+  async findByIds(ids: readonly string[], trx?: DbTransaction): Promise<CategoryAttributeOption[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.exec(trx)<CategoryAttributeOptionTable>(T)
+      .select(...COLUMNS)
+      .whereIn('id', [...new Set(ids)]);
+    return rows.map(toModel);
+  }
+
   /** Served by uq_category_attribute_options_attribute_id_code (attribute_id leads). */
   async countByAttribute(attributeId: string, trx: DbTransaction): Promise<number> {
     const row = await trx<CategoryAttributeOptionTable>(T)

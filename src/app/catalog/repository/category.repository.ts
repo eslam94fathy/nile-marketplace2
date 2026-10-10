@@ -64,6 +64,19 @@ export class CategoryRepository {
     return rows.map((row) => row.id);
   }
 
+  /**
+   * `SELECT … FOR SHARE`: a product write holds its category so that a concurrent deactivation or
+   * attribute change (which lock it `FOR UPDATE`) waits for it, and then sees the product.
+   */
+  async findForShare(id: string, trx: DbTransaction): Promise<Category | null> {
+    const row = await trx<CategoryTable>(T)
+      .select(...COLUMNS)
+      .where({ id })
+      .forShare()
+      .first<CategoryRow | undefined>();
+    return row ? toModel(row) : null;
+  }
+
   async insert(category: NewCategory, trx: DbTransaction): Promise<string> {
     const [row] = await trx<CategoryTable>(T)
       .insert({

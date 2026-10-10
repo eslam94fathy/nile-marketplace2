@@ -115,11 +115,17 @@ export class SellerRepository {
     return row ? toModel(row) : undefined;
   }
 
-  async findByUserId(userId: string, trx?: DbTransaction): Promise<Seller | undefined> {
-    const row = await this.exec(trx)<SellerRow>(T)
+  /** `forShare`: `SELECT … FOR SHARE` (requires `trx`), so a status change waits for the caller (SE-4). */
+  async findByUserId(
+    userId: string,
+    trx?: DbTransaction,
+    options: { forShare?: boolean } = {},
+  ): Promise<Seller | undefined> {
+    const query = this.exec(trx)<SellerRow>(T)
       .select(...COLUMNS)
-      .where({ user_id: userId })
-      .first();
+      .where({ user_id: userId });
+    if (options.forShare) void query.forShare();
+    const row = await query.first();
     return row ? toModel(row) : undefined;
   }
 

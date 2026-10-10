@@ -27,10 +27,19 @@ export interface SellerCheckoutSnapshot {
   };
 }
 
+export interface SellerLookupOptions {
+  trx: DbTransaction;
+  lockShared: boolean;
+}
+
 /** Public API of sellers (spec 05 §2). All lookups are batched; unknown ids are left out. */
 export interface ISellerDirectory {
-  /** Profile resolution + the "is approved" guard (catalog, ordering). */
-  getSellerByUserId(userId: string): Promise<SellerStatusSummary | null>;
+  /**
+   * Profile resolution + the "is approved" guard (catalog, ordering). With `lockShared` the row is
+   * read `FOR SHARE` in the caller's `trx`: a suspension then waits for the caller's write, and its
+   * consumer sees the new rows (spec 05 SE-4).
+   */
+  getSellerByUserId(userId: string, options?: SellerLookupOptions): Promise<SellerStatusSummary | null>;
   getStatuses(sellerIds: readonly string[]): Promise<SellerStatusSummary[]>;
   /** Display names (catalog, cart, ordering). */
   getSummaries(sellerIds: readonly string[]): Promise<{ sellerId: string; businessName: string }[]>;
@@ -41,8 +50,11 @@ export interface ISellerDirectory {
 export class SellerDirectory implements ISellerDirectory {
   constructor(@inject(TOKENS.SellerRepository) private readonly sellers: SellerRepository) {}
 
-  async getSellerByUserId(userId: string): Promise<SellerStatusSummary | null> {
-    const seller = await this.sellers.findByUserId(userId);
+  async getSellerByUserId(
+    userId: string,
+    options?: SellerLookupOptions,
+  ): Promise<SellerStatusSummary | null> {
+    const seller = await this.sellers.findByUserId(userId, options?.trx, { forShare: options?.lockShared });
     return seller ? { sellerId: seller.id, status: seller.status } : null;
   }
 

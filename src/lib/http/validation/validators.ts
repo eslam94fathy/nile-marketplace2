@@ -12,6 +12,8 @@ import {
  * Patterns are exported so the OpenAPI generator and tests share them.
  */
 export const MONEY_PATTERN = /^\d{1,10}(\.\d{1,2})?$/;
+/** MONEY_PATTERN, excluding zero ("0", "0.0", "00.00"…). */
+export const POSITIVE_MONEY_PATTERN = /^(?!0+(\.0{1,2})?$)\d{1,10}(\.\d{1,2})?$/;
 export const RATE_PATTERN = /^(0(\.\d{1,4})?|1(\.0{1,4})?)$/;
 export const EGYPTIAN_MOBILE_PATTERN = /^\+20(10|11|12|15)\d{8}$/;
 export const OTP_PATTERN = /^\d{6}$/;
@@ -20,6 +22,13 @@ export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** Decimal string that fits NUMERIC(12,2), e.g. "150.00". */
 export const IsMoney = (options?: ValidationOptions) =>
   Matches(MONEY_PATTERN, { message: '$property must be a decimal string with up to 2 decimals', ...options });
+
+/** `money, > 0` (e.g. a variant price). */
+export const IsPositiveMoney = (options?: ValidationOptions) =>
+  Matches(POSITIVE_MONEY_PATTERN, {
+    message: '$property must be a decimal string greater than 0 with up to 2 decimals',
+    ...options,
+  });
 
 /** Decimal string between 0 and 1 with up to 4 decimals, e.g. "0.1000". */
 export const IsRate = (options?: ValidationOptions) =>

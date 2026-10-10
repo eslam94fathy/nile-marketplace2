@@ -46,6 +46,18 @@ export class CategoryAttributeRepository {
     return rows.map(toModel);
   }
 
+  /**
+   * Attributes defined on these categories (a product's category path), fresh from the DB:
+   * uq_category_attributes_category_id_code serves `category_id IN (...)`.
+   */
+  async findByCategoryIds(categoryIds: readonly string[], trx?: DbTransaction): Promise<CategoryAttribute[]> {
+    if (categoryIds.length === 0) return [];
+    const rows = await this.exec(trx)<CategoryAttributeTable>(T)
+      .select(...COLUMNS)
+      .whereIn('category_id', [...new Set(categoryIds)]);
+    return rows.map(toModel);
+  }
+
   /** `SELECT … FOR UPDATE`: serialises option writes of one attribute (the option limit). */
   async findForUpdate(id: string, trx: DbTransaction): Promise<CategoryAttribute | null> {
     const row = await trx<CategoryAttributeTable>(T)

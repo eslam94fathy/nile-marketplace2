@@ -30,6 +30,7 @@ export { SellersErrorCode, sellerNotApproved } from './errors';
 export type {
   ISellerDirectory,
   SellerCheckoutSnapshot,
+  SellerLookupOptions,
   SellerStatusSummary,
 } from './service/seller-directory.service';
 

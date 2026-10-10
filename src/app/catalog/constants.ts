@@ -41,3 +41,29 @@ export const SORT_ORDER_MAX = 10_000;
 
 /** The whole category tree with attributes and options, cache-aside (spec 06 CA-8). */
 export const CATEGORY_TREE_CACHE_KEY = 'v1:catalog:category-tree';
+
+/** Seller paths under /api/v1 (spec 06 §4.3). */
+export const CATALOG_SELLER_PATHS = {
+  PRODUCTS: '/seller/products',
+  PRODUCT: '/seller/products/:productId',
+  ACTIVATE: '/seller/products/:productId/activate',
+  DEACTIVATE: '/seller/products/:productId/deactivate',
+  VARIANTS: '/seller/products/:productId/variants',
+  VARIANT: '/seller/products/:productId/variants/:variantId',
+  STOCK_ADJUSTMENTS: '/seller/variants/:variantId/stock-adjustments',
+  STOCK_MOVEMENTS: '/seller/variants/:variantId/stock-movements',
+} as const;
+
+/** Product and variant DTO limits = column lengths (02-database.md §5, DB-Q4). */
+export const PRODUCT_NAME_MIN_LENGTH = 2;
+export const PRODUCT_NAME_MAX_LENGTH = 200;
+export const PRODUCT_DESCRIPTION_MAX_LENGTH = 5000;
+export const PRODUCT_SLUG_MAX_LENGTH = 220;
+export const SKU_MAX_LENGTH = 64;
+export const SKU_PATTERN = /^[A-Za-z0-9._-]+$/;
+export const INITIAL_STOCK_MAX = 100_000;
+export const STOCK_DELTA_MAX = 100_000;
+
+/** `kebab(name)-xxxxxx` (spec 06 UC-CA-3); `product-xxxxxx` when the name has nothing usable (CA-10). */
+export const PRODUCT_SLUG_SUFFIX_LENGTH = 6;
+export const PRODUCT_SLUG_FALLBACK = 'product';

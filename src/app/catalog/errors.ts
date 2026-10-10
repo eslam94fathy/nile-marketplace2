@@ -1,4 +1,4 @@
-import { AppError, type PgErrorMapper } from '../../lib/error';
+import { AppError, type ErrorDetail, type PgErrorMapper } from '../../lib/error';
 import { HTTP_STATUS } from '../../lib/http';
 
 /** catalog error codes (docs/spec/06-catalog.md §6). */
@@ -110,8 +110,59 @@ export const optionLimitReached = (max: number) =>
 export const optionInUse = (cause?: unknown) =>
   new AppError(C.OPTION_IN_USE, 'Variants use this option', S.CONFLICT, { cause });
 
+/** Missing, deleted, not visible (public), or another seller's (spec 06 §6). */
+export const productNotFound = () => new AppError(C.PRODUCT_NOT_FOUND, 'Product not found', S.NOT_FOUND);
+export const productInvalidStatusTransition = () =>
+  new AppError(
+    C.PRODUCT_INVALID_STATUS_TRANSITION,
+    'This status change is not allowed from the current status',
+    S.CONFLICT,
+  );
+export const productHasNoActiveVariant = () =>
+  new AppError(C.PRODUCT_HAS_NO_ACTIVE_VARIANT, 'Add an active variant before activating', S.CONFLICT);
+export const productCategoryLocked = () =>
+  new AppError(
+    C.PRODUCT_CATEGORY_LOCKED,
+    'The category cannot change while the product has variants',
+    S.CONFLICT,
+  );
+
+export const variantNotFound = () => new AppError(C.VARIANT_NOT_FOUND, 'Variant not found', S.NOT_FOUND);
+export const variantOptionsInvalid = (details: readonly ErrorDetail[]) =>
+  new AppError(
+    C.VARIANT_OPTIONS_INVALID,
+    'Pick exactly one option for each attribute of the category',
+    S.UNPROCESSABLE_ENTITY,
+    { details },
+  );
+export const defaultVariantExists = () =>
+  new AppError(
+    C.DEFAULT_VARIANT_EXISTS,
+    'A product in a category without attributes has a single variant',
+    S.CONFLICT,
+  );
+export const variantCombinationExists = (cause?: unknown) =>
+  new AppError(C.VARIANT_COMBINATION_EXISTS, 'A variant with these options already exists', S.CONFLICT, {
+    cause,
+  });
+export const variantLimitReached = (max: number) =>
+  new AppError(C.VARIANT_LIMIT_REACHED, `A product can have at most ${max} variants`, S.UNPROCESSABLE_ENTITY);
+export const skuTaken = (cause?: unknown) =>
+  new AppError(C.SKU_TAKEN, 'You already use this SKU', S.CONFLICT, { cause });
+export const compareAtPriceInvalid = (cause?: unknown) =>
+  new AppError(
+    C.COMPARE_AT_PRICE_INVALID,
+    'compareAtPrice must be greater than price',
+    S.UNPROCESSABLE_ENTITY,
+    { cause },
+  );
+
 /** Constraints that race with app-level checks (CLAUDE.md §6.4, spec 06 CA-11). */
 export function registerCatalogConstraintErrors(mapper: PgErrorMapper): void {
+  mapper.register('fk_products_category_id', categoryReferenceNotFound);
+  mapper.register('uq_product_variants_seller_id_sku_lower', skuTaken);
+  mapper.register('uq_product_variants_product_id_option_signature', variantCombinationExists);
+  mapper.register('chk_product_variants_compare_at_price', compareAtPriceInvalid);
   mapper.register('uq_categories_slug', categorySlugTaken);
   mapper.register('uq_categories_parent_id_name_lower', categoryNameTaken);
   mapper.register('fk_categories_parent_id', categoryReferenceNotFound);
