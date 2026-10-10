@@ -131,6 +131,78 @@ describe('lib/http parseListQuery', () => {
     ).toThrow();
   });
 
+  describe('extensions (P3-Q6)', () => {
+    const extended: ListSpec = {
+      fields: {
+        categoryId: { type: FieldType.UUID, ops: [FilterOp.EQ] },
+        publishedAt: { column: 'published_at', type: FieldType.DATE, ops: [], sortable: true },
+        relevance: { type: FieldType.NUMBER, ops: [], sortable: true },
+      },
+      prefixFields: { 'attr.': { type: FieldType.TEXT, ops: [FilterOp.IN], maxValues: 3, maxKeys: 2 } },
+      defaultSort: '-publishedAt',
+    };
+    const parse = (query: Record<string, unknown>) => parseListQuery(query, extended, limits);
+    const problems = (query: Record<string, unknown>) => {
+      try {
+        parse(query);
+      } catch (error) {
+        return (error as AppError).details ?? [];
+      }
+      throw new Error('expected parseListQuery to throw');
+    };
+
+    it('parses prefix fields with their key, and custom fields without a column', () => {
+      const parsed = parse({ 'attr.screen-size[in]': '13,15', 'attr.color[in]': 'red', categoryId: ID });
+      expect(parsed.filters).toEqual(
+        expect.arrayContaining([
+          {
+            field: 'attr.screen-size',
+            column: null,
+            op: 'in',
+            value: ['13', '15'],
+            prefix: { name: 'attr.', key: 'screen-size' },
+          },
+          {
+            field: 'attr.color',
+            column: null,
+            op: 'in',
+            value: ['red'],
+            prefix: { name: 'attr.', key: 'color' },
+          },
+          { field: 'categoryId', column: null, op: 'eq', value: ID },
+        ]),
+      );
+      expect(parse({ sort: '-relevance' }).sort).toMatchObject({ field: 'relevance', column: null });
+    });
+
+    it('rejects bad prefix keys, too many keys, too many values and unsupported operators', () => {
+      expect(problems({ 'attr.Size[in]': 'x' })[0]).toMatchObject({
+        field: 'attr.Size[in]',
+        constraint: 'unknown',
+      });
+      expect(problems({ 'attr.[in]': 'x' })[0]).toMatchObject({ constraint: 'unknown' });
+      expect(problems({ 'attr.a[in]': 'x', 'attr.b[in]': 'x', 'attr.c[in]': 'x' })[0]).toMatchObject({
+        field: 'attr.',
+        constraint: 'max_keys',
+      });
+      expect(problems({ 'attr.a[in]': 'w,x,y,z' })[0]).toMatchObject({
+        field: 'attr.a[in]',
+        constraint: 'in',
+      });
+      expect(problems({ 'attr.a[eq]': 'x' })[0]).toMatchObject({ constraint: 'operator' });
+    });
+
+    it('counts the same key under two operators once', () => {
+      const prefixSpec = { 'attr.': { type: FieldType.TEXT, ops: [FilterOp.IN, FilterOp.EQ], maxKeys: 1 } };
+      const parsed = parseListQuery(
+        { 'attr.a[in]': 'x', 'attr.a': 'y' },
+        { ...extended, prefixFields: prefixSpec },
+        limits,
+      );
+      expect(parsed.filters).toHaveLength(2);
+    });
+  });
+
   it('builds a page with nextCursor from the last returned row', () => {
     const query = parseListQuery({ limit: '2' }, spec, limits);
     const rows = [

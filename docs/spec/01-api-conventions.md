@@ -1,6 +1,6 @@
 # Spec 01 — API Conventions (shared by all module specs)
 
-Status: **v1.2 APPROVED (2026-10-09).** Approved by the user. v1.1: passwords are never trimmed; `opt` implemented by a shared `Optional()` decorator (Phase 1). v1.2: `GOVERNORATE_NOT_FOUND` is a common code (§6, P2-Q7). Changes from now on need explicit approval and a version bump.
+Status: **v1.3 APPROVED (2026-10-10).** Approved by the user. v1.1: passwords are never trimmed; `opt` implemented by a shared `Optional()` decorator (Phase 1). v1.2: `GOVERNORATE_NOT_FOUND` is a common code (§6, P2-Q7). v1.3: an unmapped restrict violation (`23001`) is a `CONFLICT` too (§6, P3-Q11). Changes from now on need explicit approval and a version bump.
 Inputs: `CLAUDE.md` §7–§10, `docs/design/01-architecture.md` v1.0, `docs/design/02-database.md` v1.0.
 
 Module specs: `03-identity.md` · `04-customers.md` · `05-sellers.md` · `06-catalog.md` · `07-inventory.md` · `08-cart.md` · `09-ordering.md` · `10-payments.md` · `11-delivery.md` · `12-finance.md` · `13-notifications.md`. Events: `02-events.md`.
@@ -95,7 +95,7 @@ All paths are under `/api/v1`.
 | `FORBIDDEN` | 403 | Wrong role, or the profile behind the token is missing |
 | `ROUTE_NOT_FOUND` | 404 | No route matches |
 | `PAYLOAD_TOO_LARGE` | 413 | Body over the env limit |
-| `CONFLICT` | 409 | Unmapped unique violation (`23505`) |
+| `CONFLICT` | 409 | Unmapped unique violation (`23505`) or restrict violation (`23001`, a delete blocked by a reference) [v1.3] |
 | `IDEMPOTENCY_REQUEST_IN_PROGRESS` | 409 | Same key is still being processed |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | Same key, different request |
 | `REFERENCE_NOT_FOUND` | 422 | Unmapped FK violation (`23503`) |

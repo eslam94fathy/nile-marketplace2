@@ -1,7 +1,7 @@
 # Implementation Plan (Release 1)
 
 Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09). P3 (§5) v1.0 APPROVED (2026-10-10).** Later phases are detailed when their specs are approved.
-Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.4, `docs/design/02-database.md` v1.5, `docs/spec/01-api-conventions.md` v1.2, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
+Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.4, `docs/design/02-database.md` v1.5, `docs/spec/01-api-conventions.md` v1.3, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
 
 ---
 

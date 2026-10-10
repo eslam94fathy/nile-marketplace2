@@ -92,6 +92,7 @@ describe('lib/error global error handler', () => {
     const cases: [string, number, string][] = [
       ['23505', 409, 'CONFLICT'],
       ['23503', 422, 'REFERENCE_NOT_FOUND'],
+      ['23001', 409, 'CONFLICT'],
       ['23514', 422, 'CONSTRAINT_VIOLATION'],
     ];
     for (const [code, status, errorCode] of cases) {

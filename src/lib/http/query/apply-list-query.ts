@@ -17,7 +17,7 @@ function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
-function applyFilter(qb: Knex.QueryBuilder, filter: ParsedFilter): void {
+function applyFilter(qb: Knex.QueryBuilder, filter: ParsedFilter & { column: string }): void {
   // Columns come from the endpoint's whitelist, values are always bound parameters (CLAUDE.md §6.4).
   if (filter.op === FilterOp.IN) {
     qb.whereIn(filter.column, filter.value as readonly Knex.Value[]);
@@ -30,18 +30,35 @@ function applyFilter(qb: Knex.QueryBuilder, filter: ParsedFilter): void {
   qb.where(filter.column, SQL_OPERATOR[filter.op], filter.value as Knex.Value);
 }
 
+export interface ApplyListQueryOptions {
+  /**
+   * Orders by this expression instead of the sort column. Required when the active sort is a custom
+   * field (no column), e.g. search relevance. It must be deterministic (the keyset compares the
+   * cursor value against it) and NOT NULL within the filtered set.
+   */
+  sortExpression?: Knex.Raw;
+}
+
 /**
- * Applies filters, keyset position, ordering and `limit + 1` (to detect `hasMore`).
+ * Applies the column filters, keyset position, ordering and `limit + 1` (to detect `hasMore`).
+ * Custom and prefix filters (`column: null`) are skipped: the caller applies them.
  * The sort column must be NOT NULL within the filtered set; ties break on `idColumn`.
  */
 export function applyListQuery(
   qb: Knex.QueryBuilder,
   query: ParsedListQuery,
   idColumn: string,
+  options: ApplyListQueryOptions = {},
 ): Knex.QueryBuilder {
-  for (const filter of query.filters) applyFilter(qb, filter);
+  for (const filter of query.filters) {
+    if (filter.column !== null) applyFilter(qb, { ...filter, column: filter.column });
+  }
 
   const { sort, cursor } = query;
+  if (options.sortExpression) return applyExpressionSort(qb, query, idColumn, options.sortExpression);
+  if (sort.column === null) {
+    throw new Error(`Sort "${sort.field}" has no column: pass a sortExpression to applyListQuery`);
+  }
   if (cursor) {
     const value: Knex.Value = sort.type === FieldType.DATE ? new Date(String(cursor.value)) : cursor.value;
     const comparator = sort.direction === 'desc' ? '<' : '>';
@@ -53,6 +70,22 @@ export function applyListQuery(
       { column: idColumn, order: sort.direction },
     ])
     .limit(query.limit + 1);
+}
+
+function applyExpressionSort(
+  qb: Knex.QueryBuilder,
+  query: ParsedListQuery,
+  idColumn: string,
+  expression: Knex.Raw,
+): Knex.QueryBuilder {
+  const { sort, cursor } = query;
+  // `direction` comes from the parser ('asc' | 'desc'), never from raw client text.
+  const direction = sort.direction === 'desc' ? 'DESC' : 'ASC';
+  if (cursor) {
+    const comparator = sort.direction === 'desc' ? '<' : '>';
+    qb.whereRaw(`(?, ??) ${comparator} (?, ?)`, [expression, idColumn, cursor.value, cursor.id]);
+  }
+  return qb.orderByRaw(`? ${direction}, ?? ${direction}`, [expression, idColumn]).limit(query.limit + 1);
 }
 
 /**

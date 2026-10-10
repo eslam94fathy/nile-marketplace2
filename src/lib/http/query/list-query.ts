@@ -7,6 +7,11 @@ import { MONEY_PATTERN } from '../validation/validators';
  * The list query language (CLAUDE.md §8):
  *   ?limit=20&cursor=<opaque>&sort=-createdAt&createdAt[gte]=2025-01-15&status[in]=active,pending
  * Every list endpoint declares a whitelist; anything else is a 400 INVALID_QUERY.
+ *
+ * Extensions (P3-Q6): prefix fields (`attr.<code>`, keys only known at runtime), custom fields (no
+ * column: parsed and validated here, applied by the caller, which has the runtime data they need),
+ * and expression sorts (a custom sortable field, ordered by an SQL expression the caller passes to
+ * `applyListQuery`).
  */
 
 export const FilterOp = {
@@ -32,17 +37,34 @@ export const FieldType = {
 } as const;
 export type FieldType = (typeof FieldType)[keyof typeof FieldType];
 
-export interface FieldSpec {
-  /** DB column, from the whitelist only: client field names never reach SQL. */
-  column: string;
+interface ValueSpec {
   type: FieldType;
   ops: readonly FilterOp[];
-  sortable?: boolean;
   enumValues?: readonly string[];
+  /** Max values of an `in` filter (default 50). */
+  maxValues?: number;
+}
+
+export interface FieldSpec extends ValueSpec {
+  /**
+   * DB column, from the whitelist only: client field names never reach SQL.
+   * Omit it for a custom field: `applyListQuery` skips its filters (the caller applies them), and a
+   * custom sortable field needs the caller's `sortExpression`.
+   */
+  column?: string;
+  sortable?: boolean;
+}
+
+/** A family of fields named `<prefix><key>`, e.g. `attr.size`. Always custom (no column, not sortable). */
+export interface PrefixFieldSpec extends ValueSpec {
+  /** Max distinct keys of this prefix in one request. */
+  maxKeys: number;
 }
 
 export interface ListSpec {
   fields: Readonly<Record<string, FieldSpec>>;
+  /** Keyed by the prefix including its separator, e.g. `attr.`. */
+  prefixFields?: Readonly<Record<string, PrefixFieldSpec>>;
   /** e.g. `-createdAt`. Must name a sortable field. */
   defaultSort: string;
   /** Extra query params owned by the endpoint (e.g. `q`), passed through untouched. */
@@ -53,16 +75,20 @@ export type FilterValue = string | number | boolean | Date;
 
 export interface ParsedFilter {
   field: string;
-  column: string;
+  /** `null` for custom and prefix fields. */
+  column: string | null;
   op: FilterOp;
   value: FilterValue | FilterValue[];
+  /** Set for prefix fields: `attr.size` → `{ name: 'attr.', key: 'size' }`. */
+  prefix?: { name: string; key: string };
 }
 
 export interface ParsedSort {
   /** Normalised sort key, e.g. `-createdAt` (also stored in the cursor). */
   key: string;
   field: string;
-  column: string;
+  /** `null` for a custom field: ordered by the caller's `sortExpression`. */
+  column: string | null;
   type: FieldType;
   direction: 'asc' | 'desc';
 }
@@ -81,7 +107,10 @@ export interface ListLimits {
 }
 
 const RESERVED_PARAMS = new Set(['limit', 'cursor', 'sort']);
-const PARAM_PATTERN = /^([A-Za-z][A-Za-z0-9.]*)(?:\[([a-z]+)\])?$/;
+const PARAM_PATTERN = /^([A-Za-z][A-Za-z0-9.-]*)(?:\[([a-z]+)\])?$/;
+/** A prefix field key has the slug format (spec 01 §4), e.g. `screen-size`. */
+const PREFIX_KEY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const MAX_PREFIX_KEY_LENGTH = 60;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2}))?$/;
 const NUMBER_PATTERN = /^-?\d{1,15}(\.\d{1,6})?$/;
@@ -95,7 +124,7 @@ function detail(field: string, constraint: string, message: string): ErrorDetail
 
 function coerceValue(
   raw: string,
-  spec: FieldSpec,
+  spec: ValueSpec,
   field: string,
   problems: ErrorDetail[],
 ): FilterValue | undefined {
@@ -158,7 +187,40 @@ function parseSort(raw: unknown, spec: ListSpec, problems: ErrorDetail[]): Parse
     if (raw === undefined) throw new Error(`ListSpec defaultSort "${spec.defaultSort}" is not sortable`);
     return fallback();
   }
-  return { key, field, column: fieldSpec.column, type: fieldSpec.type, direction };
+  return { key, field, column: fieldSpec.column ?? null, type: fieldSpec.type, direction };
+}
+
+interface ResolvedField {
+  spec: ValueSpec;
+  column: string | null;
+  prefix?: { name: string; key: string };
+}
+
+/** Finds the spec of a plain field, or of a prefix field (`attr.size`). */
+function resolveField(field: string, spec: ListSpec): ResolvedField | undefined {
+  const plain = spec.fields[field];
+  if (plain) return { spec: plain, column: plain.column ?? null };
+  for (const [name, prefixSpec] of Object.entries(spec.prefixFields ?? {})) {
+    if (!field.startsWith(name)) continue;
+    const key = field.slice(name.length);
+    if (key.length > MAX_PREFIX_KEY_LENGTH || !PREFIX_KEY_PATTERN.test(key)) return undefined;
+    return { spec: prefixSpec, column: null, prefix: { name, key } };
+  }
+  return undefined;
+}
+
+/** Every prefix may appear with at most `maxKeys` distinct keys. */
+function checkPrefixKeyCounts(
+  filters: readonly ParsedFilter[],
+  spec: ListSpec,
+  problems: ErrorDetail[],
+): void {
+  for (const [name, prefixSpec] of Object.entries(spec.prefixFields ?? {})) {
+    const keys = new Set(filters.filter((f) => f.prefix?.name === name).map((f) => f.prefix?.key));
+    if (keys.size > prefixSpec.maxKeys) {
+      problems.push(detail(name, 'max_keys', `at most ${prefixSpec.maxKeys} different ${name}* filters`));
+    }
+  }
 }
 
 /**
@@ -191,11 +253,13 @@ export function parseListQuery(
     const match = PARAM_PATTERN.exec(param);
     const field = match?.[1];
     const op = (match?.[2] ?? FilterOp.EQ) as FilterOp;
-    const fieldSpec = field ? spec.fields[field] : undefined;
-    if (!field || !fieldSpec) {
+    const resolved = field ? resolveField(field, spec) : undefined;
+    if (!field || !resolved) {
       problems.push(detail(param, 'unknown', `unknown query parameter "${param}"`));
       continue;
     }
+    const { spec: fieldSpec, column, prefix } = resolved;
+    const base = prefix ? { field, column, prefix } : { field, column };
     if (!fieldSpec.ops.includes(op)) {
       problems.push(detail(param, 'operator', `operator "${op}" is not allowed on ${field}`));
       continue;
@@ -203,20 +267,22 @@ export function parseListQuery(
 
     if (op === FilterOp.IN) {
       const parts = rawValue.split(',').map((part) => part.trim());
-      if (parts.length === 0 || parts.length > MAX_IN_VALUES || parts.some((part) => part.length === 0)) {
-        problems.push(detail(param, 'in', `${param} needs 1..${MAX_IN_VALUES} comma-separated values`));
+      const maxValues = fieldSpec.maxValues ?? MAX_IN_VALUES;
+      if (parts.length === 0 || parts.length > maxValues || parts.some((part) => part.length === 0)) {
+        problems.push(detail(param, 'in', `${param} needs 1..${maxValues} comma-separated values`));
         continue;
       }
       const values = parts.map((part) => coerceValue(part, fieldSpec, param, problems));
       if (values.every((value) => value !== undefined)) {
-        filters.push({ field, column: fieldSpec.column, op, value: values });
+        filters.push({ ...base, op, value: values });
       }
       continue;
     }
 
     const value = coerceValue(rawValue, fieldSpec, param, problems);
-    if (value !== undefined) filters.push({ field, column: fieldSpec.column, op, value });
+    if (value !== undefined) filters.push({ ...base, op, value });
   }
+  checkPrefixKeyCounts(filters, spec, problems);
 
   let cursor: CursorPayload | null = null;
   if (query.cursor !== undefined) {

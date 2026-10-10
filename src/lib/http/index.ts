@@ -12,7 +12,7 @@ export * from './validation/validators';
 export * from './validation/fields';
 export { encodeCursor, decodeCursor, type CursorPayload, type CursorValue } from './pagination/cursor';
 export * from './query/list-query';
-export { applyListQuery, toPage } from './query/apply-list-query';
+export { applyListQuery, toPage, type ApplyListQueryOptions } from './query/apply-list-query';
 export {
   OpenApiRegistry,
   type RouteDoc,

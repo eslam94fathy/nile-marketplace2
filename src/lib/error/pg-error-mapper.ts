@@ -1,10 +1,12 @@
 import { type AppError } from './app-error';
-import { conflict, constraintViolation, referenceNotFound } from './common-errors';
+import { conflict, constraintViolation, referenceNotFound, stillReferenced } from './common-errors';
 
 /** Postgres SQLSTATE codes we map (CLAUDE.md §9.1). */
 export const PgErrorCode = {
   UNIQUE_VIOLATION: '23505',
   FOREIGN_KEY_VIOLATION: '23503',
+  /** Postgres 18 raises this (not 23503) when `ON DELETE RESTRICT` blocks a delete (P2-O1). */
+  RESTRICT_VIOLATION: '23001',
   CHECK_VIOLATION: '23514',
 } as const;
 
@@ -49,6 +51,8 @@ export class PgErrorMapper {
         return conflict(error);
       case PgErrorCode.FOREIGN_KEY_VIOLATION:
         return referenceNotFound(error);
+      case PgErrorCode.RESTRICT_VIOLATION:
+        return stillReferenced(error);
       case PgErrorCode.CHECK_VIOLATION:
         return constraintViolation(error);
       default:

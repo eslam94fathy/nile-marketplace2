@@ -62,6 +62,10 @@ export const payloadTooLarge = () =>
 export const conflict = (cause?: unknown) =>
   new AppError(CommonErrorCode.CONFLICT, 'The resource already exists', HTTP_STATUS.CONFLICT, { cause });
 
+/** Unmapped restrict violation (`23001`): the row is still referenced. Same code as `conflict`. */
+export const stillReferenced = (cause?: unknown) =>
+  new AppError(CommonErrorCode.CONFLICT, 'The resource is still in use', HTTP_STATUS.CONFLICT, { cause });
+
 export const idempotencyRequestInProgress = () =>
   new AppError(
     CommonErrorCode.IDEMPOTENCY_REQUEST_IN_PROGRESS,
