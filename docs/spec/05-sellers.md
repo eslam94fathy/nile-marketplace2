@@ -1,6 +1,6 @@
 # Spec 05 — sellers
 
-Status: **v1.0 APPROVED (2026-10-09).** Approved by the user with the Phase 2 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
+Status: **v1.1 APPROVED (2026-10-10).** v1.0 (2026-10-09): approved with the Phase 2 clarifications in §7.1. v1.1: lock option on `getSellerByUserId` for catalog write guards (SE-4, P3-Q4). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -22,7 +22,7 @@ Every transition is a conditional update (`WHERE id = ? AND status = <expected>`
 
 | Method | Used by | Notes |
 |---|---|---|
-| `getSellerByUserId(userId) → { sellerId, status } \| null` | catalog, ordering | Profile resolution + "is approved" guard |
+| `getSellerByUserId(userId, opts?: { trx, lockShared }) → { sellerId, status } \| null` | catalog, ordering | Profile resolution + "is approved" guard. With `lockShared: true` the row is read `FOR SHARE` inside the caller's `trx`, so a status change waits for the caller's write (SE-4) |
 | `getStatuses(sellerIds) → { sellerId, status }[]` | catalog (projection consumer) | Batched |
 | `getSummaries(sellerIds) → { sellerId, businessName }[]` | catalog, cart, ordering | Display names, batched |
 | `getCheckoutSnapshots(sellerIds, trx) → SellerCheckoutSnapshot[]` | ordering | `{ sellerId, status, businessName, commissionRate, pickup: { governorateId, phone, city, area, street, building, landmark } }` |
@@ -152,3 +152,4 @@ Consumed: none.
 | SE-1 | The password is hashed before the registration transaction opens (spec 03 I-10, P2-Q2) | UC-SE-1 |
 | SE-2 | `GOVERNORATE_NOT_FOUND` is the common code from `lib/error` (P2-Q7) | §6 |
 | SE-3 | The whole public API (§2) is built in Phase 2, including the methods only later phases call (P2-Q8) | §2 |
+| SE-4 | Catalog write guards call `getSellerByUserId(userId, { trx, lockShared: true })`. A suspension then waits for an in-flight product write, and the `seller.suspended` consumer sees the new row (P3-Q4, v1.1) | §2 |

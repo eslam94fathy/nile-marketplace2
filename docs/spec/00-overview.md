@@ -248,6 +248,8 @@ The user accepted every recommendation (2026-10-08). Answers are logged in §9.1
 | D-2 | `02-database.md` §10 | `shipments`: add `payment_method VARCHAR(20)` (CHECK), `order_number VARCHAR(20)`, `order_delivery_fee money`, `pickup_business_name VARCHAR(150)`; drop `agent_fee_share` (ordering computes it, and the ledger records it) | Fee carrier + agent screen need them, and delivery can't call ordering | **Pending** |
 | D-3 | `02-database.md` §10 | Add `idx_shipments_status_created_at_id (status, created_at DESC, id DESC)` | `GET /admin/shipments` | **Pending** |
 | D-4 | `02-database.md` §2 | Add `idx_refresh_tokens_expires_at (expires_at)` for the retention cleanup (`DELETE … WHERE expires_at < now() - retention`); every refresh inserts a row, so the table is large. Also: `fk_refresh_tokens_replaced_by_id` is `ON DELETE SET NULL` (audit pointer; lets the cleanup delete rows in any order) | Found while writing the P1 identity migrations | **Applied** (v1.2, approved 2026-10-08) |
+| D-5 | `02-database.md` §5 | Public listing indexes on `published_at` instead of `created_at` | "Newest" means newly published (P3-Q7) | **Applied** (v1.5, approved 2026-10-10) |
+| D-6 | `02-database.md` §6 | Stock-history index gains the `id` tie-break | Keyset pagination (P3-Q8) | **Applied** (v1.5, approved 2026-10-10) |
 
 ## 9. Answered log (2026-10-07)
 

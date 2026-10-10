@@ -1,6 +1,6 @@
 # System Design 02 — Database Schema (Release 1)
 
-Status: **v1.4 APPROVED (2026-10-08).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). Changes from now on need explicit approval and a version bump. Decisions: §13.
+Status: **v1.4 APPROVED (2026-10-08).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). v1.5: public product listings sort on `published_at` (D-5); `id` tie-break on the stock-history index (D-6). Changes from now on need explicit approval and a version bump. Decisions: §13.
 Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §6. Business rules: `docs/spec/00-overview.md` v1.0.
 
 ---
@@ -216,9 +216,9 @@ The public "visible" predicate, used by every public partial index (abbreviated 
 
 Indexes:
 - `uq_products_slug (slug)`: product detail by slug.
-- `idx_products_category_id_created_at_id (category_id, created_at DESC, id DESC) WHERE VIS`: category listing, newest first.
+- `idx_products_category_id_published_at_id (category_id, published_at DESC, id DESC) WHERE VIS`: category listing, newest first (D-5, v1.5).
 - `idx_products_category_id_min_price_id (category_id, min_price, id) WHERE VIS`: category listing sorted or filtered by price.
-- `idx_products_created_at_id (created_at DESC, id DESC) WHERE VIS`: listing without a category filter.
+- `idx_products_published_at_id (published_at DESC, id DESC) WHERE VIS`: listing without a category filter (D-5, v1.5).
 - `idx_products_search_vector USING GIN (search_vector) WHERE VIS`: full-text search.
 - `idx_products_name_trgm USING GIN (name gin_trgm_ops) WHERE VIS`: typo-tolerant / partial-word search.
 - `idx_products_seller_id_created_at_id (seller_id, created_at DESC, id DESC) WHERE deleted_at IS NULL`: seller dashboard list. It also serves the projection update `WHERE seller_id = ?`.
@@ -272,7 +272,7 @@ std columns · `inventory_item_id` fk · `order_item_id` fk → order_items · `
 
 ### inventory_movements (append-only, audit)
 `inventory_item_id` fk · `type VARCHAR(30)` (`seller_adjustment, reserve, release, commit`) · `quantity_delta INTEGER` · `on_hand_after INTEGER` · `reserved_after INTEGER` · `reference_type VARCHAR(30) null` · `reference_id UUID null` · `actor_user_id UUID null`.
-Index: `idx_inventory_movements_inventory_item_id_created_at (inventory_item_id, created_at DESC)`: seller stock history.
+Index: `idx_inventory_movements_inventory_item_id_created_at_id (inventory_item_id, created_at DESC, id DESC)`: seller stock history with keyset pagination (D-6, v1.5).
 
 ---
 
@@ -517,5 +517,7 @@ Index: `idx_processed_events_processed_at`: the cleanup job.
 | DB-Q4 | Lengths: product `name` 200, `description` 5000, seller `business_name` 150 |
 | DB-Q5 | Retention: dispatched outbox 7 days, processed events 30 days, expired codes/tokens 30 days (all env config) |
 | DB-Q6 | `idx_users_role_created_at (role, created_at DESC, id DESC)` for the admin list (spec 03 §4.11), added in Phase 1 as a `CREATE INDEX CONCURRENTLY` migration (2026-10-08) |
+| D-5 | Public product listings sort "newest" on `published_at`; the two public listing indexes use `(…, published_at DESC, id DESC) WHERE VIS` (P3-Q7, 2026-10-10) |
+| D-6 | `idx_inventory_movements_inventory_item_id_created_at_id` includes `id` for the keyset tie-break (P3-Q8, 2026-10-10) |
 
 No open schema questions.

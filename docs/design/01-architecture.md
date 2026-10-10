@@ -1,6 +1,6 @@
 # System Design 01 — Architecture (Release 1)
 
-Status: **v1.3 APPROVED (2026-10-09).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). SD-3d (region, §12.2) is still open and only blocks Terraform provisioning. Changes from now on need explicit approval and a version bump.
+Status: **v1.3 APPROVED (2026-10-09).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). v1.4: catalog cache keys and TTLs (§8), "newest" sorts on `published_at` (§9) (Phase 3). SD-3d (region, §12.2) is still open and only blocks Terraform provisioning. Changes from now on need explicit approval and a version bump.
 Inputs: `CLAUDE.md` (engineering rules), `docs/spec/00-overview.md` v1.0 (business). Schema: `02-database.md`.
 
 ---
@@ -175,9 +175,9 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 
 | Data | Strategy | Invalidation |
 |---|---|---|
-| Category tree + attributes | Cache-aside, TTL from env | Deleted on any admin category/attribute change (same request, after commit) |
+| Category tree + attributes | Cache-aside, key `v1:catalog:category-tree`, TTL `CATEGORY_TREE_CACHE_TTL_SECONDS` [v1.4] | Deleted on any admin category/attribute change (same request, after commit) |
 | Governorates + fees | Cache-aside, TTL `GOVERNORATES_CACHE_TTL_SECONDS` [v1.3] | Deleted on fee change (after commit) |
-| Product detail (public) | Cache-aside, short TTL | Deleted after commit on product/variant change. Stock is **not** taken from cache at checkout |
+| Product detail (public) | Cache-aside, key `v1:catalog:product:<id>` (static part only), TTL `PRODUCT_DETAIL_CACHE_TTL_SECONDS` [v1.4] | Deleted after commit on product/variant change. Stock is **not** taken from cache at checkout |
 | Product lists / search | **Not cached in R1.** Indexed queries are enough at the target load | n/a |
 
 - Cache keys use constants with a version prefix (`v1:catalog:category-tree`).
@@ -193,7 +193,7 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
   - `inStock`
   - `seller`
   - `attr[<code>]=<optionCode,...>`: `EXISTS` subqueries through `variant_attribute_values`
-- Sort: `newest` (`created_at, id`), `price_asc/desc` (`min_price, id`), `relevance` (search only). All use cursor pagination.
+- Sort: `newest` (`published_at, id`) [v1.4], `price_asc/desc` (`min_price, id`), `relevance` (search only). All use cursor pagination.
 
 ## 10. Security specifics
 

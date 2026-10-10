@@ -1,7 +1,7 @@
 # Implementation Plan (Release 1)
 
-Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09).** Later phases are detailed when their specs are approved.
-Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.3, `docs/design/02-database.md` v1.4, `docs/spec/01-api-conventions.md` v1.2, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
+Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09). P3 (§5) v1.0 APPROVED (2026-10-10).** Later phases are detailed when their specs are approved.
+Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.4, `docs/design/02-database.md` v1.5, `docs/spec/01-api-conventions.md` v1.2, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
 
 ---
 
@@ -21,7 +21,7 @@ Each phase ends green in CI (lint, type-check, unit, integration, build, Docker 
 | P7 | finance | Spec 12 |
 | P8 | Hardening: load test against the targets, security review, Terraform (`infra/terraform`), staging deploy | SD-3d (region) |
 
-P0 and P1 are detailed below, and P2 is drafted in §4. P3–P8 get their own section when their specs are approved.
+P0–P3 are detailed below (§2–§5). P4–P8 get their own section when their specs are approved.
 
 ---
 
@@ -269,3 +269,72 @@ Needs approved: spec `04-customers.md`, spec `05-sellers.md`, the P2 part of spe
 - No plain-text password or OTP in any log line, outbox row, or broker message (asserted by tests).
 
 **P2 status (2026-10-09): implemented** on branch `p2-customers-sellers` (stacked on `p1-identity`; §4.5 steps 1–7). Locally green: lint, type-check, Prettier, unit (182), integration (187, two consecutive full runs), build. Manual local walkthrough **passed (2026-10-10)** on the docker-compose stack rebuilt from this branch (the 8 P2 migrations applied by `migrate`, `seed:dev` fees visible at once): seller register → OTP in Mailpit → verify → admin approve (`approvedAt` set, two history rows) → `seller.approved` outbox row dispatched to RabbitMQ; customer register → verify → login → two addresses (the first became the default) → default switched; `notification_log` `sent` for the invite and both verification emails; the password and the OTPs appeared in no api/worker log line and no outbox row. **Still to do for "done when":** a green CI run on the PR. Deviations from §4.3–§4.5: none in scope. Extra shared code: the spec 01 DTO shorthands as decorators in `lib/http/validation/fields.ts` (`EmailField`, `PasswordField`, `StrField`, `PhoneField`, `UuidField`; identity now uses them) and `Nullable()`. Found during P2: Postgres 18 raises `23001` for `ON DELETE RESTRICT`, which the error mapper doesn't map yet (CLAUDE.md §14.2 P2-O1); a timing race in the P1 notifications redelivery test, fixed in the test (`0aedf08`). Local sample fees: `npm run seed:dev`.
+
+---
+
+## 5. Phase 3: catalog + inventory
+
+Status: **v1.0 APPROVED (2026-10-10).** All P3-Q recommendations accepted; the branch `p3-catalog-inventory` is stacked on `p2-customers-sellers`.
+Needs approved: spec `06-catalog.md` and spec `07-inventory.md` (both v1.0 now), plus the P3-Q decisions below. It does **not** need A-3 (checkout, P5). Overview §8.2 O-2 (API surface) stays pending until every module spec is in; the stock-adjustments route from S-6 is part of it.
+
+### 5.1 What P3 delivers, and what it can't yet
+- **catalog:** the admin category tree with attributes and options, seller products and variants, seller stock adjustments and stock history, public browse, search and product detail, the listing projections (`seller_active`, `in_stock`, `min_price` / `max_price`), and `getVariantsForPurchase` for cart (P4) and ordering (P5).
+- **inventory:** stock rows, `createItem`, `adjust`, `getStockByVariantIds`, `listMovements`, the movement audit trail, and the `inventory.stock_status_changed` event.
+- **Not yet:** reservations (`reserve` / `release` / `commit`) and the `inventory_reservations` table (P3-Q2). They land in P5 with checkout.
+- The `seller.approved` / `seller.suspended` events from P2 get their first consumer (`catalog.listing-projections`).
+
+### 5.2 Decisions to approve (P3-Q)
+
+| # | Topic | Options / recommendation |
+|---|---|---|
+| P3-Q1 | Approvals | **Rec:** approve specs 06 and 07 → v1.0 with the clarifications in P3-Q2…Q12 written into them |
+| P3-Q2 | `inventory_reservations` references `order_items`, which P5 creates | **Rec:** P3 builds `inventory_items` + `inventory_movements` and the non-reservation methods. The reservations table (with its FK) and `reserve` / `release` / `commit` land in P5 with ordering, as one migration, so the FK exists from the start · or create the table now without the FK and add it in P5 (two-step migration, and the methods can't be tested against real order lines yet) |
+| P3-Q3 | Read-then-write races in catalog | Recomputing `min_price` / `max_price` / `in_stock`, the 100-variant limit, "one default variant", and "activate needs an active variant" are all read-then-write. **Rec:** every product or variant write (and the `in_stock` consumer) starts with `SELECT … FROM products WHERE id = ? FOR UPDATE`, then checks and recomputes. Admin category, attribute and option writes lock the affected category row (the parent on create), which covers the child limit, the 5-attribute limit and the lineage code check. Same pattern as P2-Q6. Lock order is product → inventory item everywhere, and checkout (P5) never locks products, so there's no cycle |
+| P3-Q4 | Seller suspended while a product write is in flight | The guard reads `approved`, a suspension commits, its consumer flips `seller_active` on the existing rows, and then the in-flight insert commits with `seller_active = true` for a suspended seller. **Rec:** sellers gains `getSellerByUserId(userId, { trx, lockShared: true })` (`FOR SHARE`). The catalog guard calls it inside the write transaction, so a suspension waits for the write and its consumer sees the new row (spec 05 → v1.1) · or accept the race (rare, but it leaves a suspended seller's product visible until the next seller event) |
+| P3-Q5 | `attr.<code>` filter semantics | (a) Do several `attr.*` filters have to match **the same** variant? `attr.size=xl&attr.color=red` should not match a product sold only as XL-blue and S-red. (b) Codes are unique only within a lineage, so `size` can exist under Clothing and Shoes with different options. **Rec:** one `EXISTS` over the product's **active, non-deleted** variants that carries every `attr.*` condition (same variant). `attr.*` **requires** `categoryId`. Codes resolve against the attributes of that category, its ancestors and its descendants, and an option code may then map to several option ids. An unresolved code → `400 INVALID_QUERY` · or each filter independently on any variant (cheaper, but returns wrong matches) |
+| P3-Q6 | List query language extensions (`lib/http/query`) | Products need three things the shared parser doesn't have: dynamic `attr.*` fields, custom filters (`categoryId` → descendant ids, `attr.*` → `EXISTS`), and a computed sort (`relevance`). **Rec:** extend `ListSpec` generically: a `prefixFields` entry (`attr.` → validator), a per-field `apply(qb, filter)` hook, and a sort `expression` (raw SQL with bound params) instead of a column. The relevance sort value is `round((ts_rank(…) + similarity(…))::numeric, 6)`, carried in the cursor as a string, so keyset comparisons are exact (a float `real` in a cursor can skip or repeat rows) · or parse the products query inside catalog only (duplicates the cursor and limit logic) |
+| P3-Q7 | Public "newest" sorts on `created_at` | A product created as a draft in March and activated in June lists as a March product. **Rec:** public `sort=publishedAt` replaces `createdAt` (VIS implies `published_at` is set). The two public listing indexes become `(…, published_at DESC, id DESC) WHERE VIS` (**D-5**, database v1.5). The seller list keeps `createdAt` · or keep `created_at` as in the spec |
+| P3-Q8 | Stock history cursor without an `id` tie-break | `idx_inventory_movements_inventory_item_id_created_at` has no `id`, but cursor pagination needs `(sort_col, id)` (CLAUDE.md §6.3). **Rec:** **D-6**: `idx_inventory_movements_inventory_item_id_created_at_id (inventory_item_id, created_at DESC, id DESC)` instead (database v1.5) |
+| P3-Q9 | Caches | **Rec:** `v1:catalog:category-tree` holds the full admin tree with attributes and options (public views are derived in memory), env `CATEGORY_TREE_CACHE_TTL_SECONDS` = 3600. `v1:catalog:product:<id>` holds the static product detail (no stock, no live quantities), env `PRODUCT_DETAIL_CACHE_TTL_SECONDS` = 60. A slug is resolved to an id with one indexed lookup, so there's only one key per product. Deleted after commit by every product/variant write, by the seller-status consumer (it uses `UPDATE … RETURNING id` to know which keys), and by the `in_stock` consumer. Both new env keys go in the api and worker schemas, with no defaults |
+| P3-Q10 | When `inventory.stock_status_changed` is emitted | **Rec:** only `adjust` emits it (and P5 `reserve` / `release`), when sellable crosses 0. `createItem` doesn't, and neither do variant status changes or deletes, because catalog recomputes `in_stock` in that same transaction. The consumer always recomputes from current stock, so its order doesn't matter, and it ignores deleted products |
+| P3-Q11 | Deleting an attribute or option vs. a concurrent variant insert (P2-O1) | The app check passes, a variant using the option commits, and the `DELETE` fails with `23001` (`ON DELETE RESTRICT`) → today a `500`. **Rec:** resolve P2-O1 now: `PgErrorMapper` maps `23001` → `409 CONFLICT` by default, and catalog registers `fk_variant_attribute_values_option_id` → `OPTION_IN_USE`, `fk_variant_attribute_values_attribute_id` → `ATTRIBUTE_IN_USE`. Deleting an attribute deletes its options first, in the same transaction (explicitly, no `CASCADE`) |
+| P3-Q12 | Small spec gaps | **Rec:** (a) when kebab-casing the name leaves nothing usable, the product slug is `product-<6 base36>` and a category create without `slug` → `422 CATEGORY_SLUG_REQUIRED`; (b) `GET /seller/variants/:id/stock-movements` is allowed in any seller status, like other seller reads; (c) the seller `name like` filter runs without a trigram index (seller-scoped, small); (d) `seed:dev` gains a sample tree (with attributes and options) and an approved seller with a few products, for the mobile team |
+
+### 5.3 Scope
+
+| Area | Content |
+|---|---|
+| Docs | Specs 06, 07 → v1.0; spec 05 → v1.1 (P3-Q4); database → v1.5 (D-5, D-6); architecture → v1.4 (cache keys, `published_at` sort); overview §8.2 D-5, D-6; CLAUDE.md §9.1 + §14 (P2-O1 resolved, P3-Q decisions) |
+| Migrations (in FK order) | `categories`, `category_attributes`, `category_attribute_options`, `products`, `product_variants`, `variant_attribute_values`, `inventory_items`, `inventory_movements`. One migration per table, as in `02-database.md` §5–§6 with D-5 and D-6. `inventory_reservations` waits for P5 (P3-Q2) |
+| `lib/` | List query extensions (P3-Q6); `23001` mapping (P3-Q11); `slugify` in `pkg/` |
+| `app/sellers` | `getSellerByUserId` with `{ trx, lockShared }` (P3-Q4) |
+| `app/inventory` | Module skeleton, no routes: repositories, `InventoryService` (`createItem`, `adjust`, `getStockByVariantIds`, `listMovements`), the outbox event, public API |
+| `app/catalog` | Every endpoint in spec 06 §4.1–§4.3, the services, the tree cache and the product-detail cache, the seller guard, the projections, the `catalog.listing-projections` consumer (worker), `getVariantsForPurchase`, constraint mappings (spec 06 §6), OpenAPI |
+| Module graph | Already allows `catalog → sellers, inventory`; no edit |
+| Tooling | Postman collection regenerated; `seed:dev` sample catalog (P3-Q12 d); `.env.example` gets the two cache TTLs |
+
+### 5.4 Tests
+- **Unit:** effective attributes (inheritance and order), variant option validation (exactly one per effective attribute, the default variant), `option_signature`, slug generation, product projection recompute, status transitions, the stock-status crossing rule, the `attr.*` resolver, the list-query extensions (prefix fields, apply hooks, expression sort, cursor round trip).
+- **Integration, per endpoint** (CLAUDE.md §12): happy path, validation failure, authz failure (wrong role, anonymous, a non-approved seller on writes), not-found (another seller's product → `404`). Plus:
+  - categories: depth 4 refused; sibling name (different case) and slug conflicts `409`; deactivation refused with an active child or a product; the cache is invalidated after every admin change
+  - attributes: a code clash with an ancestor or a descendant `409`; adding one to a subtree with products `409`; the 5-attribute limit; deleting an option in use `409`, including a concurrent variant insert (P3-Q11)
+  - variants: the wrong option set `422` with details; a duplicate combination, a duplicate SKU (different case) and a second default variant `409`; deactivating the last active variant moves the product to `inactive`; `min_price` / `max_price` / `in_stock` are right after create, update and delete
+  - concurrency: parallel variant creates respect the 100-variant limit and the single default; parallel stock adjustments never go below `reserved` or 0; a seller suspended during a product create leaves the product hidden (P3-Q4)
+  - stock: adjustments need an `Idempotency-Key` (a replay returns the same body, a different payload `422`); movements are written with the right `on_hand_after`; crossing 0 writes exactly one outbox event
+  - projections: `seller.suspended` hides every product of that seller from public lists and detail, `seller.approved` shows them again, and replays are harmless; `inventory.stock_status_changed` updates `in_stock`
+  - public: hidden and deleted products `404`; `categoryId` includes descendants; `price`, `inStock`, `sellerId`, `attr.*` (same-variant rule, max 5 filters, unknown codes `400`, `attr.*` without `categoryId` `400`); `q` finds a typo through trigram; every sort with cursor pagination across pages, with no duplicates or gaps; `sort=relevance` without `q` `400`
+  - `getVariantsForPurchase`: `purchasable` is false for each hidden case, all in one query
+
+### 5.5 Order of work (one commit each)
+1. Docs: approvals applied (spec 05/06/07 versions, D-5/D-6, CLAUDE.md).
+2. lib: list query extensions + `23001` mapping, with tests.
+3. inventory: migrations, module, public API, event, tests.
+4. catalog admin: category/attribute/option migrations, tree cache, admin endpoints, tests.
+5. catalog seller: product/variant migrations, sellers `lockShared`, seller endpoints, stock endpoints, projections, tests.
+6. catalog public: browse, search, detail cache, `getVariantsForPurchase`, tests.
+7. catalog consumer: `catalog.listing-projections` in the worker, tests.
+8. Postman collection, `seed:dev`, `.env.example`, plan status.
+
+### 5.6 Done when
+- CI green; every P3 endpoint is in the OpenAPI document with its DTOs.
+- Locally (docker-compose): admin builds a 3-level tree with attributes → an approved seller creates a product with variants and stock → activates it → it shows in `GET /products` (filtered by an attribute and found by a misspelt `q`) and in detail with live quantities → admin suspends the seller → the product disappears within seconds → reinstate → it's back. A stock adjustment to 0 flips `inStock` in the list.

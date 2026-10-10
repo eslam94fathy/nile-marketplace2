@@ -1,6 +1,6 @@
 # Spec 07 — inventory
 
-Status: **DRAFT v0.1 (2026-10-08), under review.** [PROPOSED].
+Status: **v1.0 APPROVED (2026-10-10).** Approved by the user with the Phase 3 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -15,7 +15,7 @@ Sellable = `on_hand − reserved`.
 
 ## 2. Public API (`index.ts`)
 
-All writes take `trx`, write an `inventory_movements` row per changed item, and emit `inventory.stock_status_changed` when sellable crosses 0 for that item (same `trx`, outbox).
+All writes take `trx` and write an `inventory_movements` row per changed item. `adjust`, `reserve` and `release` emit `inventory.stock_status_changed` when sellable crosses 0 for that item (same `trx`, outbox). `createItem` and `commit` never emit it (IN-2).
 
 | Method | Caller | Behaviour |
 |---|---|---|
@@ -62,3 +62,11 @@ Consumed: none.
 
 ## 7. Open questions
 None.
+
+### 7.1 Clarifications (v1.0, Phase 3 plan, 2026-10-10)
+
+| # | Clarification | Where |
+|---|---|---|
+| IN-1 | Phase 3 builds `inventory_items`, `inventory_movements`, `createItem`, `adjust`, `getStockByVariantIds` and `listMovements`. `inventory_reservations` (with its FK to `order_items`) and `reserve` / `release` / `commit` land in Phase 5 (P3-Q2) | §1, §2 |
+| IN-2 | `createItem` doesn't emit `inventory.stock_status_changed`: catalog recomputes `in_stock` in the same transaction (P3-Q10) | §2 |
+| IN-3 | `listMovements` uses keyset pagination on `(created_at, id)` over `idx_inventory_movements_inventory_item_id_created_at_id` (database D-6, P3-Q8) | §2 |
