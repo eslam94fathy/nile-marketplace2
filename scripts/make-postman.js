@@ -23,13 +23,13 @@ const url = (path, query = []) => {
 };
 const bearer = { type: 'bearer', bearer: [{ key: 'token', value: '{{accessToken}}', type: 'string' }] };
 const noauth = { type: 'noauth' };
-const req = ({ name, method, path, body, auth = false, query, description, tests }) => ({
+const req = ({ name, method, path, body, auth = false, query, description, tests, headers = [] }) => ({
   name,
   ...(tests ? { event: [test(tests)] } : {}),
   request: {
     method,
     auth: auth ? bearer : noauth,
-    header: body ? [{ key: 'Content-Type', value: 'application/json' }] : [],
+    header: [...(body ? [{ key: 'Content-Type', value: 'application/json' }] : []), ...headers],
     ...(body ? { body: { mode: 'raw', raw: json(body), options: { raw: { language: 'json' } } } } : {}),
     url: url(path, query),
     description,
@@ -46,13 +46,24 @@ if (pm.response.code === 200) {
   pm.collectionVariables.set('userId', data.user.id);
 }`;
 
+/** Stores `data.id` (or `data[0].id` for lists) of a response into a collection variable. */
+const saveId = (variable, status = 200, from = 'data.id') => `
+${expect(status)}
+if (pm.response.code === ${status}) {
+  const body = pm.response.json();
+  const value = ${from === 'data.id' ? 'body.data && body.data.id' : `body.${from}`};
+  if (value) pm.collectionVariables.set('${variable}', value);
+}`;
+/** A fresh key per send: a retry of the same request needs the same key, so copy it by hand to test a replay. */
+const idempotencyKey = { key: 'Idempotency-Key', value: '{{$guid}}' };
+
 const API = '/api/v1';
 const collection = {
   info: {
-    name: 'Nile Marketplace API (Phases 1–2)',
+    name: 'Nile Marketplace API (Phases 1–3)',
     _postman_id: 'c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01',
     description: [
-      'Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05) and delivery reference data (spec 11 §4.1, §4.3).',
+      'Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06) and delivery reference data (spec 11 §4.1, §4.3).',
       '',
       'Variables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.',
       '',
@@ -64,7 +75,9 @@ const collection = {
       '',
       'Customer / seller flow: set `email` to a fresh address → "Register customer" (or "Register seller") → Local helpers → "Latest email" → "Extract OTP / invite token" → Auth → "Verify email" (logs you in). "Delivery" → "List governorates" stores Cairo in `governorateId` first, because addresses and pickup addresses need one.',
       '',
-      'Sample delivery fees for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees).',
+      'Sample delivery fees and a sample catalog for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees; the catalog has a category tree with attributes and an approved demo seller with active products).',
+      '',
+      'Catalog flow: "Admin: catalog" → Create category → Add attribute → Add option (stores `categoryId`, `attributeId`, `optionId`). Then log in as an approved seller → "Seller: catalog" → Create product → Add variant (put option ids in `optionIds`, or `[]` in a category without attributes) → Activate. "Catalog" (public) → List products / Product detail.',
       '',
       'Tokens are per account: log in as the admin again (Auth → Login) before the "Admin: …" folders.',
       '',
@@ -105,6 +118,12 @@ const collection = {
     { key: 'addressId', value: '' },
     { key: 'businessName', value: 'Nile Crafts' },
     { key: 'sellerId', value: '' },
+    { key: 'categoryId', value: '' },
+    { key: 'attributeId', value: '' },
+    { key: 'optionId', value: '' },
+    { key: 'productId', value: '' },
+    { key: 'productSlug', value: '' },
+    { key: 'variantId', value: '' },
   ],
   item: [
     {
@@ -595,6 +614,288 @@ const collection = {
           body: { agentFeeShareRate: '0.7000' },
           description: "The agents' share of the delivery fee (Q-34). New checkouts only.",
           tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Catalog',
+      description:
+        'spec 06 §4.1. Public, general rate limit. Only visible products: active, seller approved, not deleted.',
+      item: [
+        req({
+          name: 'Category tree',
+          method: 'GET',
+          path: `${API}/categories`,
+          description: 'Active categories, nested, ordered by sortOrder then name. Cached.',
+          tests: saveId('categoryId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Category attributes',
+          method: 'GET',
+          path: `${API}/categories/{{categoryId}}/attributes`,
+          description:
+            'Own and inherited attributes with their options, ancestors first. CATEGORY_NOT_FOUND 404 (missing or inactive).',
+          tests: expect(200),
+        }),
+        req({
+          name: 'List products',
+          method: 'GET',
+          path: `${API}/products`,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'q', value: 'phone', disabled: true },
+            { key: 'categoryId[eq]', value: '{{categoryId}}', disabled: true },
+            { key: 'price[lte]', value: '1000', disabled: true },
+            { key: 'inStock[eq]', value: 'true', disabled: true },
+            { key: 'attr.color[in]', value: 'black,white', disabled: true },
+            { key: 'sort', value: '-publishedAt', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description:
+            'Filters: categoryId[eq] (includes subcategories), price[gte|lte] (lowest variant price), inStock[eq], sellerId[eq], attr.<code>[in] (needs categoryId; all attr filters must match the same variant; max 5). q: search text 2..100 (full text + typo tolerant). Sort: publishedAt, minPrice, relevance (with q only). Default: -relevance with q, else -publishedAt.',
+          tests: saveId('productId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Product detail',
+          method: 'GET',
+          path: `${API}/products/{{productId}}`,
+          description:
+            'By id or slug. Active variants with live stock (availableQuantity = min(sellable, 99)); attributes list only the options variants use. PRODUCT_NOT_FOUND 404 when hidden or deleted.',
+          tests: `
+${expect(200)}
+if (pm.response.code === 200) pm.collectionVariables.set('productSlug', pm.response.json().data.slug);`,
+        }),
+        req({
+          name: 'Product detail by slug',
+          method: 'GET',
+          path: `${API}/products/{{productSlug}}`,
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: catalog',
+      description: 'spec 06 §4.2. Admin role only. Every change clears the cached category tree.',
+      item: [
+        req({
+          name: 'Category tree (admin)',
+          method: 'GET',
+          path: `${API}/admin/categories`,
+          auth: true,
+          description: 'Inactive categories included, each with its own attributes and options.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Create category',
+          method: 'POST',
+          path: `${API}/admin/categories`,
+          auth: true,
+          body: { parentId: null, name: 'Kitchen', sortOrder: 0 },
+          description:
+            'parentId null = root; max depth 3. slug defaults to the kebab-cased name. CATEGORY_NOT_FOUND 422, CATEGORY_PARENT_INACTIVE 409, CATEGORY_MAX_DEPTH_EXCEEDED 422, CATEGORY_NAME_TAKEN 409, CATEGORY_SLUG_TAKEN 409, CATEGORY_SLUG_REQUIRED 422, CATEGORY_CHILD_LIMIT_REACHED 422.',
+          tests: saveId('categoryId', 201),
+        }),
+        req({
+          name: 'Update category',
+          method: 'PATCH',
+          path: `${API}/admin/categories/{{categoryId}}`,
+          auth: true,
+          body: { name: 'Kitchen & Dining', sortOrder: 1 },
+          description:
+            'name, slug, sortOrder, isActive. Deactivating needs no active child and no product (CATEGORY_IN_USE 409); activating needs an active parent (CATEGORY_PARENT_INACTIVE 409). Categories never move or get deleted.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Add attribute',
+          method: 'POST',
+          path: `${API}/admin/categories/{{categoryId}}/attributes`,
+          auth: true,
+          body: { name: 'Material', code: 'material', sortOrder: 0 },
+          description:
+            'Inherited by subcategories; max 5 per category including inherited ones. Only while the subtree has no product. ATTRIBUTE_CODE_CONFLICT 409, CATEGORY_HAS_PRODUCTS 409, ATTRIBUTE_LIMIT_REACHED 422.',
+          tests: saveId('attributeId', 201),
+        }),
+        req({
+          name: 'Update attribute',
+          method: 'PATCH',
+          path: `${API}/admin/attributes/{{attributeId}}`,
+          auth: true,
+          body: { name: 'Main material' },
+          description: 'name, sortOrder. The code is immutable (it is the public filter key).',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Add option',
+          method: 'POST',
+          path: `${API}/admin/attributes/{{attributeId}}/options`,
+          auth: true,
+          body: { value: 'Steel', code: 'steel', sortOrder: 0 },
+          description: 'Max 100 per attribute. OPTION_CODE_TAKEN 409, OPTION_LIMIT_REACHED 422.',
+          tests: saveId('optionId', 201),
+        }),
+        req({
+          name: 'Update option',
+          method: 'PATCH',
+          path: `${API}/admin/options/{{optionId}}`,
+          auth: true,
+          body: { value: 'Stainless steel' },
+          tests: expect(200),
+        }),
+        req({
+          name: 'Delete option',
+          method: 'DELETE',
+          path: `${API}/admin/options/{{optionId}}`,
+          auth: true,
+          description: 'Only when no variant (deleted ones included) uses it: OPTION_IN_USE 409.',
+          tests: expect(204),
+        }),
+        req({
+          name: 'Delete attribute',
+          method: 'DELETE',
+          path: `${API}/admin/attributes/{{attributeId}}`,
+          auth: true,
+          description:
+            'Deletes its options too. Only when the subtree has no product, deleted ones included: ATTRIBUTE_IN_USE 409.',
+          tests: expect(204),
+        }),
+      ],
+    },
+    {
+      name: 'Seller: catalog',
+      description:
+        "spec 06 §4.3. Seller role. Writes need an approved seller (SELLER_NOT_APPROVED 403); reads work in any status. Another seller's product or variant is not found (404).",
+      item: [
+        req({
+          name: 'List my products',
+          method: 'GET',
+          path: `${API}/seller/products`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'status[in]', value: 'draft,active', disabled: true },
+            { key: 'name[like]', value: 'phone', disabled: true },
+          ],
+          description:
+            'Filters: status[eq|in], categoryId[eq], name[like], createdAt[gte|lte]. Sort: createdAt (default -createdAt).',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Create product',
+          method: 'POST',
+          path: `${API}/seller/products`,
+          auth: true,
+          body: {
+            categoryId: '{{categoryId}}',
+            name: 'Steel Water Bottle',
+            description: 'Keeps drinks cold for 24 hours.',
+          },
+          description:
+            'Created as a draft with an immutable slug (name + 6 random chars). CATEGORY_NOT_FOUND 422 (missing or inactive).',
+          tests: `
+${expect(201)}
+if (pm.response.code === 201) {
+  const { data } = pm.response.json();
+  pm.collectionVariables.set('productId', data.id);
+  pm.collectionVariables.set('productSlug', data.slug);
+}`,
+        }),
+        req({
+          name: 'My product',
+          method: 'GET',
+          path: `${API}/seller/products/{{productId}}`,
+          auth: true,
+          description: 'With live variants, their options and stock.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Update product',
+          method: 'PATCH',
+          path: `${API}/seller/products/{{productId}}`,
+          auth: true,
+          body: { description: 'Double-walled steel; keeps drinks cold for 24 hours.' },
+          description:
+            'name, description, categoryId (only while the product has no variant: PRODUCT_CATEGORY_LOCKED 409).',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Add variant',
+          method: 'POST',
+          path: `${API}/seller/products/{{productId}}/variants`,
+          auth: true,
+          body: {
+            sku: 'BOTTLE-750',
+            price: '350.00',
+            compareAtPrice: null,
+            optionIds: [],
+            initialStock: 10,
+            status: 'active',
+          },
+          description:
+            'optionIds: exactly one option per attribute of the category (own and inherited), or [] when it has none (then a single default variant). VARIANT_OPTIONS_INVALID 422 (details), DEFAULT_VARIANT_EXISTS 409, VARIANT_COMBINATION_EXISTS 409, SKU_TAKEN 409, VARIANT_LIMIT_REACHED 422, COMPARE_AT_PRICE_INVALID 422.',
+          tests: saveId('variantId', 201),
+        }),
+        req({
+          name: 'Update variant',
+          method: 'PATCH',
+          path: `${API}/seller/products/{{productId}}/variants/{{variantId}}`,
+          auth: true,
+          body: { price: '320.00', compareAtPrice: '350.00' },
+          description:
+            'sku, price, compareAtPrice (null clears it), status. Options are fixed: delete the variant and add another.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Activate product',
+          method: 'POST',
+          path: `${API}/seller/products/{{productId}}/activate`,
+          auth: true,
+          description:
+            'draft or inactive → active. Needs an active variant: PRODUCT_HAS_NO_ACTIVE_VARIANT 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Deactivate product',
+          method: 'POST',
+          path: `${API}/seller/products/{{productId}}/deactivate`,
+          auth: true,
+          description: 'active → inactive (PRODUCT_INVALID_STATUS_TRANSITION 409 otherwise).',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Adjust stock',
+          method: 'POST',
+          path: `${API}/seller/variants/{{variantId}}/stock-adjustments`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { delta: 5 },
+          description:
+            'A delta (+/-), never an absolute value (S-6). Idempotency-Key required (a fresh one per send here). STOCK_ADJUSTMENT_INVALID 422 when stock would go below 0 or below the reserved quantity.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Stock history',
+          method: 'GET',
+          path: `${API}/seller/variants/{{variantId}}/stock-movements`,
+          auth: true,
+          description: 'Newest first, cursor-paginated.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Delete variant',
+          method: 'DELETE',
+          path: `${API}/seller/products/{{productId}}/variants/{{variantId}}`,
+          auth: true,
+          description:
+            'Soft delete. If it was the last active variant of an active product, the product becomes inactive.',
+          tests: expect(204),
+        }),
+        req({
+          name: 'Delete product',
+          method: 'DELETE',
+          path: `${API}/seller/products/{{productId}}`,
+          auth: true,
+          description: 'Soft delete of the product and its variants.',
+          tests: expect(204),
         }),
       ],
     },
