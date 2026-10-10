@@ -18,18 +18,24 @@ const VARIANT_STATUS_ACTIVE = VariantStatus.ACTIVE;
 /** The sort field computed from `q` (spec 06 §4.1). */
 export const RELEVANCE_FIELD = 'relevance';
 /**
- * FTS rank + trigram similarity, rounded to 6 decimals so the keyset cursor compares exactly
+ * FTS rank + trigram word similarity, rounded to 6 decimals so the keyset cursor compares exactly
  * (spec 06 CA-6). Binds `q` twice.
  */
-const RELEVANCE_SQL = `round((ts_rank(p.search_vector, websearch_to_tsquery('english', ?)) + similarity(p.name, ?))::numeric, 6)`;
+const RELEVANCE_SQL = `round((ts_rank(p.search_vector, websearch_to_tsquery('english', ?)) + word_similarity(?, p.name))::numeric, 6)`;
+
+export interface ProductSearch {
+  /** Trimmed `q`. */
+  text: string;
+  /** `pg_trgm.word_similarity_threshold` for this query (env, P3-O1). */
+  wordSimilarityThreshold: number;
+}
 
 export interface PublicListCriteria {
   /** The filter category and its descendants; null = no category filter. */
   categoryIds: string[] | null;
   /** One entry per `attr.*` filter: the option ids it accepts. */
   attributeOptionIds: string[][];
-  /** Trimmed `q`, or null. */
-  search: string | null;
+  search: ProductSearch | null;
 }
 
 export interface PublicListRow {
@@ -241,7 +247,24 @@ export class ProductRepository {
    * here. Served by the VIS partial indexes (02-database.md §5). Returns `limit + 1` rows.
    */
   async listPublic(query: ParsedListQuery, criteria: PublicListCriteria): Promise<PublicListRow[]> {
-    const db = this.db.knex;
+    const { search } = criteria;
+    if (search === null) return this.queryPublic(this.db.knex, query, criteria, null);
+    // `<%` reads its threshold from a setting: set it for this transaction only (`is_local`).
+    // `SET LOCAL` takes no bind parameters, so set_config does it.
+    return this.db.knex.transaction(async (trx) => {
+      await trx.raw(`SELECT set_config('pg_trgm.word_similarity_threshold', ?, true)`, [
+        String(search.wordSimilarityThreshold),
+      ]);
+      return this.queryPublic(trx, query, criteria, search.text);
+    });
+  }
+
+  private async queryPublic(
+    db: DbExecutor,
+    query: ParsedListQuery,
+    criteria: PublicListCriteria,
+    q: string | null,
+  ): Promise<PublicListRow[]> {
     const qb = db(`${T} as p`)
       .select(...COLUMNS.map((column) => `p.${column}`))
       .where('p.status', PRODUCT_STATUS_ACTIVE)
@@ -272,12 +295,13 @@ export class ProductRepository {
     }
 
     let sortExpression: Knex.Raw | undefined;
-    if (criteria.search !== null) {
-      const q = criteria.search;
+    if (q !== null) {
+      // Full text, or typo-tolerant on words: `q <% name` matches q against the closest run of
+      // words in the name, not the whole name (P3-O1). Both use a VIS partial GIN index.
       void qb.where((match) => {
         void match
           .whereRaw(`p.search_vector @@ websearch_to_tsquery('english', ?)`, [q])
-          .orWhereRaw('p.name % ?', [q]);
+          .orWhereRaw('? <% p.name', [q]);
       });
       void qb.select(db.raw(`${RELEVANCE_SQL} AS relevance`, [q, q]));
       if (query.sort.field === RELEVANCE_FIELD) sortExpression = db.raw(RELEVANCE_SQL, [q, q]);

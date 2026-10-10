@@ -133,6 +133,22 @@ describe('catalog: public browse, search, detail (spec 06 §4.1, UC-CA-6)', () =
       expect(seen).toEqual(['Headphones', 'Wireless Headphones', 'Studio Speaker']);
     });
 
+    it('typos match words inside multi-word names (P3-O1 regression)', async () => {
+      const shoe = await api.product(other.token, flat, 'Trail Runner Pro 2026', [
+        { price: '50.00', stock: 1 },
+      ]);
+      const has = async (q: string) =>
+        (await list(`q=${encodeURIComponent(q)}&sellerId[eq]=${other.sellerId}`)).data.some(
+          (p) => p.id === shoe.id,
+        );
+      // Whole-name similarity scored these under 0.3; word similarity matches the closest words.
+      expect(await has('trial runer')).toBe(true);
+      expect(await has('runer')).toBe(true);
+      expect(await names('q=erbuds')).toEqual([]); // nothing like it in this catalog
+      expect(await names('q=wireles')).toContain('Wireless Headphones');
+      expect(await has('xylophone')).toBe(false);
+    });
+
     it('q searches the full text, tolerates typos, ranks, and pages by relevance', async () => {
       expect((await names('q=headphones')).sort()).toEqual(['Headphones', 'Wireless Headphones']);
       expect(await names('q=headphnes')).toContain('Headphones');

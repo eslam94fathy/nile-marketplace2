@@ -1,6 +1,6 @@
 # System Design 01 — Architecture (Release 1)
 
-Status: **v1.3 APPROVED (2026-10-09).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). v1.4: catalog cache keys and TTLs (§8), "newest" sorts on `published_at` (§9) (Phase 3). SD-3d (region, §12.2) is still open and only blocks Terraform provisioning. Changes from now on need explicit approval and a version bump.
+Status: **v1.5 APPROVED (2026-10-10).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). v1.4: catalog cache keys and TTLs (§8), "newest" sorts on `published_at` (§9) (Phase 3). v1.5: typo search matches words (§9, P3-O1). SD-3d (region, §12.2) is still open and only blocks Terraform provisioning. Changes from now on need explicit approval and a version bump.
 Inputs: `CLAUDE.md` (engineering rules), `docs/spec/00-overview.md` v1.0 (business). Schema: `02-database.md`.
 
 ---
@@ -186,7 +186,7 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 
 ## 9. Search & filtering (catalog)
 
-- Postgres FTS: a `products.search_vector` generated column (name weight A, description weight B) + GIN index. A `pg_trgm` GIN index on name handles typos and partial words. Text search configuration: `english` [SD-1].
+- Postgres FTS: a `products.search_vector` generated column (name weight A, description weight B) + GIN index. A `pg_trgm` GIN index on name handles typos and partial words, matched per word (`q <% name`, threshold from env) [v1.5, spec 06 CA-14]. Text search configuration: `english` [SD-1].
 - Filters, from a whitelist:
   - `category` (includes descendants: the ids come from the cached tree, then `category_id = ANY(?)`)
   - `price[gte|lte]` (on the denormalized `min_price`)

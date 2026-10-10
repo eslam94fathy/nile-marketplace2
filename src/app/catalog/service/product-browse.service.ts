@@ -1,4 +1,5 @@
 import { inject, injectable } from 'tsyringe';
+import { type Env } from '../../../lib/config';
 import { TOKENS } from '../../../lib/di';
 import { type ErrorDetail, invalidQuery } from '../../../lib/error';
 import { type PageMeta, type ParsedFilter, type ParsedListQuery, toPage } from '../../../lib/http';
@@ -17,6 +18,8 @@ import {
 import { type VariantAttributeValueRepository } from '../repository/variant-attribute-value.repository';
 import { type CategoryTreeService } from './category-tree.service';
 import { type ProductDetailCache, type ProductDetailStatic } from './product-detail-cache.service';
+
+type SearchEnv = Pick<Env, 'SEARCH_WORD_SIMILARITY_THRESHOLD'>;
 
 /** Query param names owned by the products list (spec 06 §4.1). */
 export const PRODUCT_LIST_PARAMS = { Q: 'q', CATEGORY_ID: 'categoryId', ATTR_PREFIX: 'attr.' } as const;
@@ -46,6 +49,7 @@ export class ProductBrowseService {
     @inject(TOKENS.ProductDetailCache) private readonly detailCache: ProductDetailCache,
     @inject(TOKENS.SellerDirectory) private readonly sellers: ISellerDirectory,
     @inject(TOKENS.InventoryService) private readonly inventory: IInventoryService,
+    @inject(TOKENS.Env) private readonly env: SearchEnv,
   ) {}
 
   async list(query: ParsedListQuery): Promise<{ items: ProductListItem[]; meta: PageMeta }> {
@@ -172,7 +176,10 @@ export class ProductBrowseService {
     return {
       categoryIds: categoryId === null ? null : tree.subtreeIds(categoryId),
       attributeOptionIds,
-      search,
+      search:
+        search === null
+          ? null
+          : { text: search, wordSimilarityThreshold: this.env.SEARCH_WORD_SIMILARITY_THRESHOLD },
     };
   }
 }

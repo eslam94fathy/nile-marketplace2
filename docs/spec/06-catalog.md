@@ -1,6 +1,6 @@
 # Spec 06 — catalog
 
-Status: **v1.3 APPROVED (2026-10-10).** v1.0: approved with the Phase 3 clarifications in §7.1. v1.1: an active category always has an active parent (CA-13); attribute writes lock the whole subtree (CA-2). v1.2: product writes hold their category `FOR SHARE` (CA-2). v1.3: the product-detail cache holds neither visibility nor stock, so the consumers have nothing to invalidate (CA-8). Changes from now on need explicit approval and a version bump.
+Status: **v1.4 APPROVED (2026-10-10).** v1.0: approved with the Phase 3 clarifications in §7.1. v1.1: an active category always has an active parent (CA-13); attribute writes lock the whole subtree (CA-2). v1.2: product writes hold their category `FOR SHARE` (CA-2). v1.3: the product-detail cache holds neither visibility nor stock, so the consumers have nothing to invalidate (CA-8). v1.4: typo tolerance matches words, not the whole name (CA-14, P3-O1). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -64,7 +64,7 @@ Stock changes are **deltas**, not absolute values, because `on_hand` still inclu
 ### UC-CA-6 Public browse & search (architecture §9)
 - Only visible products (VIS: `status = active AND seller_active AND deleted_at IS NULL`). Hidden/deleted → `404 PRODUCT_NOT_FOUND`.
 - `categoryId` filter includes descendants (ids from the cached tree).
-- `q`: `search_vector @@ websearch_to_tsquery('english', q) OR name % q` (pg_trgm, default similarity threshold). Relevance = `round((ts_rank(search_vector, query) + similarity(name, q))::numeric, 6)`, carried in the cursor as a string so keyset paging is exact (CA-6).
+- `q`: `search_vector @@ websearch_to_tsquery('english', q) OR q <% name` (pg_trgm word similarity, threshold `SEARCH_WORD_SIMILARITY_THRESHOLD`, CA-14). Relevance = `round((ts_rank(search_vector, query) + word_similarity(q, name))::numeric, 6)`, carried in the cursor as a string so keyset paging is exact (CA-6).
 - `attr.*` filters: all of them must hold on **the same** active, non-deleted variant (one `EXISTS` over the product's variants carrying every condition). They require `categoryId`; codes resolve against the attributes of that category, its ancestors and its descendants, and an option code may map to several option ids (CA-5).
 
 ### UC-CA-7 Listing projections (event consumers)
@@ -279,4 +279,5 @@ Consumed: `seller.approved`, `seller.suspended`, `inventory.stock_status_changed
 | CA-10 | Slug fallbacks: product `product-<6 base36>`, category create → `CATEGORY_SLUG_REQUIRED` (P3-Q12 a) | UC-CA-1, UC-CA-3 |
 | CA-11 | `23001` (restrict violation) maps to `409` by default; the two `variant_attribute_values` FKs map to `OPTION_IN_USE` / `ATTRIBUTE_IN_USE` (P3-Q11, resolves CLAUDE.md P2-O1) | §6 |
 | CA-12 | The seller `name like` filter runs without a trigram index (seller-scoped, small) (P3-Q12 c) | §4.3 |
+| CA-14 | Typo tolerance compares `q` with the closest run of words in the name (`q <% name`, `word_similarity`), not the whole name (`%` missed typos in multi-word names: "trial runer" vs "Trail Runner …" scored 0.28). The threshold comes from env `SEARCH_WORD_SIMILARITY_THRESHOLD` (0.35, tune in P8 with real names), set per search query with `set_config('pg_trgm.word_similarity_threshold', ?, true)`; `idx_products_name_trgm` serves it (P3-O1, v1.4) | UC-CA-6 |
 | CA-13 | An active category always has an active parent: activating a child of an inactive category, or creating one under it → `409 CATEGORY_PARENT_INACTIVE` (user decision 2026-10-10, v1.1) | UC-CA-1, §6 |

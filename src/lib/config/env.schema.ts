@@ -187,6 +187,8 @@ const deliveryShape = {
 const catalogShape = {
   CATEGORY_TREE_CACHE_TTL_SECONDS: positiveInt(86_400),
   PRODUCT_DETAIL_CACHE_TTL_SECONDS: positiveInt(3_600),
+  /** pg_trgm word_similarity threshold for typo-tolerant product search, 0 < t < 1 (P3-O1). */
+  SEARCH_WORD_SIMILARITY_THRESHOLD: z.coerce.number().gt(0).lt(1),
 };
 
 /** Invites are also created by the seed-admin CLI. */
