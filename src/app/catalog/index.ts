@@ -17,6 +17,7 @@ import { requireIdempotency } from '../../lib/middleware';
 import { type ICache } from '../../pkg/cache';
 import { CategoryAdminController } from './controller/category-admin.controller';
 import { CategoryController } from './controller/category.controller';
+import { ProductController } from './controller/product.controller';
 import { SellerProductController } from './controller/seller-product.controller';
 import { SellerVariantController } from './controller/seller-variant.controller';
 import { registerCatalogConstraintErrors } from './errors';
@@ -27,9 +28,12 @@ import { ProductVariantRepository } from './repository/product-variant.repositor
 import { ProductRepository } from './repository/product.repository';
 import { VariantAttributeValueRepository } from './repository/variant-attribute-value.repository';
 import { catalogRoutes } from './routes';
+import { CatalogDirectory } from './service/catalog-directory.service';
 import { CategoryAdminService } from './service/category-admin.service';
 import { CategoryTreeService } from './service/category-tree.service';
 import { CategoryService } from './service/category.service';
+import { ProductBrowseService } from './service/product-browse.service';
+import { ProductDetailCache } from './service/product-detail-cache.service';
 import { ProductProjectionService } from './service/product-projection.service';
 import { SellerGuard } from './service/seller-guard.service';
 import { SellerProductService } from './service/seller-product.service';
@@ -38,6 +42,9 @@ import { VariantViewService } from './service/variant-view.service';
 
 export { ProductStatus, VariantStatus } from './enums';
 export { CatalogErrorCode } from './errors';
+export type { PurchasableVariant } from './model/purchasable-variant.model';
+/** Inject with `TOKENS.CatalogDirectory`. */
+export type { ICatalogDirectory } from './service/catalog-directory.service';
 
 /** api process. Needs sellers' SellerDirectory and inventory's InventoryService registered first. */
 export function registerCatalogModule(container: DependencyContainer): void {
@@ -55,10 +62,14 @@ export function registerCatalogModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.ProductProjectionService, ProductProjectionService);
   container.registerSingleton(TOKENS.SellerProductService, SellerProductService);
   container.registerSingleton(TOKENS.SellerVariantService, SellerVariantService);
+  container.registerSingleton(TOKENS.ProductDetailCache, ProductDetailCache);
+  container.registerSingleton(TOKENS.ProductBrowseService, ProductBrowseService);
+  container.registerSingleton(TOKENS.CatalogDirectory, CatalogDirectory);
   container.registerSingleton(TOKENS.CategoryController, CategoryController);
   container.registerSingleton(TOKENS.CategoryAdminController, CategoryAdminController);
   container.registerSingleton(TOKENS.SellerProductController, SellerProductController);
   container.registerSingleton(TOKENS.SellerVariantController, SellerVariantController);
+  container.registerSingleton(TOKENS.ProductController, ProductController);
   registerCatalogConstraintErrors(container.resolve<PgErrorMapper>(TOKENS.PgErrorMapper));
 }
 
@@ -67,6 +78,7 @@ export function createCatalogRouter(container: DependencyContainer, basePath: st
   return catalogRoutes({
     categories: container.resolve<CategoryController>(TOKENS.CategoryController),
     categoryAdmin: container.resolve<CategoryAdminController>(TOKENS.CategoryAdminController),
+    products: container.resolve<ProductController>(TOKENS.ProductController),
     sellerProducts: container.resolve<SellerProductController>(TOKENS.SellerProductController),
     sellerVariants: container.resolve<SellerVariantController>(TOKENS.SellerVariantController),
     jwtVerifier: container.resolve<JwtVerifier>(TOKENS.JwtVerifier),

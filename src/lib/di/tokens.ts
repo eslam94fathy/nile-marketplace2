@@ -87,6 +87,11 @@ export const TOKENS = {
   SellerVariantService: Symbol.for('SellerVariantService'),
   SellerProductController: Symbol.for('SellerProductController'),
   SellerVariantController: Symbol.for('SellerVariantController'),
+  ProductDetailCache: Symbol.for('ProductDetailCache'),
+  ProductBrowseService: Symbol.for('ProductBrowseService'),
+  ProductController: Symbol.for('ProductController'),
+  /** Public API of catalog (spec 06 §2), injected into other modules. */
+  CatalogDirectory: Symbol.for('CatalogDirectory'),
 
   // inventory module
   InventoryItemRepository: Symbol.for('InventoryItemRepository'),

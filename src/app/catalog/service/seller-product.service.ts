@@ -17,6 +17,7 @@ import { type Product } from '../model/product.model';
 import { type CategoryRepository } from '../repository/category.repository';
 import { type ProductVariantRepository } from '../repository/product-variant.repository';
 import { type ProductRepository } from '../repository/product.repository';
+import { type ProductDetailCache } from './product-detail-cache.service';
 import { type SellerGuard } from './seller-guard.service';
 import { type VariantView, type VariantViewService } from './variant-view.service';
 
@@ -58,6 +59,7 @@ export class SellerProductService {
     @inject(TOKENS.ProductVariantRepository) private readonly variants: ProductVariantRepository,
     @inject(TOKENS.CategoryRepository) private readonly categories: CategoryRepository,
     @inject(TOKENS.VariantViewService) private readonly views: VariantViewService,
+    @inject(TOKENS.ProductDetailCache) private readonly detailCache: ProductDetailCache,
   ) {}
 
   async list(userId: string, query: ParsedListQuery): Promise<{ items: Product[]; meta: PageMeta }> {
@@ -139,19 +141,24 @@ export class SellerProductService {
     return { product, variants: await this.views.build(variants, trx) };
   }
 
-  /** One write transaction: approved seller, then the seller's live product locked FOR UPDATE. */
+  /**
+   * One write transaction: approved seller, then the seller's live product locked FOR UPDATE.
+   * The public detail cache key is deleted after commit.
+   */
   private async write(
     userId: string,
     productId: string,
     work: (product: Product, trx: DbTransaction) => Promise<void>,
   ): Promise<string> {
-    return this.tx.run(async (trx) => {
-      const sellerId = await this.guard.approvedSellerId(userId, trx);
-      const product = await this.products.findLiveForSeller(productId, sellerId, trx, { forUpdate: true });
+    const sellerId = await this.tx.run(async (trx) => {
+      const seller = await this.guard.approvedSellerId(userId, trx);
+      const product = await this.products.findLiveForSeller(productId, seller, trx, { forUpdate: true });
       if (!product) throw productNotFound();
       await work(product, trx);
-      return sellerId;
+      return seller;
     });
+    await this.detailCache.invalidate([productId]);
+    return sellerId;
   }
 
   /** The category must exist and be active (422); held FOR SHARE until commit (spec 06 CA-2). */

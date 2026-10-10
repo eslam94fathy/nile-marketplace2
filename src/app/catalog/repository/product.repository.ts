@@ -1,14 +1,43 @@
 import { inject, injectable } from 'tsyringe';
+import { type Knex } from 'knex';
 import { type DbExecutor, type DbTransaction, type IDatabase } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import { applyListQuery, type ParsedListQuery } from '../../../lib/http';
 import { Money } from '../../../lib/money';
 import { CATALOG_TABLES } from '../constants';
-import { type ProductStatus } from '../enums';
+import { ProductStatus, VariantStatus } from '../enums';
 import { type ProductProjection } from '../model/product-projection';
 import { Product } from '../model/product.model';
 
 const T = CATALOG_TABLES.PRODUCTS;
+const VARIANTS = CATALOG_TABLES.PRODUCT_VARIANTS;
+const VARIANT_VALUES = CATALOG_TABLES.VARIANT_ATTRIBUTE_VALUES;
+const PRODUCT_STATUS_ACTIVE = ProductStatus.ACTIVE;
+const VARIANT_STATUS_ACTIVE = VariantStatus.ACTIVE;
+
+/** The sort field computed from `q` (spec 06 §4.1). */
+export const RELEVANCE_FIELD = 'relevance';
+/**
+ * FTS rank + trigram similarity, rounded to 6 decimals so the keyset cursor compares exactly
+ * (spec 06 CA-6). Binds `q` twice.
+ */
+const RELEVANCE_SQL = `round((ts_rank(p.search_vector, websearch_to_tsquery('english', ?)) + similarity(p.name, ?))::numeric, 6)`;
+
+export interface PublicListCriteria {
+  /** The filter category and its descendants; null = no category filter. */
+  categoryIds: string[] | null;
+  /** One entry per `attr.*` filter: the option ids it accepts. */
+  attributeOptionIds: string[][];
+  /** Trimmed `q`, or null. */
+  search: string | null;
+}
+
+export interface PublicListRow {
+  product: Product;
+  /** The relevance score as a decimal string, when searching. */
+  relevance: string | null;
+}
+
 const COLUMNS = [
   'id',
   'seller_id',
@@ -177,6 +206,72 @@ export class ProductRepository {
       .where({ seller_id: sellerId })
       .whereNull('deleted_at');
     return ((await applyListQuery(qb, query, 'id')) as ProductRow[]).map(toModel);
+  }
+
+  /**
+   * Public listing and search (spec 06 UC-CA-6, architecture §9), always within VIS. Column filters
+   * and the sort come from `query` (whitelist columns are `p.*`); the custom criteria are applied
+   * here. Served by the VIS partial indexes (02-database.md §5). Returns `limit + 1` rows.
+   */
+  async listPublic(query: ParsedListQuery, criteria: PublicListCriteria): Promise<PublicListRow[]> {
+    const db = this.db.knex;
+    const qb = db(`${T} as p`)
+      .select(...COLUMNS.map((column) => `p.${column}`))
+      .where('p.status', PRODUCT_STATUS_ACTIVE)
+      .where('p.seller_active', true)
+      .whereNull('p.deleted_at');
+
+    if (criteria.categoryIds) void qb.whereIn('p.category_id', criteria.categoryIds);
+
+    // Every attr.* condition must hold on the SAME active, live variant (spec 06 CA-5).
+    if (criteria.attributeOptionIds.length > 0) {
+      void qb.whereExists((variants) => {
+        void variants
+          .select(db.raw('1'))
+          .from(`${VARIANTS} as v`)
+          .whereRaw('v.product_id = p.id')
+          .where('v.status', VARIANT_STATUS_ACTIVE)
+          .whereNull('v.deleted_at');
+        for (const optionIds of criteria.attributeOptionIds) {
+          void variants.whereExists((values) => {
+            void values
+              .select(db.raw('1'))
+              .from(`${VARIANT_VALUES} as x`)
+              .whereRaw('x.variant_id = v.id')
+              .whereIn('x.option_id', optionIds);
+          });
+        }
+      });
+    }
+
+    let sortExpression: Knex.Raw | undefined;
+    if (criteria.search !== null) {
+      const q = criteria.search;
+      void qb.where((match) => {
+        void match
+          .whereRaw(`p.search_vector @@ websearch_to_tsquery('english', ?)`, [q])
+          .orWhereRaw('p.name % ?', [q]);
+      });
+      void qb.select(db.raw(`${RELEVANCE_SQL} AS relevance`, [q, q]));
+      if (query.sort.field === RELEVANCE_FIELD) sortExpression = db.raw(RELEVANCE_SQL, [q, q]);
+    }
+
+    const rows = (await applyListQuery(qb, query, 'p.id', { sortExpression })) as (ProductRow & {
+      relevance?: string;
+    })[];
+    return rows.map((row) => ({ product: toModel(row), relevance: row.relevance ?? null }));
+  }
+
+  /** A visible (VIS) product by id or by slug (uq_products_slug); null when hidden, deleted or missing. */
+  async findVisible(key: { id: string } | { slug: string }): Promise<Product | null> {
+    const row = await this.db
+      .knex<ProductTable>(T)
+      .select(...COLUMNS)
+      .where('id' in key ? { id: key.id } : { slug: key.slug })
+      .where({ status: PRODUCT_STATUS_ACTIVE, seller_active: true })
+      .whereNull('deleted_at')
+      .first<ProductRow | undefined>();
+    return row ? toModel(row) : null;
   }
 
   /**

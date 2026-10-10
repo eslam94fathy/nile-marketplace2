@@ -99,6 +99,7 @@ const values = {
   GOVERNORATES_CACHE_TTL_SECONDS: '3600',
   // catalog (P3-Q9)
   CATEGORY_TREE_CACHE_TTL_SECONDS: '3600',
+  PRODUCT_DETAIL_CACHE_TTL_SECONDS: '60',
   // email: local inbox by default (P1-Q2); switch EMAIL_PROVIDER to mailjet to send real mail
   EMAIL_PROVIDER: 'mailpit',
   EMAIL_HTTP_TIMEOUT_MS: '10000',

@@ -2,9 +2,11 @@ import { type RequestHandler, Router } from 'express';
 import { type JwtVerifier, UserRole } from '../../lib/auth';
 import { type OpenApiRegistry } from '../../lib/http';
 import { authenticate, requireRole } from '../../lib/middleware';
-import { CATALOG_ADMIN_PATHS as A, CATALOG_PATHS as P } from './constants';
+import { CATALOG_ADMIN_PATHS as A, CATALOG_PATHS as P, CATALOG_PRODUCT_PATHS as PP } from './constants';
 import { type CategoryAdminController } from './controller/category-admin.controller';
 import { type CategoryController } from './controller/category.controller';
+import { type ProductController } from './controller/product.controller';
+import { ProductDetailDto, ProductListItemDto } from './dto/product-public.dto';
 import { type SellerProductController } from './controller/seller-product.controller';
 import { type SellerVariantController } from './controller/seller-variant.controller';
 import { addCatalogSellerRoutes } from './seller-routes';
@@ -30,6 +32,7 @@ const ADMIN_TAGS = ['admin: catalog'] as const;
 export interface CatalogRouteDeps {
   categories: CategoryController;
   categoryAdmin: CategoryAdminController;
+  products: ProductController;
   sellerProducts: SellerProductController;
   sellerVariants: SellerVariantController;
   jwtVerifier: JwtVerifier;
@@ -47,6 +50,8 @@ export function catalogRoutes(deps: CatalogRouteDeps): Router {
 
   router.get(P.CATEGORIES, categories.tree);
   router.get(P.CATEGORY_ATTRIBUTES, categories.attributes);
+  router.get(PP.PRODUCTS, deps.products.list);
+  router.get(PP.PRODUCT, deps.products.get);
 
   router.get(A.CATEGORIES, ...adminOnly, admin.tree);
   router.post(A.CATEGORIES, ...adminOnly, admin.createCategory);
@@ -86,6 +91,44 @@ export function catalogRoutes(deps: CatalogRouteDeps): Router {
     responses: {
       200: { description: 'Ancestors first, then sortOrder', body: EffectiveAttributeDto, isArray: true },
     },
+  });
+  docs.add({
+    method: 'get',
+    path: `${basePath}${PP.PRODUCTS}`,
+    summary:
+      'Browse and search visible products. Filters: categoryId[eq] (includes subcategories), price[gte|lte] (lowest variant price), inStock[eq], sellerId[eq], attr.<code>[in] (needs categoryId; all on the same variant; max 5). q = search text (2..100). Sort: publishedAt, minPrice, relevance (with q only); default -relevance with q, else -publishedAt',
+    tags: TAGS,
+    auth: false,
+    query: [
+      { name: 'q', in: 'query', schema: { type: 'string', minLength: 2, maxLength: 100 } },
+      { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1 } },
+      { name: 'cursor', in: 'query', schema: { type: 'string' } },
+      {
+        name: 'sort',
+        in: 'query',
+        schema: { enum: ['publishedAt', '-publishedAt', 'minPrice', '-minPrice', 'relevance', '-relevance'] },
+      },
+      { name: 'categoryId[eq]', in: 'query', schema: { type: 'string', format: 'uuid' } },
+      { name: 'price[gte]', in: 'query', schema: { type: 'string' } },
+      { name: 'price[lte]', in: 'query', schema: { type: 'string' } },
+      { name: 'inStock[eq]', in: 'query', schema: { type: 'boolean' } },
+      { name: 'sellerId[eq]', in: 'query', schema: { type: 'string', format: 'uuid' } },
+      {
+        name: 'attr.{code}[in]',
+        in: 'query',
+        schema: { type: 'string' },
+        description: 'comma-separated option codes, e.g. attr.size[in]=m,xl',
+      },
+    ],
+    responses: { 200: { description: 'One page', body: ProductListItemDto, isArray: true, paginated: true } },
+  });
+  docs.add({
+    method: 'get',
+    path: `${basePath}${PP.PRODUCT}`,
+    summary: 'A visible product by id or slug, with live stock per variant (PRODUCT_NOT_FOUND)',
+    tags: TAGS,
+    auth: false,
+    responses: { 200: { description: 'The product', body: ProductDetailDto } },
   });
 
   const adminDoc = { tags: ADMIN_TAGS, auth: true } as const;

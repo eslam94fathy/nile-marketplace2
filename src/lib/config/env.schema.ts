@@ -186,6 +186,7 @@ const deliveryShape = {
 /** catalog (spec 06 CA-8, P3-Q9). */
 const catalogShape = {
   CATEGORY_TREE_CACHE_TTL_SECONDS: positiveInt(86_400),
+  PRODUCT_DETAIL_CACHE_TTL_SECONDS: positiveInt(3_600),
 };
 
 /** Invites are also created by the seed-admin CLI. */

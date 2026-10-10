@@ -3,10 +3,29 @@ import { type DbExecutor, type DbTransaction, type IDatabase } from '../../../li
 import { TOKENS } from '../../../lib/di';
 import { Money } from '../../../lib/money';
 import { CATALOG_TABLES } from '../constants';
-import { type VariantStatus } from '../enums';
+import { ProductStatus, VariantStatus } from '../enums';
 import { ProductVariant } from '../model/product-variant.model';
+import { type PurchasableVariant } from '../model/purchasable-variant.model';
 
 const T = CATALOG_TABLES.PRODUCT_VARIANTS;
+const PRODUCTS = CATALOG_TABLES.PRODUCTS;
+const VALUES = CATALOG_TABLES.VARIANT_ATTRIBUTE_VALUES;
+const ATTRIBUTES = CATALOG_TABLES.CATEGORY_ATTRIBUTES;
+const OPTIONS = CATALOG_TABLES.CATEGORY_ATTRIBUTE_OPTIONS;
+const CATEGORIES = CATALOG_TABLES.CATEGORIES;
+
+interface PurchaseRow {
+  variant_id: string;
+  product_id: string;
+  product_name: string;
+  product_slug: string;
+  sku: string;
+  /** NUMERIC as a string. */
+  price: string;
+  seller_id: string;
+  purchasable: boolean;
+  attributes: { attribute: string; value: string }[];
+}
 const COLUMNS = [
   'id',
   'product_id',
@@ -144,6 +163,45 @@ export class ProductVariantRepository {
       deleted_at: trx.fn.now(),
       updated_at: trx.fn.now(),
     });
+  }
+
+  /**
+   * What cart and ordering need, in one query (spec 06 §2): each variant with its product, its
+   * options (depth, then sort order) and `purchasable`. Deleted variants are included (not
+   * purchasable); unknown ids are left out. Joins stay inside catalog's own tables.
+   */
+  async findForPurchase(variantIds: readonly string[], trx?: DbTransaction): Promise<PurchasableVariant[]> {
+    if (variantIds.length === 0) return [];
+    const result = await this.exec(trx).raw<{ rows: PurchaseRow[] }>(
+      `SELECT v.id AS variant_id, v.product_id, p.name AS product_name, p.slug AS product_slug,
+              v.sku, v.price, v.seller_id,
+              (v.status = ? AND v.deleted_at IS NULL
+                 AND p.status = ? AND p.seller_active AND p.deleted_at IS NULL) AS purchasable,
+              COALESCE((
+                SELECT json_agg(json_build_object('attribute', a.name, 'value', o.value)
+                                ORDER BY c.depth, a.sort_order, a.code)
+                  FROM ${VALUES} x
+                  JOIN ${ATTRIBUTES} a ON a.id = x.attribute_id
+                  JOIN ${CATEGORIES} c ON c.id = a.category_id
+                  JOIN ${OPTIONS} o ON o.id = x.option_id
+                 WHERE x.variant_id = v.id
+              ), '[]'::json) AS attributes
+         FROM ${T} v
+         JOIN ${PRODUCTS} p ON p.id = v.product_id
+        WHERE v.id = ANY(?::uuid[])`,
+      [VariantStatus.ACTIVE, ProductStatus.ACTIVE, [...new Set(variantIds)]],
+    );
+    return result.rows.map((row) => ({
+      variantId: row.variant_id,
+      productId: row.product_id,
+      productName: row.product_name,
+      productSlug: row.product_slug,
+      sku: row.sku,
+      price: row.price,
+      sellerId: row.seller_id,
+      attributes: row.attributes,
+      purchasable: row.purchasable,
+    }));
   }
 
   async softDeleteByProduct(productId: string, trx: DbTransaction): Promise<void> {

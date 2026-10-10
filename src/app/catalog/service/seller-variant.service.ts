@@ -23,6 +23,7 @@ import { type ProductVariantRepository } from '../repository/product-variant.rep
 import { type ProductRepository } from '../repository/product.repository';
 import { type VariantAttributeValueRepository } from '../repository/variant-attribute-value.repository';
 import { type CategoryTreeService } from './category-tree.service';
+import { type ProductDetailCache } from './product-detail-cache.service';
 import { type ProductProjectionService } from './product-projection.service';
 import { type SellerGuard } from './seller-guard.service';
 import { type VariantView, type VariantViewService } from './variant-view.service';
@@ -64,11 +65,12 @@ export class SellerVariantService {
     @inject(TOKENS.ProductProjectionService) private readonly projections: ProductProjectionService,
     @inject(TOKENS.InventoryService) private readonly inventory: IInventoryService,
     @inject(TOKENS.VariantViewService) private readonly views: VariantViewService,
+    @inject(TOKENS.ProductDetailCache) private readonly detailCache: ProductDetailCache,
   ) {}
 
   async create(userId: string, productId: string, input: CreateVariantInput): Promise<VariantView> {
     assertCompareAtPrice(input.price, input.compareAtPrice);
-    return this.tx.run(async (trx) => {
+    const view = await this.tx.run(async (trx) => {
       const product = await this.lockProduct(userId, productId, trx);
       const live = await this.variants.findLiveByProductIds([product.id], trx);
       if (live.length >= MAX_VARIANTS_PER_PRODUCT) throw variantLimitReached(MAX_VARIANTS_PER_PRODUCT);
@@ -101,6 +103,8 @@ export class SellerVariantService {
       await this.projections.recompute(product, trx);
       return this.view(variant.id, product.sellerId, trx);
     });
+    await this.detailCache.invalidate([productId]);
+    return view;
   }
 
   async update(
@@ -109,7 +113,7 @@ export class SellerVariantService {
     variantId: string,
     input: UpdateVariantInput,
   ): Promise<VariantView> {
-    return this.tx.run(async (trx) => {
+    const view = await this.tx.run(async (trx) => {
       const product = await this.lockProduct(userId, productId, trx);
       const variant = await this.liveVariantOf(product, variantId, trx);
       assertCompareAtPrice(
@@ -120,6 +124,8 @@ export class SellerVariantService {
       await this.projections.recompute(product, trx);
       return this.view(variant.id, product.sellerId, trx);
     });
+    await this.detailCache.invalidate([productId]);
+    return view;
   }
 
   async delete(userId: string, productId: string, variantId: string): Promise<void> {
@@ -129,6 +135,7 @@ export class SellerVariantService {
       await this.variants.softDelete(variant.id, trx);
       await this.projections.recompute(product, trx);
     });
+    await this.detailCache.invalidate([productId]);
   }
 
   /** A delta, never an absolute value (S-6). */

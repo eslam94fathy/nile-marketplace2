@@ -67,3 +67,21 @@ export const STOCK_DELTA_MAX = 100_000;
 /** `kebab(name)-xxxxxx` (spec 06 UC-CA-3); `product-xxxxxx` when the name has nothing usable (CA-10). */
 export const PRODUCT_SLUG_SUFFIX_LENGTH = 6;
 export const PRODUCT_SLUG_FALLBACK = 'product';
+
+/** Public product detail, static part only (no stock), cache-aside (spec 06 CA-8). */
+export const productDetailCacheKey = (productId: string): string => `v1:catalog:product:${productId}`;
+
+/** Public paths under /api/v1 (spec 06 §4.1): products. */
+export const CATALOG_PRODUCT_PATHS = {
+  PRODUCTS: '/products',
+  PRODUCT: '/products/:idOrSlug',
+} as const;
+
+/** Search text `q` (spec 06 §4.1). */
+export const SEARCH_MIN_LENGTH = 2;
+export const SEARCH_MAX_LENGTH = 100;
+/** `attr.*` filters per request, and option codes per filter (spec 06 §4.1). */
+export const MAX_ATTRIBUTE_FILTERS = 5;
+export const MAX_ATTRIBUTE_FILTER_VALUES = 20;
+/** Detail `availableQuantity` = min(sellable, 99): the cart line maximum (DB-Q3). */
+export const MAX_AVAILABLE_QUANTITY = 99;
