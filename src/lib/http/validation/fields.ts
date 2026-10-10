@@ -1,6 +1,6 @@
-import { IsEmail, IsString, IsUUID, Length, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsInt, IsString, IsUUID, Length, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { BCRYPT_MAX_BYTES } from '../../../pkg/hashing';
-import { IsEgyptianMobile, MaxBytes, NormalizeEmail, Trim } from './validators';
+import { IsEgyptianMobile, IsSlug, MaxBytes, NormalizeEmail, Trim } from './validators';
 
 /**
  * The DTO shorthands of docs/spec/01-api-conventions.md §1.1, shared by every module's DTOs.
@@ -31,3 +31,9 @@ export const PasswordField = () =>
 
 /** `phone`: Egyptian mobile in E.164. */
 export const PhoneField = () => stack(IsString(), IsEgyptianMobile());
+
+/** `slug(a..b)`: lower-case kebab-case of `min..max` characters. */
+export const SlugField = (min: number, max: number) => stack(IsString(), Length(min, max), IsSlug());
+
+/** `int(a..b)`: a JSON integer in `min..max` (no string coercion). */
+export const IntField = (min: number, max: number) => stack(IsInt(), Min(min), Max(max));

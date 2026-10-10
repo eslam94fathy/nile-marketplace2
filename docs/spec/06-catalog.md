@@ -1,6 +1,6 @@
 # Spec 06 — catalog
 
-Status: **v1.0 APPROVED (2026-10-10).** Approved by the user with the Phase 3 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
+Status: **v1.1 APPROVED (2026-10-10).** v1.0: approved with the Phase 3 clarifications in §7.1. v1.1: an active category always has an active parent (CA-13); attribute writes lock the whole subtree (CA-2). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -28,6 +28,7 @@ Limits (constants in `constants.ts`; change = code review): effective attributes
 - Every category, attribute and option write first locks the affected category row (the parent on create) `FOR UPDATE` (CA-2).
 - Update: `name`, `slug`, `sortOrder`, `isActive`. **Moving** a category (changing `parentId`) isn't supported in R1.
 - Deactivate (`isActive = false`) only if it has no active child and no non-deleted product → else `CATEGORY_IN_USE`. Categories are never deleted.
+- An active category always has an active parent (CA-13): activating a category whose parent is inactive, or creating one under an inactive parent → `CATEGORY_PARENT_INACTIVE`. A branch is re-activated top-down.
 - Every change deletes the category-tree cache key after commit.
 
 ### UC-CA-2 Admin manages attributes and options
@@ -159,8 +160,8 @@ interface AdminCategoryNodeDto {
 | Endpoint | Body | Success | Errors |
 |---|---|---|---|
 | `GET /admin/categories` | – | `200 AdminCategoryNodeDto[]` (incl. inactive) | – |
-| `POST /admin/categories` | `parentId opt nullable uuid` · `name str(1..100)` · `slug opt slug(1..120)` · `sortOrder int(0..10000)` | `201 AdminCategoryNodeDto` | `CATEGORY_NOT_FOUND` 422 (parent), `CATEGORY_MAX_DEPTH_EXCEEDED` 422, `CATEGORY_NAME_TAKEN` 409, `CATEGORY_SLUG_TAKEN` 409, `CATEGORY_SLUG_REQUIRED` 422, `CATEGORY_CHILD_LIMIT_REACHED` 422 |
-| `PATCH /admin/categories/:categoryId` | `name opt` · `slug opt` · `sortOrder opt` · `isActive opt bool` | `200` | `CATEGORY_NOT_FOUND` 404, `CATEGORY_NAME_TAKEN`, `CATEGORY_SLUG_TAKEN`, `CATEGORY_IN_USE` 409 |
+| `POST /admin/categories` | `parentId opt nullable uuid` · `name str(1..100)` · `slug opt slug(1..120)` · `sortOrder int(0..10000)` | `201 AdminCategoryNodeDto` | `CATEGORY_NOT_FOUND` 422 (parent), `CATEGORY_MAX_DEPTH_EXCEEDED` 422, `CATEGORY_NAME_TAKEN` 409, `CATEGORY_SLUG_TAKEN` 409, `CATEGORY_SLUG_REQUIRED` 422, `CATEGORY_PARENT_INACTIVE` 409, `CATEGORY_CHILD_LIMIT_REACHED` 422 |
+| `PATCH /admin/categories/:categoryId` | `name opt` · `slug opt` · `sortOrder opt` · `isActive opt bool` | `200` | `CATEGORY_NOT_FOUND` 404, `CATEGORY_NAME_TAKEN`, `CATEGORY_SLUG_TAKEN`, `CATEGORY_IN_USE` 409, `CATEGORY_PARENT_INACTIVE` 409 |
 | `POST /admin/categories/:categoryId/attributes` | `name str(1..60)` · `code slug(1..60)` · `sortOrder int(0..10000)` | `201` attribute | `CATEGORY_NOT_FOUND` 404, `ATTRIBUTE_CODE_CONFLICT` 409, `CATEGORY_HAS_PRODUCTS` 409, `ATTRIBUTE_LIMIT_REACHED` 422 |
 | `PATCH /admin/attributes/:attributeId` | `name opt str(1..60)` · `sortOrder opt int(0..10000)` | `200` | `ATTRIBUTE_NOT_FOUND` 404 |
 | `DELETE /admin/attributes/:attributeId` | – | `204` | `ATTRIBUTE_NOT_FOUND` 404, `ATTRIBUTE_IN_USE` 409 |
@@ -234,6 +235,7 @@ Consumed: `seller.approved`, `seller.suspended`, `inventory.stock_status_changed
 | `CATEGORY_SLUG_REQUIRED` | 422 | No `slug` sent and the name kebab-cases to nothing (CA-10) |
 | `CATEGORY_CHILD_LIMIT_REACHED` | 422 | > 100 children |
 | `CATEGORY_IN_USE` | 409 | Deactivating with active children or products |
+| `CATEGORY_PARENT_INACTIVE` | 409 | Activating, or creating, a category under an inactive parent (CA-13) |
 | `CATEGORY_HAS_PRODUCTS` | 409 | Adding an attribute to a subtree that has products (S-5) |
 | `ATTRIBUTE_NOT_FOUND` | 404 | |
 | `ATTRIBUTE_CODE_CONFLICT` | 409 | Code exists on the category, an ancestor, or a descendant |
@@ -266,7 +268,7 @@ Consumed: `seller.approved`, `seller.suspended`, `inventory.stock_status_changed
 | # | Clarification | Where |
 |---|---|---|
 | CA-1 | `inventory_reservations` and checkout reservations land in Phase 5; nothing in this spec depends on them before then (P3-Q2) | §1 |
-| CA-2 | Product/variant writes and the `in_stock` consumer lock the product row first; category/attribute/option writes lock the category row (the parent on create). Lock order is product → inventory item (P3-Q3) | UC-CA-1…4 |
+| CA-2 | Product/variant writes and the `in_stock` consumer lock the product row first. Category create locks the parent, category update the category itself, option add the attribute row. Attribute add/delete lock the category's **whole subtree** in id order (v1.1): an ancestor's subtree contains the descendant, so writes along one lineage serialise, which covers code uniqueness, the effective-attribute limit (checked against the largest count in the subtree) and "no products in the subtree". Lock order is product → inventory item (P3-Q3) | UC-CA-1…4 |
 | CA-3 | The seller guard reads the seller `FOR SHARE` inside the write transaction (spec 05 SE-4, P3-Q4) | UC-CA-3 |
 | CA-4 | The list query language is extended generically in `lib/http/query` (prefix fields, per-field apply hooks, expression sorts) (P3-Q6) | §4.1 |
 | CA-5 | `attr.*`: same-variant semantics, needs `categoryId`, resolution over lineage + subtree (P3-Q5) | UC-CA-6, §4.1 |
@@ -277,3 +279,4 @@ Consumed: `seller.approved`, `seller.suspended`, `inventory.stock_status_changed
 | CA-10 | Slug fallbacks: product `product-<6 base36>`, category create → `CATEGORY_SLUG_REQUIRED` (P3-Q12 a) | UC-CA-1, UC-CA-3 |
 | CA-11 | `23001` (restrict violation) maps to `409` by default; the two `variant_attribute_values` FKs map to `OPTION_IN_USE` / `ATTRIBUTE_IN_USE` (P3-Q11, resolves CLAUDE.md P2-O1) | §6 |
 | CA-12 | The seller `name like` filter runs without a trigram index (seller-scoped, small) (P3-Q12 c) | §4.3 |
+| CA-13 | An active category always has an active parent: activating a child of an inactive category, or creating one under it → `409 CATEGORY_PARENT_INACTIVE` (user decision 2026-10-10, v1.1) | UC-CA-1, §6 |

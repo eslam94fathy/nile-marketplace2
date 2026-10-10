@@ -81,6 +81,8 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     CUSTOMER_MAX_ADDRESSES: '20',
     // delivery reference data
     GOVERNORATES_CACHE_TTL_SECONDS: '3600',
+    // catalog
+    CATEGORY_TREE_CACHE_TTL_SECONDS: '3600',
     // secrets in event payloads
     SECRETS_ENCRYPTION_KEYS: JSON.stringify({ [TEST_SECRETS_KEY_ID]: TEST_SECRETS_KEY.toString('base64') }),
     SECRETS_ENCRYPTION_ACTIVE_KEY_ID: TEST_SECRETS_KEY_ID,

@@ -183,6 +183,11 @@ const deliveryShape = {
   GOVERNORATES_CACHE_TTL_SECONDS: positiveInt(86_400),
 };
 
+/** catalog (spec 06 CA-8, P3-Q9). */
+const catalogShape = {
+  CATEGORY_TREE_CACHE_TTL_SECONDS: positiveInt(86_400),
+};
+
 /** Invites are also created by the seed-admin CLI. */
 const inviteShape = {
   INVITE_TTL_HOURS: positiveInt(24 * 30),
@@ -267,6 +272,7 @@ export const apiEnvSchema = z
     ...identityShape,
     ...customersShape,
     ...deliveryShape,
+    ...catalogShape,
     ...inviteShape,
     ...secretsShape,
   })

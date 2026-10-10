@@ -97,6 +97,8 @@ const values = {
   CUSTOMER_MAX_ADDRESSES: '20',
   // delivery reference data (P2-Q5)
   GOVERNORATES_CACHE_TTL_SECONDS: '3600',
+  // catalog (P3-Q9)
+  CATEGORY_TREE_CACHE_TTL_SECONDS: '3600',
   // email: local inbox by default (P1-Q2); switch EMAIL_PROVIDER to mailjet to send real mail
   EMAIL_PROVIDER: 'mailpit',
   EMAIL_HTTP_TIMEOUT_MS: '10000',

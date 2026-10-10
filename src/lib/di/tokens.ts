@@ -68,6 +68,18 @@ export const TOKENS = {
   GovernorateController: Symbol.for('GovernorateController'),
   DeliverySettingsController: Symbol.for('DeliverySettingsController'),
 
+  // catalog module
+  CategoryRepository: Symbol.for('CategoryRepository'),
+  CategoryAttributeRepository: Symbol.for('CategoryAttributeRepository'),
+  CategoryAttributeOptionRepository: Symbol.for('CategoryAttributeOptionRepository'),
+  ProductRepository: Symbol.for('ProductRepository'),
+  VariantAttributeValueRepository: Symbol.for('VariantAttributeValueRepository'),
+  CategoryTreeService: Symbol.for('CategoryTreeService'),
+  CategoryService: Symbol.for('CategoryService'),
+  CategoryAdminService: Symbol.for('CategoryAdminService'),
+  CategoryController: Symbol.for('CategoryController'),
+  CategoryAdminController: Symbol.for('CategoryAdminController'),
+
   // inventory module
   InventoryItemRepository: Symbol.for('InventoryItemRepository'),
   InventoryMovementRepository: Symbol.for('InventoryMovementRepository'),
