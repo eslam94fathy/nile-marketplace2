@@ -1,8 +1,8 @@
 {
   "info": {
-    "name": "Nile Marketplace API (Phases 1–3)",
+    "name": "Nile Marketplace API (Phases 1–4)",
     "_postman_id": "c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01",
-    "description": "Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06) and delivery reference data (spec 11 §4.1, §4.3).\n\nVariables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.\n\nLocal first run (docker compose):\n1. `docker compose run --rm api node dist/seed-admin.js --email you@example.com`, then set the `email` variable to that address.\n2. Local helpers (Mailpit) → \"Latest email\" → \"Extract OTP / invite token\".\n3. Auth → \"Accept invite\" (sets your password and logs you in).\n4. Admin requests now work with the stored access token.\n\nCustomer / seller flow: set `email` to a fresh address → \"Register customer\" (or \"Register seller\") → Local helpers → \"Latest email\" → \"Extract OTP / invite token\" → Auth → \"Verify email\" (logs you in). \"Delivery\" → \"List governorates\" stores Cairo in `governorateId` first, because addresses and pickup addresses need one.\n\nSample delivery fees and a sample catalog for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees; the catalog has a category tree with attributes and an approved demo seller with active products).\n\nCatalog flow: \"Admin: catalog\" → Create category → Add attribute → Add option (stores `categoryId`, `attributeId`, `optionId`). Then log in as an approved seller → \"Seller: catalog\" → Create product → Add variant (put option ids in `optionIds`, or `[]` in a category without attributes) → Activate. \"Catalog\" (public) → List products / Product detail.\n\nTokens are per account: log in as the admin again (Auth → Login) before the \"Admin: …\" folders.\n\nErrors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.",
+    "description": "Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08) and delivery reference data (spec 11 §4.1, §4.3).\n\nVariables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.\n\nLocal first run (docker compose):\n1. `docker compose run --rm api node dist/seed-admin.js --email you@example.com`, then set the `email` variable to that address.\n2. Local helpers (Mailpit) → \"Latest email\" → \"Extract OTP / invite token\".\n3. Auth → \"Accept invite\" (sets your password and logs you in).\n4. Admin requests now work with the stored access token.\n\nCustomer / seller flow: set `email` to a fresh address → \"Register customer\" (or \"Register seller\") → Local helpers → \"Latest email\" → \"Extract OTP / invite token\" → Auth → \"Verify email\" (logs you in). \"Delivery\" → \"List governorates\" stores Cairo in `governorateId` first, because addresses and pickup addresses need one.\n\nSample delivery fees and a sample catalog for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees; the catalog has a category tree with attributes and an approved demo seller with active products).\n\nCatalog flow: \"Admin: catalog\" → Create category → Add attribute → Add option (stores `categoryId`, `attributeId`, `optionId`). Then log in as an approved seller → \"Seller: catalog\" → Create product → Add variant (put option ids in `optionIds`, or `[]` in a category without attributes) → Activate. \"Catalog\" (public) → List products / Product detail.\n\nCart flow: log in as a customer → \"Catalog\" → List products → Product detail (stores the first variant in `variantId`) → \"Cart\" → Add item (stores the line in `cartItemId`) → My cart → Change quantity / Remove item / Empty cart.\n\nTokens are per account: log in as the admin again (Auth → Login) before the \"Admin: …\" folders.\n\nErrors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -119,6 +119,10 @@
     },
     {
       "key": "variantId",
+      "value": ""
+    },
+    {
+      "key": "cartItemId",
       "value": ""
     }
   ],
@@ -2456,7 +2460,11 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 200', () => pm.response.to.have.status(200));",
-                  "if (pm.response.code === 200) pm.collectionVariables.set('productSlug', pm.response.json().data.slug);"
+                  "if (pm.response.code === 200) {",
+                  "  const { data } = pm.response.json();",
+                  "  pm.collectionVariables.set('productSlug', data.slug);",
+                  "  if (data.variants[0]) pm.collectionVariables.set('variantId', data.variants[0].id);",
+                  "}"
                 ]
               }
             }
@@ -3612,6 +3620,255 @@
               ]
             },
             "description": "Soft delete of the product and its variants."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cart",
+      "description": "spec 08 §4. Customer role only, general rate limit, no Idempotency-Key (adds are summed, so a retry adds twice). Every write returns the whole cart except the deletes (204). Prices, stock and availability are live; lines with an issue (UNAVAILABLE, OUT_OF_STOCK, INSUFFICIENT_STOCK) are shown but left out of the totals.",
+      "item": [
+        {
+          "name": "My cart",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  const value = body.data.sellers[0] && body.data.sellers[0].items[0].id;",
+                  "  if (value) pm.collectionVariables.set('cartItemId', value);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cart",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cart"
+              ]
+            },
+            "description": "Grouped by seller (by earliest line), lines in the order they were added. id is null until the first add; a GET never creates a cart."
+          }
+        },
+        {
+          "name": "Add item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const variantId = pm.collectionVariables.get('variantId');",
+                  "  const line = pm.response.json().data.sellers.flatMap((group) => group.items).find((item) => item.variantId === variantId);",
+                  "  if (line) pm.collectionVariables.set('cartItemId', line.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"variantId\": \"{{variantId}}\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cart/items",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cart",
+                "items"
+              ]
+            },
+            "description": "quantity 1..99. An existing line of the same variant gets the quantity added (always 201). VARIANT_NOT_PURCHASABLE 422, CART_ITEM_QUANTITY_LIMIT 422 (line over 99), CART_LINE_LIMIT_REACHED 422 (CART_MAX_LINES), INSUFFICIENT_STOCK 409 (details: available)."
+          }
+        },
+        {
+          "name": "Change quantity",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cart/items/{{cartItemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cart",
+                "items",
+                "{{cartItemId}}"
+              ]
+            },
+            "description": "Sets the absolute quantity (1..99). CART_ITEM_NOT_FOUND 404, VARIANT_NOT_PURCHASABLE 422 (an unavailable line can only be removed), INSUFFICIENT_STOCK 409."
+          }
+        },
+        {
+          "name": "Remove item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cart/items/{{cartItemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cart",
+                "items",
+                "{{cartItemId}}"
+              ]
+            },
+            "description": "CART_ITEM_NOT_FOUND 404."
+          }
+        },
+        {
+          "name": "Empty cart",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cart",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cart"
+              ]
+            },
+            "description": "Removes every line; 204 also when there is no cart yet."
           }
         }
       ]

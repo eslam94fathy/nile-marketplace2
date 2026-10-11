@@ -1,6 +1,6 @@
 # Implementation Plan (Release 1)
 
-Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09). P3 (§5) v1.0 APPROVED (2026-10-10). P4 (§6) v1.0 APPROVED (2026-10-11).** Later phases are detailed when their specs are approved.
+Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09). P3 (§5) v1.0 APPROVED (2026-10-10). P4 (§6) v1.0 APPROVED (2026-10-11) and implemented (see the P4 status after §6.6).** Later phases are detailed when their specs are approved.
 Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.6, `docs/design/02-database.md` v1.7, `docs/spec/01-api-conventions.md` v1.3, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
 
 ---
@@ -407,3 +407,12 @@ Needs approved: spec `08-cart.md` and A-4 (both approved now: spec 08 v1.0, arch
 ### 6.6 Done when
 - CI green; every P4 endpoint is in the OpenAPI document with its DTOs.
 - Locally (docker-compose): a customer adds variants from two sellers (from the `seed:dev` catalog) → `GET /cart` shows two seller groups with the right totals → one seller adjusts a variant's stock to 0 → that line shows `OUT_OF_STOCK` and drops out of the totals → admin suspends the other seller → its lines show `UNAVAILABLE` within seconds → reinstate → they're back → the customer changes a quantity, removes a line and empties the cart.
+
+**P4 status (2026-10-11): implemented** on branch `p4-cart` (stacked on `p3-catalog-inventory`; §6.5 steps 1–5). Locally green: lint, type-check, Prettier, unit (255), integration (289), build. Every cart endpoint is in the OpenAPI document with `CartDto` and its nested DTOs. Manual local walkthrough **passed (2026-10-11)** on the docker-compose stack rebuilt from this branch (the 2 P4 migrations applied by `migrate`): a fresh customer's `GET /cart` returned the empty shape with `id: null` and created no row; adds from two sellers (a walkthrough seller and the `seed:dev` demo seller) gave two groups ordered by their earliest line, and adding the same variant again summed into one line; the totals matched the lines (`7696.00` / 6); the first seller adjusted the variant's stock to 0 → that line showed `OUT_OF_STOCK` and dropped out of the totals (`2698.00`); admin suspended the other seller → its lines showed `UNAVAILABLE` in 0.9 s (totals `0.00`) and changing one was refused with `422 VARIANT_NOT_PURCHASABLE`; reinstate → back in 1.1 s; the customer changed a quantity, removed a line and emptied the cart (the cart row stays). No password in any api/worker log line, no error or 5xx line. **Still to do for "done when":** a green CI run on the PR. Deviations from §6.3–§6.5:
+- `CART_MAX_LINES` (env schema, test env, `dev-env.js`, `.env.example`) landed in step 4, not 5, because `CartService` needs it. Existing local `.env` files need `npm run dev:env` before the api restarts.
+- A missing customer profile is a `500` in cart (CT-8), while the customers module answers `403` for the same case; both are as their specs say.
+- The "seller suspended" integration tests set the `seller_active` projection directly instead of running the consumer (the P3 tests cover the consumer); the walkthrough above covers it end to end.
+- Test infrastructure: the RabbitMQ Testcontainer gets a 120 s startup timeout (`test/helpers/global-setup.ts`); the module's 30 s default failed once on a busy Docker host (~32 s).
+- Test helpers: `test/helpers/cart-fixtures.ts` (SQL fixtures for customers, carts and lines, on top of the catalog fixtures).
+- Found during P4: Postgres raises `23001` (not `23503`) when deleting a row protected by an `ON DELETE RESTRICT` FK; the cart schema tests expect `23001` (already mapped to `409` since P3-Q11).
+- Tooling: Postman collection regenerated (76 requests, new "Cart" folder; "Product detail" stores the first variant in `variantId`, "Add item" stores the added line in `cartItemId`).

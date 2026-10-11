@@ -60,10 +60,10 @@ const idempotencyKey = { key: 'Idempotency-Key', value: '{{$guid}}' };
 const API = '/api/v1';
 const collection = {
   info: {
-    name: 'Nile Marketplace API (Phases 1–3)',
+    name: 'Nile Marketplace API (Phases 1–4)',
     _postman_id: 'c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01',
     description: [
-      'Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06) and delivery reference data (spec 11 §4.1, §4.3).',
+      'Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08) and delivery reference data (spec 11 §4.1, §4.3).',
       '',
       'Variables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.',
       '',
@@ -78,6 +78,8 @@ const collection = {
       'Sample delivery fees and a sample catalog for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees; the catalog has a category tree with attributes and an approved demo seller with active products).',
       '',
       'Catalog flow: "Admin: catalog" → Create category → Add attribute → Add option (stores `categoryId`, `attributeId`, `optionId`). Then log in as an approved seller → "Seller: catalog" → Create product → Add variant (put option ids in `optionIds`, or `[]` in a category without attributes) → Activate. "Catalog" (public) → List products / Product detail.',
+      '',
+      'Cart flow: log in as a customer → "Catalog" → List products → Product detail (stores the first variant in `variantId`) → "Cart" → Add item (stores the line in `cartItemId`) → My cart → Change quantity / Remove item / Empty cart.',
       '',
       'Tokens are per account: log in as the admin again (Auth → Login) before the "Admin: …" folders.',
       '',
@@ -124,6 +126,7 @@ const collection = {
     { key: 'productId', value: '' },
     { key: 'productSlug', value: '' },
     { key: 'variantId', value: '' },
+    { key: 'cartItemId', value: '' },
   ],
   item: [
     {
@@ -663,7 +666,11 @@ const collection = {
             'By id or slug. Active variants with live stock (availableQuantity = min(sellable, 99)); attributes list only the options variants use. PRODUCT_NOT_FOUND 404 when hidden or deleted.',
           tests: `
 ${expect(200)}
-if (pm.response.code === 200) pm.collectionVariables.set('productSlug', pm.response.json().data.slug);`,
+if (pm.response.code === 200) {
+  const { data } = pm.response.json();
+  pm.collectionVariables.set('productSlug', data.slug);
+  if (data.variants[0]) pm.collectionVariables.set('variantId', data.variants[0].id);
+}`,
         }),
         req({
           name: 'Product detail by slug',
@@ -895,6 +902,64 @@ if (pm.response.code === 201) {
           path: `${API}/seller/products/{{productId}}`,
           auth: true,
           description: 'Soft delete of the product and its variants.',
+          tests: expect(204),
+        }),
+      ],
+    },
+    {
+      name: 'Cart',
+      description:
+        'spec 08 §4. Customer role only, general rate limit, no Idempotency-Key (adds are summed, so a retry adds twice). Every write returns the whole cart except the deletes (204). Prices, stock and availability are live; lines with an issue (UNAVAILABLE, OUT_OF_STOCK, INSUFFICIENT_STOCK) are shown but left out of the totals.',
+      item: [
+        req({
+          name: 'My cart',
+          method: 'GET',
+          path: `${API}/cart`,
+          auth: true,
+          description:
+            'Grouped by seller (by earliest line), lines in the order they were added. id is null until the first add; a GET never creates a cart.',
+          tests: saveId('cartItemId', 200, 'data.sellers[0] && body.data.sellers[0].items[0].id'),
+        }),
+        req({
+          name: 'Add item',
+          method: 'POST',
+          path: `${API}/cart/items`,
+          auth: true,
+          body: { variantId: '{{variantId}}', quantity: 1 },
+          description:
+            'quantity 1..99. An existing line of the same variant gets the quantity added (always 201). VARIANT_NOT_PURCHASABLE 422, CART_ITEM_QUANTITY_LIMIT 422 (line over 99), CART_LINE_LIMIT_REACHED 422 (CART_MAX_LINES), INSUFFICIENT_STOCK 409 (details: available).',
+          tests: `
+${expect(201)}
+if (pm.response.code === 201) {
+  const variantId = pm.collectionVariables.get('variantId');
+  const line = pm.response.json().data.sellers.flatMap((group) => group.items).find((item) => item.variantId === variantId);
+  if (line) pm.collectionVariables.set('cartItemId', line.id);
+}`,
+        }),
+        req({
+          name: 'Change quantity',
+          method: 'PATCH',
+          path: `${API}/cart/items/{{cartItemId}}`,
+          auth: true,
+          body: { quantity: 2 },
+          description:
+            'Sets the absolute quantity (1..99). CART_ITEM_NOT_FOUND 404, VARIANT_NOT_PURCHASABLE 422 (an unavailable line can only be removed), INSUFFICIENT_STOCK 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Remove item',
+          method: 'DELETE',
+          path: `${API}/cart/items/{{cartItemId}}`,
+          auth: true,
+          description: 'CART_ITEM_NOT_FOUND 404.',
+          tests: expect(204),
+        }),
+        req({
+          name: 'Empty cart',
+          method: 'DELETE',
+          path: `${API}/cart`,
+          auth: true,
+          description: 'Removes every line; 204 also when there is no cart yet.',
           tests: expect(204),
         }),
       ],
