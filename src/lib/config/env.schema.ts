@@ -191,6 +191,11 @@ const catalogShape = {
   SEARCH_WORD_SIMILARITY_THRESHOLD: z.coerce.number().gt(0).lt(1),
 };
 
+/** cart (spec 08 CT-9). The 99 per line is a constant: it mirrors the DB CHECK. */
+const cartShape = {
+  CART_MAX_LINES: positiveInt(500),
+};
+
 /** Invites are also created by the seed-admin CLI. */
 const inviteShape = {
   INVITE_TTL_HOURS: positiveInt(24 * 30),
@@ -276,6 +281,7 @@ export const apiEnvSchema = z
     ...customersShape,
     ...deliveryShape,
     ...catalogShape,
+    ...cartShape,
     ...inviteShape,
     ...secretsShape,
   })

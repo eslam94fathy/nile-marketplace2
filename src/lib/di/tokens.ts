@@ -105,6 +105,9 @@ export const TOKENS = {
   CartItemRepository: Symbol.for('CartItemRepository'),
   /** Public API of cart (spec 08 §2), injected into ordering. */
   CartDirectory: Symbol.for('CartDirectory'),
+  CartService: Symbol.for('CartService'),
+  CartViewService: Symbol.for('CartViewService'),
+  CartController: Symbol.for('CartController'),
 
   // notifications module
   NotificationLogRepository: Symbol.for('NotificationLogRepository'),

@@ -85,6 +85,8 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     CATEGORY_TREE_CACHE_TTL_SECONDS: '3600',
     PRODUCT_DETAIL_CACHE_TTL_SECONDS: '60',
     SEARCH_WORD_SIMILARITY_THRESHOLD: '0.35',
+    // cart
+    CART_MAX_LINES: '50',
     // secrets in event payloads
     SECRETS_ENCRYPTION_KEYS: JSON.stringify({ [TEST_SECRETS_KEY_ID]: TEST_SECRETS_KEY.toString('base64') }),
     SECRETS_ENCRYPTION_ACTIVE_KEY_ID: TEST_SECRETS_KEY_ID,

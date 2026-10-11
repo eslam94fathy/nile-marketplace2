@@ -15,6 +15,7 @@ export const TEST_IMAGES = {
 
 export const TEMPLATE_DB = 'nile_template';
 const RABBIT_MANAGEMENT_PORT = 15672;
+const RABBIT_STARTUP_TIMEOUT_MS = 120_000;
 
 declare module 'vitest' {
   export interface ProvidedContext {
@@ -45,7 +46,8 @@ export default async function setup(project: TestProject): Promise<() => Promise
         .withDatabase('nile_admin')
         .start(),
       new RedisContainer(TEST_IMAGES.redis).start(),
-      new RabbitMQContainer(TEST_IMAGES.rabbitmq).start(),
+      // The module's 30 s default is too tight: RabbitMQ alone took ~32 s on a busy Docker host.
+      new RabbitMQContainer(TEST_IMAGES.rabbitmq).withStartupTimeout(RABBIT_STARTUP_TIMEOUT_MS).start(),
     ]);
 
   const adminUrl = pg.getConnectionUri();
