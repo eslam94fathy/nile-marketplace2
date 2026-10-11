@@ -12,7 +12,8 @@ import { InventoryMovementRepository } from './repository/inventory-movement.rep
 import { InventoryService } from './service/inventory.service';
 
 export { MovementType } from './enums';
-export { InventoryErrorCode } from './errors';
+export { InventoryErrorCode, insufficientStock } from './errors';
+export type { ShortLine } from './errors';
 export { INVENTORY_MOVEMENT_LIST_SPEC } from './constants';
 export type { StockDto } from './model/inventory-item.model';
 export type { InventoryMovement } from './model/inventory-movement.model';
