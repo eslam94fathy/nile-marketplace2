@@ -100,6 +100,12 @@ export const TOKENS = {
   /** Public API of inventory (spec 07 §2), injected into other modules. */
   InventoryService: Symbol.for('InventoryService'),
 
+  // cart module
+  CartRepository: Symbol.for('CartRepository'),
+  CartItemRepository: Symbol.for('CartItemRepository'),
+  /** Public API of cart (spec 08 §2), injected into ordering. */
+  CartDirectory: Symbol.for('CartDirectory'),
+
   // notifications module
   NotificationLogRepository: Symbol.for('NotificationLogRepository'),
   EmailNotificationService: Symbol.for('EmailNotificationService'),

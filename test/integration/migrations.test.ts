@@ -3,6 +3,7 @@ import knex, { type Knex } from 'knex';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrateDownAll, migrateLatest } from '../../src/lib/db/migrator';
 import { MIGRATIONS } from '../../src/migrations';
+import { cartFixtures } from '../helpers/cart-fixtures';
 import { catalogFixtures, signatureOf } from '../helpers/catalog-fixtures';
 import { createTestResources, type TestResources } from '../helpers/test-resources';
 
@@ -485,6 +486,59 @@ describe('migrations on a real Postgres 18', () => {
       expect(byName.idx_inventory_movements_inventory_item_id_created_at_id).toMatch(
         /\(inventory_item_id, created_at DESC, id DESC\)/,
       );
+    });
+  });
+
+  describe('carts + cart_items (P4)', () => {
+    const fx = () => cartFixtures(db);
+
+    it('one cart per customer; the customer FK restricts deletes', async () => {
+      const { insertCustomer, insertCart } = fx();
+      const { customerId } = await insertCustomer();
+      await insertCart(customerId);
+      expect((await pgFailure(() => insertCart(customerId))).constraint).toBe('uq_carts_customer_id');
+      expect((await pgFailure(() => insertCart(randomUUID()))).constraint).toBe('fk_carts_customer_id');
+      expect(await pgFailure(() => db('customers').where({ id: customerId }).delete())).toEqual({
+        code: '23001',
+        constraint: 'fk_carts_customer_id',
+      });
+    });
+
+    it('quantity 1..99, one line per variant; deleting the cart cascades to its lines', async () => {
+      const { insertCustomer, insertCart, insertCartItem, insertVariantChain } = fx();
+      const { customerId } = await insertCustomer();
+      const cartId = await insertCart(customerId);
+      const { variantId } = await insertVariantChain();
+      for (const quantity of [0, 100]) {
+        expect((await pgFailure(() => insertCartItem(cartId, variantId, quantity))).constraint).toBe(
+          'chk_cart_items_quantity',
+        );
+      }
+      await insertCartItem(cartId, variantId, 99);
+      expect((await pgFailure(() => insertCartItem(cartId, variantId, 1))).constraint).toBe(
+        'uq_cart_items_cart_id_variant_id',
+      );
+      expect((await pgFailure(() => insertCartItem(cartId, randomUUID(), 1))).constraint).toBe(
+        'fk_cart_items_variant_id',
+      );
+      expect(await pgFailure(() => db('product_variants').where({ id: variantId }).delete())).toEqual({
+        code: '23001',
+        constraint: 'fk_cart_items_variant_id',
+      });
+
+      await db('carts').where({ id: cartId }).delete();
+      expect(await db('cart_items').where({ cart_id: cartId }).count<{ count: string }[]>('*')).toEqual([
+        { count: '0' },
+      ]);
+    });
+
+    it('business columns have no defaults (G13)', async () => {
+      const { insertCustomer, insertCart, insertVariantChain } = fx();
+      const cartId = await insertCart((await insertCustomer()).customerId);
+      const { variantId } = await insertVariantChain();
+      expect(
+        (await pgFailure(() => db('cart_items').insert({ cart_id: cartId, variant_id: variantId }))).code,
+      ).toBe('23502');
     });
   });
 });

@@ -23,6 +23,8 @@ import * as m20261010120005 from './20261010120005_create_product_variants';
 import * as m20261010120006 from './20261010120006_create_variant_attribute_values';
 import * as m20261010120007 from './20261010120007_create_inventory_items';
 import * as m20261010120008 from './20261010120008_create_inventory_movements';
+import * as m20261011120001 from './20261011120001_create_carts';
+import * as m20261011120002 from './20261011120002_create_cart_items';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -51,5 +53,7 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261010120006_create_variant_attribute_values', module: m20261010120006 },
   { name: '20261010120007_create_inventory_items', module: m20261010120007 },
   { name: '20261010120008_create_inventory_movements', module: m20261010120008 },
+  { name: '20261011120001_create_carts', module: m20261011120001 },
+  { name: '20261011120002_create_cart_items', module: m20261011120002 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

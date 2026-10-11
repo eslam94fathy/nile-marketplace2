@@ -1,4 +1,5 @@
 import { container as rootContainer, type DependencyContainer } from 'tsyringe';
+import { registerCartModule } from './app/cart';
 import { registerCatalogModule, registerCatalogProjections } from './app/catalog';
 import { registerCustomersModule } from './app/customers';
 import { registerDeliveryModule } from './app/delivery';
@@ -46,6 +47,7 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
   registerDeliveryModule(container);
   registerInventoryModule(container);
   registerCatalogModule(container);
+  registerCartModule(container);
   return container;
 }
 

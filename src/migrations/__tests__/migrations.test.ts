@@ -35,6 +35,8 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261010120006_create_variant_attribute_values',
       '20261010120007_create_inventory_items',
       '20261010120008_create_inventory_movements',
+      '20261011120001_create_carts',
+      '20261011120002_create_cart_items',
     ]);
   });
 
