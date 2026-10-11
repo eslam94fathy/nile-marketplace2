@@ -1,6 +1,6 @@
 # Spec 07 — inventory
 
-Status: **v1.0 APPROVED (2026-10-10).** Approved by the user with the Phase 3 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
+Status: **v1.1 APPROVED (2026-10-11).** v1.0: approved by the user with the Phase 3 clarifications in §7.1. v1.1: `INSUFFICIENT_STOCK` is exported from Phase 4 for cart (IN-4). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -56,7 +56,7 @@ Consumed: none.
 
 | Code | HTTP | When |
 |---|---|---|
-| `INSUFFICIENT_STOCK` | 409 | Reserve short on one or more variants (details per variant) |
+| `INSUFFICIENT_STOCK` | 409 | Reserve short on one or more variants (details per variant). Also thrown by cart's soft stock check (spec 08, IN-4) |
 | `STOCK_ADJUSTMENT_INVALID` | 422 | Adjustment would make `on_hand` negative or below `reserved` |
 | `INVENTORY_ITEM_NOT_FOUND` | 500 (internal) | A variant has no stock row: a bug, never expected |
 
@@ -70,3 +70,4 @@ None.
 | IN-1 | Phase 3 builds `inventory_items`, `inventory_movements`, `createItem`, `adjust`, `getStockByVariantIds` and `listMovements`. `inventory_reservations` (with its FK to `order_items`) and `reserve` / `release` / `commit` land in Phase 5 (P3-Q2) | §1, §2 |
 | IN-2 | `createItem` doesn't emit `inventory.stock_status_changed`: catalog recomputes `in_stock` in the same transaction (P3-Q10) | §2 |
 | IN-3 | `listMovements` uses keyset pagination on `(created_at, id)` over `idx_inventory_movements_inventory_item_id_created_at_id` (database D-6, P3-Q8) | §2 |
+| IN-4 | `INSUFFICIENT_STOCK` and its factory `insufficientStock(shortLines)` (details shape in §2 `reserve` step 3) are added and exported in Phase 4, because cart's add/change check uses the same code; `reserve` reuses them in Phase 5 (P4-Q4, v1.1) | §6 |

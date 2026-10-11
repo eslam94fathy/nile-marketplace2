@@ -3,14 +3,14 @@
 /**
  * Allowed synchronous module-to-module imports (docs/design/01-architecture.md §2).
  * Key = importing module, value = modules whose index.ts it may import.
- * A module not listed here may import no other module. Includes A-2 (architecture v1.3).
+ * A module not listed here may import no other module. Includes A-2 (architecture v1.3) and A-4 (v1.6).
  */
 const MODULE_GRAPH = {
   customers: ['identity'],
   sellers: ['identity'],
   delivery: ['identity'],
   catalog: ['sellers', 'inventory'],
-  cart: ['catalog', 'inventory', 'sellers'],
+  cart: ['catalog', 'customers', 'inventory', 'sellers'],
   ordering: ['customers', 'cart', 'catalog', 'sellers', 'inventory', 'payments', 'delivery'],
   finance: ['sellers', 'delivery'],
 };

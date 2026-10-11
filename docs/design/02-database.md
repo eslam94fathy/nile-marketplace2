@@ -1,6 +1,6 @@
 # System Design 02 — Database Schema (Release 1)
 
-Status: **v1.4 APPROVED (2026-10-08).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). v1.5: public product listings sort on `published_at` (D-5); `id` tie-break on the stock-history index (D-6). v1.6: `idx_products_category_id` for category usage checks (D-7). Changes from now on need explicit approval and a version bump. Decisions: §13.
+Status: **v1.7 APPROVED (2026-10-11).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). v1.5: public product listings sort on `published_at` (D-5); `id` tie-break on the stock-history index (D-6). v1.6: `idx_products_category_id` for category usage checks (D-7). v1.7: cart FK `ON DELETE` behaviour and why `cart_items.variant_id` has no index (§7, P4-Q11). Changes from now on need explicit approval and a version bump. Decisions: §13.
 Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §6. Business rules: `docs/spec/00-overview.md` v1.0.
 
 ---
@@ -280,11 +280,12 @@ Index: `idx_inventory_movements_inventory_item_id_created_at_id (inventory_item_
 ## 7. cart
 
 ### carts
-std columns · `customer_id` fk → customers. `uq_carts_customer_id`: one cart per customer, the lookup path.
+std columns · `customer_id` fk → customers (`fk_carts_customer_id`, `ON DELETE RESTRICT`). `uq_carts_customer_id`: one cart per customer, the lookup path, and the conflict target of the add's create-and-lock upsert.
 
 ### cart_items
-std columns · `cart_id` fk `ON DELETE CASCADE` · `variant_id` fk → product_variants · `quantity INTEGER CHECK (quantity BETWEEN 1 AND 99)` [DB-Q3]. Max **50** distinct lines per cart, enforced by the app (config).
+std columns · `cart_id` fk `ON DELETE CASCADE` (`fk_cart_items_cart_id`) · `variant_id` fk → product_variants (`fk_cart_items_variant_id`, `ON DELETE RESTRICT`) · `quantity INTEGER CHECK (quantity BETWEEN 1 AND 99)` [DB-Q3]. Max **50** distinct lines per cart, enforced by the app (config).
 `uq_cart_items_cart_id_variant_id (cart_id, variant_id)`: one line per variant, and serves "items of my cart".
+No index on `variant_id`: nothing looks lines up by variant, and variants are never hard-deleted (soft delete), so the `RESTRICT` check never runs (P4-Q11).
 
 ---
 

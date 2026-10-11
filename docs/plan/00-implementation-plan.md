@@ -1,7 +1,7 @@
 # Implementation Plan (Release 1)
 
-Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09). P3 (§5) v1.0 APPROVED (2026-10-10).** Later phases are detailed when their specs are approved.
-Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.5, `docs/design/02-database.md` v1.6, `docs/spec/01-api-conventions.md` v1.3, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
+Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09). P3 (§5) v1.0 APPROVED (2026-10-10). P4 (§6) v1.0 APPROVED (2026-10-11).** Later phases are detailed when their specs are approved.
+Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.6, `docs/design/02-database.md` v1.7, `docs/spec/01-api-conventions.md` v1.3, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
 
 ---
 
@@ -21,7 +21,7 @@ Each phase ends green in CI (lint, type-check, unit, integration, build, Docker 
 | P7 | finance | Spec 12 |
 | P8 | Hardening: load test against the targets, security review, Terraform (`infra/terraform`), staging deploy | SD-3d (region) |
 
-P0–P3 are detailed below (§2–§5). P4–P8 get their own section when their specs are approved.
+P0–P4 are detailed below (§2–§6). P5–P8 get their own section when their specs are approved.
 
 ---
 
@@ -346,3 +346,64 @@ Needs approved: spec `06-catalog.md` and spec `07-inventory.md` (both v1.0 now),
 - Shared code added: `pkg/text` `slugify`; `SlugField`, `IntField`, `IsPositiveMoney` in `lib/http`; spec 01 v1.3 (`23001` → `CONFLICT`).
 - Test helpers: `test/helpers/catalog-fixtures.ts` (SQL fixtures) and `catalog-api.ts` (HTTP setup).
 - Tooling: Postman collection regenerated (71 requests: "Catalog", "Admin: catalog", "Seller: catalog"); `npm run seed:dev` also creates a sample catalog (a 3-root tree with inherited attributes, an approved demo seller `demo-seller@nile.test` whose random password is reset through Mailpit, 4 active products with stock).
+
+---
+
+## 6. Phase 4: cart
+
+Status: **v1.0 APPROVED (2026-10-11).** All P4-Q recommendations accepted; the branch `p4-cart` is stacked on `p3-catalog-inventory`.
+Needs approved: spec `08-cart.md` and A-4 (both approved now: spec 08 v1.0, architecture v1.6), plus the P4-Q decisions below. It does **not** need A-3 or the inventory reservations (both P5).
+
+### 6.1 What P4 delivers, and what it can't yet
+- **cart:** one lazily created cart per customer, every endpoint in spec 08 §4 (view with live prices, stock and per-line `issue`, add / change / remove, empty), and the public API ordering will call (`getLinesForCheckout`, `clear`).
+- **inventory:** the `INSUFFICIENT_STOCK` code and factory (P4-Q4). `reserve` / `release` / `commit` stay in P5.
+- **Not yet:** checkout. Nothing calls `getLinesForCheckout` / `clear` until P5; P4 tests them directly.
+
+### 6.2 Decisions to approve (P4-Q)
+
+| # | Topic | Options / recommendation |
+|---|---|---|
+| P4-Q1 | Approvals | **Rec:** approve spec 08 → v1.0 with the clarifications in P4-Q2…Q11 written into it, and A-4. Branch `p4-cart` stacked on `p3-catalog-inventory` |
+| P4-Q2 | **A-4**: missing dependency edge `cart → customers` | Spec 08 §1 says cart depends on `customers` (JWT `sub` → `customerId` via `getCustomerIdByUserId`), but architecture §2 and `eslint-rules/module-graph.js` only allow `cart → catalog, inventory, sellers`, so the lint rule would reject the import. **Rec:** add the edge (architecture v1.6, overview §8.2 A-4, one line in `module-graph.js`). Still acyclic: customers calls only identity · or key carts by `user_id` (breaks G12: role data hangs off the role table, not `users`) |
+| P4-Q3 | Read-then-write races | "Max 50 lines", "summed quantity ≤ 99" and the lazy create are all read-then-write. **Rec:** every write starts by locking the cart row. Add creates and locks in one statement: `INSERT INTO carts (customer_id) VALUES (?) ON CONFLICT (customer_id) DO UPDATE SET updated_at = now() RETURNING id`. Change / remove / empty use `SELECT id FROM carts WHERE customer_id = ? FOR UPDATE` and never create a cart (no cart → `CART_ITEM_NOT_FOUND`, or a no-op `204` for `DELETE /cart`). Purchasability and stock are then read in the same transaction **without** locks (a soft check, spec 08 UC-CT-2). `carts` is always locked first, which is also what checkout does (`getLinesForCheckout` locks the cart before reserving), so there's no cycle · or rely on `uq_cart_items_cart_id_variant_id` + the `quantity` CHECK and accept that two parallel adds can make a 51st line |
+| P4-Q4 | `INSUFFICIENT_STOCK` doesn't exist yet | Inventory's errors say the code "lands with `reserve` (P5)", but cart needs it now (same code, spec 08 §6). **Rec:** inventory adds `INSUFFICIENT_STOCK` + `insufficientStock(shortLines)` now and exports them, with the spec 01 details shape `[{ field: 'variantId', value, constraint: 'available', message: 'available: <n>' }]`. Cart throws it with one detail; `reserve` reuses it in P5 · or make it a common `lib/error` code (like `GOVERNORATE_NOT_FOUND`, P2-Q7), but inventory owns the stock rules |
+| P4-Q5 | Which quantity the add checks use | **Rec:** add checks the **resulting** line quantity (existing + added) against 99 and against sellable; change checks the new absolute quantity. Changing or adding to a line whose variant isn't purchasable fails `422` even when decreasing (the customer removes it), as spec 08 already implies |
+| P4-Q6 | A retried `POST /cart/items` doubles the quantity | Adds are summed, so a mobile retry after a timeout adds twice. CLAUDE.md §10 requires `Idempotency-Key` only for money or stock effects, and an add has neither (the stock check is soft). **Rec:** no `Idempotency-Key`, as in spec 08 (the doubled line is visible and fixable, and checkout needs `expectedTotal`, S-8) · or require it (one more header on the app's most frequent write) |
+| P4-Q7 | Order and display rules the spec leaves open | **Rec:** (a) lines sort by `created_at, id` (when they were added), and seller groups sort by their earliest line, so the view stays stable as quantities change; (b) every line shows `unitPrice` and `lineTotal = unitPrice × quantity` (`Money`), but lines with an `issue` are left out of `subtotal`, `itemsTotal` and `itemCount`; a group whose lines all have issues still shows, with `subtotal` `"0.00"`; (c) `availableQuantity` is `0` for `UNAVAILABLE` and `min(sellable, 99)` otherwise; (d) `POST /cart/items` returns `201` also when it added to an existing line (spec 08 §4) |
+| P4-Q8 | Where "seller not visible" comes from | **Rec:** from `purchasable` alone (spec 06: it includes the `seller_active` projection, which the P3 consumer updates within about a second of a suspension). Cart doesn't call `sellers.getStatuses`; checkout re-checks the live status with `getCheckoutSnapshots` (spec 09 step 4). Cart calls `sellers.getSummaries` only for display names |
+| P4-Q9 | Edge cases in the lookups | **Rec:** (a) a customer-role token with no customer profile is an invariant violation (registration creates both in one transaction): non-operational `500`; (b) a cart line whose variant `getVariantsForPurchase` doesn't return can't happen (variants are only soft-deleted and the FK is `RESTRICT`), so it's left out of the view and logged at `error`; (c) an empty or missing cart returns `id: null`, `sellers: []`, totals `"0.00"` / `0`, and `GET` never creates a row |
+| P4-Q10 | Limits and env | **Rec:** `CART_MAX_LINES` (50) in the **api** env schema only, no default, in `.env.example`. The 99 per line stays a constant: it mirrors the DB `CHECK`, so making it env would let the two disagree |
+| P4-Q11 | Schema details `02-database.md` §7 leaves open | **Rec:** `fk_carts_customer_id … ON DELETE RESTRICT`; `fk_cart_items_variant_id … ON DELETE RESTRICT`; `fk_cart_items_cart_id … ON DELETE CASCADE` (as written). No index on `cart_items.variant_id`: nothing looks lines up by variant, and variants are never hard-deleted, so the `RESTRICT` check never runs. The reason goes in a SQL comment (database v1.7, wording only) |
+
+### 6.3 Scope
+
+| Area | Content |
+|---|---|
+| Docs | Spec 08 → v1.0; architecture → v1.6 (A-4); database → v1.7 (P4-Q11 wording); spec 07 → v1.1 (`INSUFFICIENT_STOCK` lands in P4); overview §8.2 A-4; CLAUDE.md §14 (P4-Q decisions) |
+| Migrations | `carts`, `cart_items` (one each, raw SQL, as in `02-database.md` §7 with P4-Q11) |
+| `app/inventory` | `INSUFFICIENT_STOCK` code + factory, exported (P4-Q4) |
+| `app/cart` | Module skeleton; `CartRepository`, `CartItemRepository`; `CartService` (writes, P4-Q3), `CartViewService` (UC-CT-1: three batched calls, issues, grouping, `Money` totals), `CartDirectory` (public API); controller, routes (customer role, general limit), DTOs, errors (spec 08 §6), OpenAPI |
+| Module graph | `cart: ['catalog', 'customers', 'inventory', 'sellers']` (A-4) |
+| Composition roots | `registerCartModule` + router in the api; nothing in the worker (no events) |
+| Tooling | Postman "Cart" folder; `.env.example` gets `CART_MAX_LINES` |
+
+### 6.4 Tests
+- **Unit:** issue classification (each case, and precedence `UNAVAILABLE` > `OUT_OF_STOCK` > `INSUFFICIENT_STOCK`), grouping and order (P4-Q7 a), `Money` totals (issue lines left out, an all-issue group), `availableQuantity` capping, the add/change rule checks (summed quantity, 99, line limit).
+- **Integration, per endpoint** (CLAUDE.md §12): happy path, validation failure (quantity 0 / 100 / non-integer, bad uuid, unknown keys), authz failure (anonymous, seller, admin), not-found (another customer's line → `404`). Plus:
+  - `GET` on a fresh account returns the empty shape and creates no row
+  - adding twice sums into one line; a sum over 99 `422`; the 51st line `422`; an unknown, inactive, deleted or suspended-seller variant `422`; a quantity over sellable `409` with the details shape
+  - the view: each issue appears after the matching catalog / inventory change (product deactivated, variant deleted, stock adjusted to 0 and to below the quantity, seller suspended → projection); a price change shows in the next `GET`; totals count only lines without issues
+  - concurrency: parallel adds of different variants into a cart with 49 lines end with exactly 50; parallel adds of the same variant end with one line and the right sum; two parallel first adds create one cart
+  - `DELETE /cart` empties the cart (and is a `204` with no cart)
+  - public API: `getLinesForCheckout` returns the lines and blocks a second transaction on the same cart until the first commits; `clear` deletes every line inside the caller's transaction (and is rolled back with it)
+
+### 6.5 Order of work (one commit each)
+1. Docs: approvals applied (spec 07/08, architecture A-4, database v1.7, overview, CLAUDE.md), module graph edge.
+2. inventory: `INSUFFICIENT_STOCK`, with a test.
+3. cart: migrations, repositories, `CartDirectory`, tests.
+4. cart: services, endpoints, OpenAPI, tests.
+5. Postman collection, `.env.example`, plan status.
+
+### 6.6 Done when
+- CI green; every P4 endpoint is in the OpenAPI document with its DTOs.
+- Locally (docker-compose): a customer adds variants from two sellers (from the `seed:dev` catalog) → `GET /cart` shows two seller groups with the right totals → one seller adjusts a variant's stock to 0 → that line shows `OUT_OF_STOCK` and drops out of the totals → admin suspends the other seller → its lines show `UNAVAILABLE` within seconds → reinstate → they're back → the customer changes a quantity, removes a line and empties the cart.
