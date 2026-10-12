@@ -4,6 +4,7 @@ import { type ITransactionRunner } from '../../src/lib/db';
 import { TOKENS } from '../../src/lib/di';
 import { parseListQuery } from '../../src/lib/http';
 import { catalogFixtures } from '../helpers/catalog-fixtures';
+import { orderFixtures } from '../helpers/order-fixtures';
 import { startTestApp, type TestApp } from '../helpers/test-app';
 
 describe('inventory public API (spec 07, real Postgres)', () => {
@@ -144,5 +145,232 @@ describe('inventory public API (spec 07, real Postgres)', () => {
     } while (cursor);
     expect(pages).toBe(3);
     expect(seen).toEqual([4, 3, 2, 1, 1]);
+  });
+});
+
+describe('inventory reservations (spec 07 UC-IN-1…3, real Postgres)', () => {
+  let t: TestApp;
+  let inventory: IInventoryService;
+  let tx: ITransactionRunner;
+  let fx: ReturnType<typeof orderFixtures>;
+  let actor: string;
+
+  const knex = () => t.infra.db.knex;
+  const stockOf = async (variantId: string) => (await inventory.getStockByVariantIds([variantId]))[0];
+  const reservationOf = (orderItemId: string) =>
+    knex()('inventory_reservations')
+      .where({ order_item_id: orderItemId })
+      .first<{ quantity: number; status: string } | undefined>('quantity', 'status');
+  const stockEvents = async (variantId: string) =>
+    (
+      await knex()('events_outbox')
+        .where({ event_type: 'inventory.stock_status_changed' })
+        .whereRaw(`payload->>'variantId' = ?`, [variantId])
+        .orderBy('id')
+        .select<{ payload: { inStock: boolean } }[]>('payload')
+    ).map((row) => row.payload.inStock);
+  const movementsOf = (orderItemId: string) =>
+    knex()('inventory_movements')
+      .where({ reference_type: 'order_item', reference_id: orderItemId })
+      .orderBy('id')
+      .select<{ type: string; quantity_delta: number; on_hand_after: number; reserved_after: number }[]>(
+        'type',
+        'quantity_delta',
+        'on_hand_after',
+        'reserved_after',
+      );
+
+  /** `stocks.length` stocked variants, each with an order line in one seller order. */
+  async function lines(...stocks: number[]): Promise<{ variantId: string; orderItemId: string }[]> {
+    const chain = await fx.insertOrderChain();
+    const result = [{ variantId: chain.variantId, orderItemId: chain.orderItemId }];
+    for (let i = 1; i < stocks.length; i += 1) {
+      const variantId = await fx.insertVariant(chain.productId, chain.sellerId);
+      const orderItemId = await fx.insertOrderItem(chain.sellerOrderId, {
+        variantId,
+        productId: chain.productId,
+      });
+      result.push({ variantId, orderItemId });
+    }
+    for (const [i, line] of result.entries()) {
+      await tx.run((trx) => inventory.createItem(line.variantId, stocks[i] ?? 0, actor, trx));
+    }
+    return result;
+  }
+
+  beforeAll(async () => {
+    t = await startTestApp();
+    inventory = t.container.resolve<IInventoryService>(TOKENS.InventoryService);
+    tx = t.container.resolve<ITransactionRunner>(TOKENS.TransactionRunner);
+    fx = orderFixtures(knex());
+    actor = await fx.insertUser('seller');
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+
+  it('reserve holds stock per line, records reservations and movements, and emits when sellable reaches 0', async () => {
+    const [a, b] = await lines(5, 2);
+    if (!a || !b) throw new Error('fixture');
+    await tx.run((trx) =>
+      inventory.reserve(
+        [
+          { ...b, quantity: 2 },
+          { ...a, quantity: 3 },
+        ],
+        trx,
+      ),
+    );
+    expect(await stockOf(a.variantId)).toEqual({
+      variantId: a.variantId,
+      onHand: 5,
+      reserved: 3,
+      sellable: 2,
+    });
+    expect(await stockOf(b.variantId)).toEqual({
+      variantId: b.variantId,
+      onHand: 2,
+      reserved: 2,
+      sellable: 0,
+    });
+    expect(await reservationOf(a.orderItemId)).toEqual({ quantity: 3, status: 'active' });
+    expect(await movementsOf(b.orderItemId)).toEqual([
+      { type: 'reserve', quantity_delta: -2, on_hand_after: 2, reserved_after: 2 },
+    ]);
+    expect(await stockEvents(a.variantId)).toEqual([]);
+    expect(await stockEvents(b.variantId)).toEqual([false]);
+  });
+
+  it('a short line rolls back the whole reservation and reports every short variant', async () => {
+    const [a, b, c] = await lines(5, 1, 0);
+    if (!a || !b || !c) throw new Error('fixture');
+    const error = await tx
+      .run((trx) =>
+        inventory.reserve(
+          [
+            { ...a, quantity: 2 },
+            { ...b, quantity: 2 },
+            { ...c, quantity: 1 },
+          ],
+          trx,
+        ),
+      )
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'INSUFFICIENT_STOCK', httpStatus: 409 });
+    expect((error as { details: unknown }).details).toEqual([
+      { field: 'variantId', value: b.variantId, constraint: 'available', message: 'available: 1' },
+      { field: 'variantId', value: c.variantId, constraint: 'available', message: 'available: 0' },
+    ]);
+    expect((await stockOf(a.variantId))?.reserved).toBe(0);
+    expect(await reservationOf(a.orderItemId)).toBeUndefined();
+    expect(await movementsOf(a.orderItemId)).toEqual([]);
+  });
+
+  it('two checkouts racing for the last unit: exactly one reserves it', async () => {
+    const [first] = await lines(1);
+    const [second] = await lines(0);
+    if (!first || !second) throw new Error('fixture');
+    const results = await Promise.allSettled(
+      [first.orderItemId, second.orderItemId].map((orderItemId) =>
+        tx.run((trx) => inventory.reserve([{ variantId: first.variantId, orderItemId, quantity: 1 }], trx)),
+      ),
+    );
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+    expect(rejected?.reason).toMatchObject({ code: 'INSUFFICIENT_STOCK' });
+    expect(await stockOf(first.variantId)).toMatchObject({ onHand: 1, reserved: 1 });
+  });
+
+  it('parallel checkouts over the same variants in opposite line order do not deadlock', async () => {
+    const [a, b] = await lines(50, 50);
+    if (!a || !b) throw new Error('fixture');
+    const orders = await Promise.all(
+      Array.from({ length: 6 }, async () => {
+        const chain = await fx.insertOrderChain();
+        const lineFor = async (variantId: string) =>
+          fx.insertOrderItem(chain.sellerOrderId, { variantId, productId: chain.productId });
+        return { a: await lineFor(a.variantId), b: await lineFor(b.variantId) };
+      }),
+    );
+    await Promise.all(
+      orders.map((order, i) => {
+        const pair = [
+          { variantId: a.variantId, orderItemId: order.a, quantity: 1 },
+          { variantId: b.variantId, orderItemId: order.b, quantity: 1 },
+        ];
+        return tx.run((trx) => inventory.reserve(i % 2 === 0 ? pair : pair.reverse(), trx));
+      }),
+    );
+    expect((await stockOf(a.variantId))?.reserved).toBe(6);
+    expect((await stockOf(b.variantId))?.reserved).toBe(6);
+  });
+
+  it('release lowers the reservation, ends at released with 0, emits when back in stock, and replays are no-ops', async () => {
+    const [line] = await lines(3);
+    if (!line) throw new Error('fixture');
+    await tx.run((trx) => inventory.reserve([{ ...line, quantity: 3 }], trx));
+    await tx.run((trx) => inventory.release([{ orderItemId: line.orderItemId, quantity: 1 }], trx));
+    expect(await reservationOf(line.orderItemId)).toEqual({ quantity: 2, status: 'active' });
+    await tx.run((trx) => inventory.release([{ orderItemId: line.orderItemId, quantity: 2 }], trx));
+    expect(await reservationOf(line.orderItemId)).toEqual({ quantity: 0, status: 'released' });
+    await tx.run((trx) => inventory.release([{ orderItemId: line.orderItemId, quantity: 2 }], trx)); // replay
+
+    expect(await stockOf(line.variantId)).toMatchObject({ onHand: 3, reserved: 0, sellable: 3 });
+    expect(
+      (await movementsOf(line.orderItemId)).map((m) => [m.type, m.quantity_delta, m.reserved_after]),
+    ).toEqual([
+      ['reserve', -3, 3],
+      ['release', 1, 2],
+      ['release', 2, 0],
+    ]);
+    expect(await stockEvents(line.variantId)).toEqual([false, true]);
+  });
+
+  it('release rolls back with the caller transaction', async () => {
+    const [line] = await lines(2);
+    if (!line) throw new Error('fixture');
+    await tx.run((trx) => inventory.reserve([{ ...line, quantity: 2 }], trx));
+    await expect(
+      tx.run(async (trx) => {
+        await inventory.release([{ orderItemId: line.orderItemId, quantity: 2 }], trx);
+        throw new Error('caller failed');
+      }),
+    ).rejects.toThrow('caller failed');
+    expect(await reservationOf(line.orderItemId)).toEqual({ quantity: 2, status: 'active' });
+    expect((await stockOf(line.variantId))?.reserved).toBe(2);
+  });
+
+  it('commit takes the reserved units out of on_hand once, leaves sellable stock alone and emits nothing', async () => {
+    const [line] = await lines(4);
+    if (!line) throw new Error('fixture');
+    await tx.run((trx) => inventory.reserve([{ ...line, quantity: 2 }], trx));
+    await tx.run((trx) => inventory.commit([line.orderItemId], trx));
+    await tx.run((trx) => inventory.commit([line.orderItemId], trx)); // replay
+    expect(await stockOf(line.variantId)).toEqual({
+      variantId: line.variantId,
+      onHand: 2,
+      reserved: 0,
+      sellable: 2,
+    });
+    expect(await reservationOf(line.orderItemId)).toEqual({ quantity: 2, status: 'committed' });
+    expect(
+      (await movementsOf(line.orderItemId)).map((m) => [m.type, m.quantity_delta, m.on_hand_after]),
+    ).toEqual([
+      ['reserve', -2, 4],
+      ['commit', 0, 2],
+    ]);
+    expect(await stockEvents(line.variantId)).toEqual([]);
+    // A committed reservation can't be released any more.
+    await tx.run((trx) => inventory.release([{ orderItemId: line.orderItemId, quantity: 1 }], trx));
+    expect((await stockOf(line.variantId))?.reserved).toBe(0);
+  });
+
+  it('adjust can no longer take on_hand below what is reserved', async () => {
+    const [line] = await lines(3);
+    if (!line) throw new Error('fixture');
+    await tx.run((trx) => inventory.reserve([{ ...line, quantity: 2 }], trx));
+    await expect(tx.run((trx) => inventory.adjust(line.variantId, -2, actor, trx))).rejects.toMatchObject({
+      code: 'STOCK_ADJUSTMENT_INVALID',
+    });
   });
 });

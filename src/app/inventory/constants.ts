@@ -3,7 +3,11 @@ import { FieldType, type ListSpec } from '../../lib/http';
 export const INVENTORY_TABLES = {
   INVENTORY_ITEMS: 'inventory_items',
   INVENTORY_MOVEMENTS: 'inventory_movements',
+  INVENTORY_RESERVATIONS: 'inventory_reservations',
 } as const;
+
+/** `inventory_movements.reference_type` of reservation movements: the reference is the order line. */
+export const MOVEMENT_REFERENCE_ORDER_ITEM = 'order_item';
 
 /**
  * Stock history list (spec 06 §4.3): sort `-createdAt` only, no filters. Exported so the caller

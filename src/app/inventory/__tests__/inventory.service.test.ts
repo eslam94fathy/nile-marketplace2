@@ -22,6 +22,7 @@ function setup(afterDelta: InventoryItem | null = item(5), exists = true) {
   const container = rootContainer.createChildContainer();
   container.register(TOKENS.InventoryItemRepository, { useValue: items });
   container.register(TOKENS.InventoryMovementRepository, { useValue: movements });
+  container.register(TOKENS.InventoryReservationRepository, { useValue: {} });
   container.register(TOKENS.Outbox, { useValue: outbox });
   return { items, movements, outbox, service: container.resolve(InventoryService) };
 }

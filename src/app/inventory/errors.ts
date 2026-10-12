@@ -3,7 +3,7 @@ import { HTTP_STATUS } from '../../lib/http';
 
 /**
  * inventory error codes (docs/spec/07-inventory.md §6). INSUFFICIENT_STOCK is also thrown by cart's
- * soft stock check (IN-4), so it's exported before `reserve` lands (P5).
+ * soft stock check (IN-4).
  */
 export const InventoryErrorCode = {
   INSUFFICIENT_STOCK: 'INSUFFICIENT_STOCK',

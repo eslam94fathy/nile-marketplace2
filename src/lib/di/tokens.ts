@@ -97,6 +97,7 @@ export const TOKENS = {
   // inventory module
   InventoryItemRepository: Symbol.for('InventoryItemRepository'),
   InventoryMovementRepository: Symbol.for('InventoryMovementRepository'),
+  InventoryReservationRepository: Symbol.for('InventoryReservationRepository'),
   /** Public API of inventory (spec 07 §2), injected into other modules. */
   InventoryService: Symbol.for('InventoryService'),
 
