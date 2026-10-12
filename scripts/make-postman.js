@@ -60,10 +60,10 @@ const idempotencyKey = { key: 'Idempotency-Key', value: '{{$guid}}' };
 const API = '/api/v1';
 const collection = {
   info: {
-    name: 'Nile Marketplace API (Phases 1–4)',
+    name: 'Nile Marketplace API (Phases 1–5a)',
     _postman_id: 'c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01',
     description: [
-      'Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08) and delivery reference data (spec 11 §4.1, §4.3).',
+      'Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), COD checkout and orders (spec 09) and delivery reference data (spec 11 §4.1, §4.3).',
       '',
       'Variables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.',
       '',
@@ -80,6 +80,8 @@ const collection = {
       'Catalog flow: "Admin: catalog" → Create category → Add attribute → Add option (stores `categoryId`, `attributeId`, `optionId`). Then log in as an approved seller → "Seller: catalog" → Create product → Add variant (put option ids in `optionIds`, or `[]` in a category without attributes) → Activate. "Catalog" (public) → List products / Product detail.',
       '',
       'Cart flow: log in as a customer → "Catalog" → List products → Product detail (stores the first variant in `variantId`) → "Cart" → Add item (stores the line in `cartItemId`) → My cart → Change quantity / Remove item / Empty cart.',
+      '',
+      'Order flow (COD): with items in the cart and an address (`addressId`) in a deliverable governorate → "Checkout & orders" → Checkout. The first send usually answers 409 ORDER_TOTAL_CHANGED and stores the current total in `expectedTotal`; send again. It stores `orderId`, `sellerOrderId` and `orderItemId`. Log in as that seller → "Seller: orders" → Accept → Ready (or Cancel item quantities / Cancel). Shipment steps arrive with delivery (Phase 6).',
       '',
       'Tokens are per account: log in as the admin again (Auth → Login) before the "Admin: …" folders.',
       '',
@@ -127,6 +129,10 @@ const collection = {
     { key: 'productSlug', value: '' },
     { key: 'variantId', value: '' },
     { key: 'cartItemId', value: '' },
+    { key: 'expectedTotal', value: '0.00' },
+    { key: 'orderId', value: '' },
+    { key: 'sellerOrderId', value: '' },
+    { key: 'orderItemId', value: '' },
   ],
   item: [
     {
@@ -961,6 +967,176 @@ if (pm.response.code === 201) {
           auth: true,
           description: 'Removes every line; 204 also when there is no cart yet.',
           tests: expect(204),
+        }),
+      ],
+    },
+    {
+      name: 'Checkout & orders',
+      description:
+        'spec 09 §4.1. Customer role. Checkout is COD only until the Kashier flow lands (Phase 5 PR b), needs an Idempotency-Key and has its own per-user rate limit. Amounts are EGP strings.',
+      item: [
+        req({
+          name: 'Checkout',
+          method: 'POST',
+          path: `${API}/checkout`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { addressId: '{{addressId}}', paymentMethod: 'cod', expectedTotal: '{{expectedTotal}}' },
+          description:
+            'Places the cart as one order split per seller, reserves stock and empties the cart (201). CART_EMPTY 422, CART_HAS_ISSUES 409 (details: variant ids), ADDRESS_NOT_FOUND 422, GOVERNORATE_NOT_DELIVERABLE 422, ORDER_TOTAL_CHANGED 409 (details[0].value = current total; stored in expectedTotal), INSUFFICIENT_STOCK 409. A repeat with the same Idempotency-Key replays the first answer.',
+          tests: `
+if (pm.response.code === 409 && pm.response.json().error.code === 'ORDER_TOTAL_CHANGED') {
+  pm.collectionVariables.set('expectedTotal', pm.response.json().error.details[0].value);
+  console.log('expectedTotal updated: send again');
+  return;
+}
+${expect(201)}
+if (pm.response.code === 201) {
+  const { order } = pm.response.json().data;
+  pm.collectionVariables.set('orderId', order.id);
+  const first = order.sellerOrders[0];
+  if (first) {
+    pm.collectionVariables.set('sellerOrderId', first.id);
+    if (first.items[0]) pm.collectionVariables.set('orderItemId', first.items[0].id);
+  }
+}`,
+        }),
+        req({
+          name: 'My orders',
+          method: 'GET',
+          path: `${API}/orders`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'status[in]', value: 'placed,in_progress', disabled: true },
+            { key: 'createdAt[gte]', value: '2026-01-01', disabled: true },
+          ],
+          description: 'Newest first. itemCount = units still to deliver.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Order detail',
+          method: 'GET',
+          path: `${API}/orders/{{orderId}}`,
+          auth: true,
+          description:
+            'Seller orders with items and timelines, shipping snapshot, payment status. ORDER_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Cancel a seller order',
+          method: 'POST',
+          path: `${API}/orders/{{orderId}}/seller-orders/{{sellerOrderId}}/cancel`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { note: 'Changed my mind' },
+          description:
+            'Only while placed (canCancel). Releases its stock; the order total drops (OR-13). SELLER_ORDER_NOT_CANCELLABLE 409, ORDER_NOT_FOUND / SELLER_ORDER_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Seller: orders',
+      description:
+        'spec 09 §4.2. Seller role, any seller status (open orders continue after a suspension). No customer name, phone or address (S-11); orders awaiting payment are never shown. Each action answers with the seller order after the change.',
+      item: [
+        req({
+          name: 'My seller orders',
+          method: 'GET',
+          path: `${API}/seller/orders`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'status[eq]', value: 'placed', disabled: true },
+          ],
+          tests: saveId('sellerOrderId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Seller order detail',
+          method: 'GET',
+          path: `${API}/seller/orders/{{sellerOrderId}}`,
+          auth: true,
+          description: 'SELLER_ORDER_NOT_FOUND 404.',
+          tests: saveId('orderItemId', 200, 'data.items[0] && body.data.items[0].id'),
+        }),
+        req({
+          name: 'Accept',
+          method: 'POST',
+          path: `${API}/seller/orders/{{sellerOrderId}}/accept`,
+          auth: true,
+          description:
+            'placed → accepted, also after the deadline until the timeout job ran. SELLER_ORDER_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Ready for pickup',
+          method: 'POST',
+          path: `${API}/seller/orders/{{sellerOrderId}}/ready`,
+          auth: true,
+          description:
+            'accepted → ready_for_pickup; publishes seller_order.ready_for_pickup (delivery creates the shipment from Phase 6).',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Cancel item quantities',
+          method: 'POST',
+          path: `${API}/seller/orders/{{sellerOrderId}}/items/{{orderItemId}}/cancel`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { quantity: 1, reason: 'out_of_stock' },
+          description:
+            'reason out_of_stock | seller_request | other (note required for other). Until picked up. Cancelling every open unit cancels the seller order. ITEM_CANCEL_QUANTITY_INVALID 422, ORDER_ITEM_NOT_FOUND 404, SELLER_ORDER_NOT_CANCELLABLE 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Cancel',
+          method: 'POST',
+          path: `${API}/seller/orders/{{sellerOrderId}}/cancel`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { note: 'Out of stock' },
+          description:
+            'The whole seller order, until picked up; stock is released. SELLER_ORDER_NOT_CANCELLABLE 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Return received',
+          method: 'POST',
+          path: `${API}/seller/orders/{{sellerOrderId}}/return-received`,
+          auth: true,
+          headers: [idempotencyKey],
+          description:
+            'returning_to_seller → returned_to_seller; stock is released. SELLER_ORDER_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: orders',
+      description: 'spec 09 §4.3. Admin role. No admin cancellation in R1 (S-9).',
+      item: [
+        req({
+          name: 'List orders',
+          method: 'GET',
+          path: `${API}/admin/orders`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'status[eq]', value: 'placed', disabled: true },
+            { key: 'orderNumber[eq]', value: 'NM-000000001', disabled: true },
+            { key: 'customerId[eq]', value: '', disabled: true },
+          ],
+          tests: saveId('orderId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Order detail (admin)',
+          method: 'GET',
+          path: `${API}/admin/orders/{{orderId}}`,
+          auth: true,
+          description:
+            'Adds commission per seller order and the full status histories (actor role, actor id, reason).',
+          tests: expect(200),
         }),
       ],
     },
