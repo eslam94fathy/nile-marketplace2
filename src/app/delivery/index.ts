@@ -17,7 +17,13 @@ import { type ILogger } from '../../lib/logger';
 import { requireIdempotency } from '../../lib/middleware';
 import { type ICache } from '../../pkg/cache';
 import { type PgErrorMapper } from '../../lib/error';
-import { type EventHandlerDefinition, SellerOrderReadyForPickup } from '../../lib/events';
+import {
+  type EventHandlerDefinition,
+  SellerOrderCancelled,
+  SellerOrderItemsCancelled,
+  SellerOrderReadyForPickup,
+  SellerOrderReturned,
+} from '../../lib/events';
 import { type JobDefinition } from '../../lib/jobs';
 import { SELLER_ORDER_UPDATES_QUEUE } from './constants';
 import { AgentAdminController, AgentSelfController } from './controller/delivery-agent.controller';
@@ -71,7 +77,12 @@ export function createDeliveryHandlers(container: DependencyContainer): EventHan
   return [
     {
       name: SELLER_ORDER_UPDATES_QUEUE,
-      events: [SellerOrderReadyForPickup],
+      events: [
+        SellerOrderReadyForPickup,
+        SellerOrderItemsCancelled,
+        SellerOrderCancelled,
+        SellerOrderReturned,
+      ],
       handle: (envelope, trx) => updates.handle(envelope, trx),
     },
   ];

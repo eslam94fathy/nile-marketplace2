@@ -1,6 +1,6 @@
 # Spec 11 — delivery
 
-Status: **v1.1 APPROVED (2026-10-12).** v1.0 (2026-10-09): the reference-data part, with the clarifications in §7.1. v1.1: the whole spec (agents, shipments, assignment) approved with the Phase 6 clarifications in §7.2. Changes from now on need explicit approval and a version bump.
+Status: **v1.2 APPROVED (2026-10-12).** v1.0 (2026-10-09): the reference-data part, with the clarifications in §7.1. v1.1: the whole spec (agents, shipments, assignment) approved with the Phase 6 clarifications in §7.2. v1.2: how the consumer orders item cancellations and returns (DE-15, DE-16). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -204,3 +204,5 @@ Consumed: `seller_order.ready_for_pickup`, `seller_order.items_cancelled`, `sell
 | DE-12 | Without a `status` filter, `GET /agent/shipments` returns the active statuses, oldest `createdAt` first; history through `status[in]=…` (P6-Q10) | §4.2 |
 | DE-13 | Process split: api serves the agent / admin endpoints and the public API; the worker runs `delivery.seller-order-updates` and the retry job; both share one assignment service (P6-Q12) | §3 |
 | DE-14 | Shipments snapshot from `seller_order.ready_for_pickup` everything the agent's screen and the fee rules need: `order_number`, `payment_method`, `order_delivery_fee` (`0.00` for Kashier), `pickup_business_name`, the full pickup and drop-off snapshots, `cod_items_amount`; no `agent_fee_share` (ordering computes it) (D-2, P6-Q2). Indexes D-3, D-10 (P6-Q3) | §1, UC-DE-1 |
+| DE-15 | `seller_order.items_cancelled` (with `previousStatus`, spec 02 E-8): shipment `unassigned`/`assigned` and COD → `cod_items_amount = newSubtotal` only when lower (subtotals only go down, so an older event overtaken by a newer one is a `warn` no-op); Kashier → nothing to change; picked up or later → `warn`; no shipment and `previousStatus = ready_for_pickup` → retried, otherwise acked (Phase 6 step 6, v1.2) | UC-DE-5 |
+| DE-16 | `seller_order.returned` for a shipment that doesn't exist is retried (it always exists before any shipment event); one not `returning_to_seller` is a `warn` no-op. `seller_order.cancelled` on a shipment already finished, returning or cancelled is a `warn` no-op. The after-pickup branch locks the checkout's shipments (DE-7) because it releases the fee (Phase 6 step 6, v1.2) | UC-DE-5 |

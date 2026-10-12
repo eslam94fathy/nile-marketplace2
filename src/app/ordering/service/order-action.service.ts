@@ -194,6 +194,7 @@ export class OrderActionService {
           orderId: locked.order.id,
           sellerId: target.sellerId,
           paymentMethod: locked.order.paymentMethod,
+          previousStatus: target.status,
           lines: [
             {
               orderItemId: line.id,

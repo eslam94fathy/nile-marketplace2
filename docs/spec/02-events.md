@@ -1,6 +1,6 @@
 # Spec 02 — Domain Events Catalogue (Release 1)
 
-Status: **v1.0 APPROVED (2026-10-08).** Approved by the user. It replaces the event list in `00-overview.md` §7 and the event names in `01-architecture.md` §3/§5 (differences in §5 below). Changes from now on need explicit approval and a version bump.
+Status: **v1.1 APPROVED (2026-10-12).** v1.0 approved by the user 2026-10-08. v1.1: `seller_order.items_cancelled` carries `previousStatus` (E-8). It replaces the event list in `00-overview.md` §7 and the event names in `01-architecture.md` §3/§5 (differences in §5 below). Changes from now on need explicit approval and a version bump.
 Contracts live in `src/lib/events/contracts/` (architecture §2), one file per event: name constant + payload type + version.
 
 ---
@@ -120,6 +120,7 @@ Consumer rule (catalog): map the variant to its product, re-read the sellable st
 
 // seller_order.items_cancelled — seller cancelled some quantities; the seller order stays open
 { sellerOrderId: string; orderId: string; sellerId: string; paymentMethod: PaymentMethod;
+  previousStatus: SellerOrderStatus; // status when the items were cancelled (unchanged by it) [v1.1, E-8]
   lines: { orderItemId: string; variantId: string; quantity: number; amount: string }[];
   amountCancelled: string;          // Σ lines.amount
   newSubtotal: string; newCommission: string; newSellerNet: string;
@@ -220,3 +221,4 @@ last seller order terminal ─► order.closed ─► finance: platform delivery
 | E-5 | Overview §7: `inventory.reservation_expired` | Removed. Architecture §6: the expiry job releases stock synchronously in its own transaction | No consumer needs it |
 | E-6 | Architecture §5: `finance.ledger` ← `seller_order.cancelled`, `payment.refund_recorded` | `finance.ledger` ← `seller_order.delivered`, `order.closed` only | Nothing is booked in the ledger before delivery, so cancellations and refunds of undelivered orders have no ledger effect in R1 |
 | E-7 | – | New: `notification.email_requested`, `inventory.stock_status_changed`, `order.closed`, `payout.recorded` | `notification.email_requested` and `inventory.stock_status_changed` were already in architecture §3. `order.closed` drives the fee rules (Q-28) |
+| E-8 | – | `seller_order.items_cancelled.previousStatus` (additive, still version 1; approved 2026-10-12) | Items can be cancelled while `ready_for_pickup`. If the event overtakes `seller_order.ready_for_pickup`, delivery must retry it instead of acking, or the shipment keeps the old COD amount (spec 11 DE-15) |

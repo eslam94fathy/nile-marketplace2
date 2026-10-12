@@ -253,6 +253,15 @@ export class ShipmentRepository {
     return row ? toModel(row) : null;
   }
 
+  /** The seller order's shipment, unlocked: finds the checkout to lock (uq_shipments_seller_order_id). */
+  async findBySellerOrderId(sellerOrderId: string, trx?: DbTransaction): Promise<Shipment | null> {
+    const row = await this.exec(trx)<ShipmentTable>(T)
+      .select(...COLUMNS)
+      .where({ seller_order_id: sellerOrderId })
+      .first<ShipmentRow | undefined>();
+    return row ? toModel(row) : null;
+  }
+
   /** Locks the seller order's shipment, if it exists yet (the seller-order consumer). */
   async lockBySellerOrderId(sellerOrderId: string, trx: DbTransaction): Promise<Shipment | null> {
     const row = await trx<ShipmentTable>(T)

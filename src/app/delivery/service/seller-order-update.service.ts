@@ -1,31 +1,60 @@
 import { inject, injectable } from 'tsyringe';
 import { type DbTransaction } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
-import { type EventEnvelope, PermanentEventError, SellerOrderReadyForPickup } from '../../../lib/events';
+import { type IClock } from '../../../lib/clock';
+import {
+  type EventEnvelope,
+  PermanentEventError,
+  SellerOrderCancelled,
+  SellerOrderItemsCancelled,
+  SellerOrderReadyForPickup,
+  SellerOrderReturned,
+} from '../../../lib/events';
 import { type ILogger } from '../../../lib/logger';
 import { Money } from '../../../lib/money';
 import { DeliveryActorRole, ShipmentStatus } from '../enums';
-import { type ShipmentDropoff, type ShipmentPickup } from '../model/shipment.model';
+import {
+  deliveryFeeLeftUncollected,
+  type Shipment,
+  type ShipmentDropoff,
+  type ShipmentPickup,
+} from '../model/shipment.model';
 import { type ShipmentHistoryRepository } from '../repository/shipment-history.repository';
-import { type NewShipment, type ShipmentRepository } from '../repository/shipment.repository';
+import {
+  type NewShipment,
+  type ShipmentChange,
+  type ShipmentRepository,
+} from '../repository/shipment.repository';
 import { type ShipmentAssignmentService } from './shipment-assignment.service';
 
 /**
  * The `delivery.seller-order-updates` consumer (spec 11 UC-DE-1, UC-DE-5), inside the host's
  * transaction. `seller_order.ready_for_pickup` creates the shipment from the event's snapshot
- * (replay-safe) and auto-assigns it; the cancellation and return events follow in UC-DE-5.
+ * (replay-safe) and auto-assigns it; cancellations and returns follow the seller order (UC-DE-5,
+ * DE-10, DE-15, DE-16). An event whose shipment should exist but doesn't yet is retried; a stale
+ * one is a `warn` no-op.
  */
 @injectable()
 export class SellerOrderUpdateService {
   constructor(
     @inject(TOKENS.Logger) private readonly logger: ILogger,
+    @inject(TOKENS.Clock) private readonly clock: IClock,
     @inject(TOKENS.ShipmentRepository) private readonly shipments: ShipmentRepository,
     @inject(TOKENS.ShipmentHistoryRepository) private readonly history: ShipmentHistoryRepository,
     @inject(TOKENS.ShipmentAssignmentService) private readonly assignment: ShipmentAssignmentService,
   ) {}
 
   async handle(envelope: EventEnvelope, trx: DbTransaction): Promise<void> {
-    if (envelope.eventType === SellerOrderReadyForPickup.type) return this.create(envelope, trx);
+    switch (envelope.eventType) {
+      case SellerOrderReadyForPickup.type:
+        return this.create(envelope, trx);
+      case SellerOrderItemsCancelled.type:
+        return this.itemsCancelled(envelope, trx);
+      case SellerOrderCancelled.type:
+        return this.cancelled(envelope, trx);
+      case SellerOrderReturned.type:
+        return this.returned(envelope, trx);
+    }
     throw new PermanentEventError(`delivery.seller-order-updates does not handle ${envelope.eventType}`);
   }
 
@@ -57,7 +86,165 @@ export class SellerOrderUpdateService {
     });
     await this.assignment.autoAssign(shipment, trx);
   }
+
+  /** DE-15: the COD amount follows the seller order's subtotal, which only goes down. */
+  private async itemsCancelled(envelope: EventEnvelope, trx: DbTransaction): Promise<void> {
+    const read = new PayloadReader(envelope);
+    const sellerOrderId = read.uuid(envelope.payload, 'sellerOrderId');
+    const previousStatus = read.string(envelope.payload, 'previousStatus');
+    const newSubtotal = read.money(envelope.payload, 'newSubtotal');
+    const shipment = await this.shipments.lockBySellerOrderId(sellerOrderId, trx);
+    if (!shipment) return this.noShipmentYet(envelope, sellerOrderId, previousStatus);
+    if (shipment.paymentMethod !== 'cod') return;
+    if (!BEFORE_PICKUP.includes(shipment.status)) {
+      return this.ignore(envelope, shipment, 'items cancelled after the parcel was picked up');
+    }
+    if (!newSubtotal.lessThan(shipment.codItemsAmount)) {
+      return this.ignore(envelope, shipment, 'an older item cancellation');
+    }
+    await this.change(shipment, BEFORE_PICKUP, { status: shipment.status, codItemsAmount: newSubtotal }, trx);
+    this.logger.info('shipment COD amount lowered', {
+      event: 'SHIPMENT_COD_AMOUNT_CHANGED',
+      shipmentId: shipment.id,
+      codItemsAmount: newSubtotal.toString(),
+    });
+  }
+
+  /**
+   * UC-DE-5: before pickup the shipment is cancelled; after pickup it goes back to the seller, the
+   * fee is released and the agent confirms the return (DE-6). The checkout is locked (DE-7, DE-16).
+   */
+  private async cancelled(envelope: EventEnvelope, trx: DbTransaction): Promise<void> {
+    const read = new PayloadReader(envelope);
+    const sellerOrderId = read.uuid(envelope.payload, 'sellerOrderId');
+    const previousStatus = read.string(envelope.payload, 'previousStatus');
+    const reason = read.string(envelope.payload, 'reason');
+    const peek = await this.shipments.findBySellerOrderId(sellerOrderId, trx);
+    if (!peek) return this.noShipmentYet(envelope, sellerOrderId, previousStatus);
+    const checkout = await this.shipments.lockByOrderId(peek.orderId, trx);
+    const shipment = checkout.find((s) => s.id === peek.id);
+    if (!shipment) throw new Error(`shipment ${peek.id} vanished under its lock`);
+
+    if (BEFORE_PICKUP.includes(shipment.status)) {
+      await this.change(shipment, BEFORE_PICKUP, { status: ShipmentStatus.CANCELLED }, trx, reason);
+      this.logger.info('shipment cancelled with its seller order', {
+        event: 'SHIPMENT_CANCELLED',
+        shipmentId: shipment.id,
+      });
+      return;
+    }
+    if (!WITH_AGENT.includes(shipment.status)) {
+      return this.ignore(envelope, shipment, 'the shipment is already finished or on its way back');
+    }
+    const change: ShipmentChange = {
+      status: ShipmentStatus.RETURNING_TO_SELLER,
+      sellerOrderCancelledAt: this.clock.now(),
+    };
+    if (shipment.carriesDeliveryFee) change.feeCarrier = { carries: false, feeAmount: Money.zero() };
+    const next = await this.change(shipment, WITH_AGENT, change, trx, reason);
+    this.logger.warn('seller order cancelled after the agent picked the parcel up; it goes back', {
+      event: 'SHIPMENT_CANCELLED_AFTER_PICKUP',
+      shipmentId: shipment.id,
+      agentId: shipment.agentId,
+      from: shipment.status,
+    });
+    if (deliveryFeeLeftUncollected(checkout.map((s) => (s.id === next.id ? next : s)))) {
+      this.logger.warn('the checkout had a COD delivery but its delivery fee was not collected', {
+        event: 'COD_DELIVERY_FEE_UNCOLLECTED',
+        orderId: next.orderId,
+        shipmentId: next.id,
+        deliveryFee: next.orderDeliveryFee.toString(),
+      });
+    }
+  }
+
+  /** UC-DE-5: the seller confirmed the parcel is back. The shipment always exists by now (DE-16). */
+  private async returned(envelope: EventEnvelope, trx: DbTransaction): Promise<void> {
+    const sellerOrderId = new PayloadReader(envelope).uuid(envelope.payload, 'sellerOrderId');
+    const shipment = await this.shipments.lockBySellerOrderId(sellerOrderId, trx);
+    if (!shipment) {
+      throw new SellerOrderEventTooEarlyError(
+        `${envelope.eventType} for seller order ${sellerOrderId} arrived before its shipment exists`,
+      );
+    }
+    if (shipment.status !== ShipmentStatus.RETURNING_TO_SELLER) {
+      return this.ignore(envelope, shipment, 'the shipment is not on its way back');
+    }
+    await this.change(
+      shipment,
+      [ShipmentStatus.RETURNING_TO_SELLER],
+      { status: ShipmentStatus.RETURNED_TO_SELLER, returnedAt: this.clock.now() },
+      trx,
+    );
+  }
+
+  /** DE-10, DE-15: a shipment exists or is coming once the seller order was ready for pickup. */
+  private noShipmentYet(envelope: EventEnvelope, sellerOrderId: string, previousStatus: string): void {
+    if (previousStatus === READY_FOR_PICKUP) {
+      throw new SellerOrderEventTooEarlyError(
+        `${envelope.eventType} for seller order ${sellerOrderId} arrived before seller_order.ready_for_pickup`,
+      );
+    }
+    this.logger.debug('no shipment for this seller order, none expected', {
+      event: 'SELLER_ORDER_EVENT_NO_SHIPMENT',
+      eventType: envelope.eventType,
+      sellerOrderId,
+      previousStatus,
+    });
+  }
+
+  private ignore(envelope: EventEnvelope, shipment: Shipment, why: string): void {
+    this.logger.warn('seller-order event ignored for the shipment state', {
+      event: 'SELLER_ORDER_EVENT_IGNORED',
+      eventType: envelope.eventType,
+      shipmentId: shipment.id,
+      status: shipment.status,
+      why,
+    });
+  }
+
+  /** Conditional transition + history row (system actor), on a shipment the caller holds locked. */
+  private async change(
+    shipment: Shipment,
+    from: readonly ShipmentStatus[],
+    change: ShipmentChange,
+    trx: DbTransaction,
+    reason: string | null = null,
+  ): Promise<Shipment> {
+    const next = await this.shipments.transition(shipment.id, from, change, trx);
+    if (!next) throw new Error(`shipment ${shipment.id} changed under its lock`);
+    if (next.status !== shipment.status) {
+      await this.history.add(
+        {
+          shipmentId: shipment.id,
+          fromStatus: shipment.status,
+          toStatus: next.status,
+          actorRole: DeliveryActorRole.SYSTEM,
+          actorUserId: null,
+          reason,
+        },
+        trx,
+      );
+    }
+    return next;
+  }
 }
+
+/** A seller-order event that overtook the event creating its shipment: thrown so the broker retries it. */
+export class SellerOrderEventTooEarlyError extends Error {
+  override readonly name = 'SellerOrderEventTooEarlyError';
+}
+
+/** The seller order's status that promises a shipment (spec 09 §1.1). */
+const READY_FOR_PICKUP = 'ready_for_pickup';
+/** No agent has the parcel yet: cancellable, and its COD amount can still change. */
+const BEFORE_PICKUP: readonly ShipmentStatus[] = [ShipmentStatus.UNASSIGNED, ShipmentStatus.ASSIGNED];
+/** The agent holds the parcel: a cancellation sends it back (UC-DE-5). */
+const WITH_AGENT: readonly ShipmentStatus[] = [
+  ShipmentStatus.PICKED_UP,
+  ShipmentStatus.OUT_FOR_DELIVERY,
+  ShipmentStatus.DELIVERY_FAILED,
+];
 
 /** The shipment the snapshot describes; a payload that can't be read goes to the DLQ (PermanentEventError). */
 export function readyForPickupShipment(envelope: EventEnvelope): NewShipment {

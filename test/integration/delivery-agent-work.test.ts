@@ -1,22 +1,9 @@
-import { type DependencyContainer } from 'tsyringe';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type AgentShipmentDto } from '../../src/app/delivery/dto/shipment.dto';
-import { type CheckoutResultDto } from '../../src/app/ordering/dto/order-response.dto';
-import { createWorkerContainer } from '../../src/container';
-import { createEventHandlers } from '../../src/event-handlers';
-import {
-  closeInfrastructure,
-  createWorkerInfrastructure,
-  type WorkerInfrastructure,
-} from '../../src/infrastructure';
-import { EventConsumerHost, OutboxDrainer } from '../../src/lib/events';
-import { waitFor } from '../helpers/amqp-probe';
-import { deliveryFixtures } from '../helpers/delivery-fixtures';
-import { errorBody, successBody } from '../helpers/http';
+import { type DeliveryFlow, startDeliveryFlow } from '../helpers/delivery-flow';
+import { successBody } from '../helpers/http';
 import { signTestAccessToken } from '../helpers/jwt';
-import { createMemoryLogger } from '../helpers/memory-logger';
-import { CAIRO_FEE, orderingApi } from '../helpers/ordering-api';
-import { startTestApp, type TestApp } from '../helpers/test-app';
+import { CAIRO_FEE } from '../helpers/ordering-api';
 
 const UNKNOWN_V7_ID = '0192f5e0-0000-7000-8000-000000000000';
 
@@ -27,14 +14,19 @@ function must<T>(value: T | undefined): T {
 
 /* Spec 11 UC-DE-3 and DE-6, end to end with ordering's and payments' consumers (plan §8.4). */
 describe('delivery: the agent works its shipments', () => {
-  let t: TestApp;
-  let api: ReturnType<typeof orderingApi>;
-  let fx: ReturnType<typeof deliveryFixtures>;
-  let worker: WorkerInfrastructure;
-  let workerContainer: DependencyContainer;
-  let drainer: OutboxDrainer;
+  let flow: DeliveryFlow;
 
-  const knex = () => t.infra.db.knex;
+  let api: DeliveryFlow['api'];
+  let fx: DeliveryFlow['fx'];
+  let settle: DeliveryFlow['settle'];
+  let sellerOrderStatus: DeliveryFlow['sellerOrderStatus'];
+  let soleAgent: DeliveryFlow['soleAgent'];
+  let order: DeliveryFlow['order'];
+  let readyAndAssigned: DeliveryFlow['readyAndAssigned'];
+  let act: DeliveryFlow['act'];
+  let refused: DeliveryFlow['refused'];
+
+  const knex = () => flow.knex();
   const shipmentRow = (id: string) =>
     knex()('shipments').where({ id }).first<{
       status: string;
@@ -42,102 +34,24 @@ describe('delivery: the agent works its shipments', () => {
       cod_fee_amount: string;
       attempt_count: number;
     }>('status', 'carries_delivery_fee', 'cod_fee_amount', 'attempt_count');
-  const sellerOrderStatus = async (id: string) =>
-    (await knex()('seller_orders').where({ id }).first<{ status: string }>('status'))?.status;
-
-  /** Publishes the outbox until `check` holds: every consumer in the chain gets its turn. */
-  const settle = (check: () => Promise<boolean>) =>
-    waitFor(async () => {
-      await drainer.drainOnce();
-      return check();
-    }, 20_000);
-
-  /** An on-shift Cairo agent with its token; every other agent goes off shift first. */
-  async function soleAgent() {
-    await knex()('delivery_agents').update({ on_shift: false });
-    const agent = await fx.insertAgent({ on_shift: true });
-    const token = await signTestAccessToken({ sub: agent.userId, role: 'delivery_agent' });
-    return { ...agent, token, http: api.as(token) };
-  }
-  type Agent = Awaited<ReturnType<typeof soleAgent>>;
-
-  /** One COD order with one Cairo seller per price, one unit each. */
-  async function order(prices: string[]) {
-    const buyer = await api.customer();
-    const variants = [];
-    for (const price of prices) variants.push(await api.listedVariant({ price }));
-    const itemsTotal = prices.reduce((sum, p) => sum + Number(p), 0);
-    const result: CheckoutResultDto = await api.placeOrder(
-      buyer,
-      variants.map((v) => ({ variantId: v.variantId, quantity: 1 })),
-      (itemsTotal + Number(CAIRO_FEE)).toFixed(2),
-    );
-    return {
-      orderId: result.order.id,
-      sellerOrders: variants.map((v) => ({
-        ...v,
-        sellerOrderId: must(result.order.sellerOrders.find((s) => s.sellerId === v.sellerId)).id,
-      })),
-    };
-  }
-
-  /** The seller accepts and marks ready; the consumer creates and auto-assigns the shipment. */
-  async function readyAndAssigned(entry: { sellerToken: string; sellerOrderId: string }, agent: Agent) {
-    const seller = api.as(entry.sellerToken);
-    expect((await seller.post(`/seller/orders/${entry.sellerOrderId}/accept`)).status).toBe(200);
-    expect((await seller.post(`/seller/orders/${entry.sellerOrderId}/ready`)).status).toBe(200);
-    let shipmentId = '';
-    await settle(async () => {
-      const row = await knex()('shipments')
-        .where({ seller_order_id: entry.sellerOrderId })
-        .first<{ id: string; agent_id: string | null } | undefined>('id', 'agent_id');
-      shipmentId = row?.id ?? '';
-      return row?.agent_id === agent.agentId;
-    });
-    return shipmentId;
-  }
-
-  const act = async (agent: Agent, shipmentId: string, action: string, body?: object) => {
-    const res = await agent.http.post(`/agent/shipments/${shipmentId}/${action}`, body);
-    expect(res.status, JSON.stringify(res.body)).toBe(200);
-    return successBody<AgentShipmentDto>(res).data;
-  };
-  const refused = (res: { status: number; body: unknown }, status: number, code: string) => {
-    expect([res.status, errorBody(res as never).error.code]).toEqual([status, code]);
-  };
 
   /** A shipment of a fresh SQL order, already with `agent` in `status`. */
   async function ownShipment(agent: { agentId: string }, overrides: Record<string, unknown> = {}) {
-    const chain = await fx.insertShipmentChain({
+    return fx.insertShipmentChain({
       agent_id: agent.agentId,
       status: 'picked_up',
       assigned_at: new Date(),
       picked_up_at: new Date(),
       ...overrides,
     });
-    return chain;
   }
 
   beforeAll(async () => {
-    t = await startTestApp();
-    api = orderingApi(t);
-    await api.init();
-    fx = deliveryFixtures(knex());
-    const { logger } = createMemoryLogger();
-    worker = await createWorkerInfrastructure(t.resources.workerEnv, logger);
-    workerContainer = createWorkerContainer(worker);
-    await worker.broker.assertExchange(worker.env.RABBITMQ_EXCHANGE);
-    const consumers = new EventConsumerHost(worker.broker, worker.db, logger, worker.env);
-    for (const handler of createEventHandlers(workerContainer)) await consumers.start(handler);
-    drainer = new OutboxDrainer(worker.db.knex, worker.broker, worker.clock, logger, {
-      exchange: worker.env.RABBITMQ_EXCHANGE,
-      batchSize: worker.env.OUTBOX_BATCH_SIZE,
-      maxBackoffMs: worker.env.OUTBOX_MAX_BACKOFF_MS,
-    });
+    flow = await startDeliveryFlow();
+    ({ api, fx, settle, sellerOrderStatus, soleAgent, order, readyAndAssigned, act, refused } = flow);
   });
   afterAll(async () => {
-    await closeInfrastructure(worker);
-    await t.close();
+    await flow.close();
   });
 
   it('COD end to end: the first parcel out carries the fee; both delivered → order completed, payment collected', async () => {
