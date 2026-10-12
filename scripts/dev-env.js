@@ -105,6 +105,8 @@ const values = {
   CART_MAX_LINES: '50',
   // ordering (P5-Q10)
   SELLER_ACCEPT_TIMEOUT_HOURS: '24',
+  JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS: '60000',
+  ORDER_JOBS_BATCH_SIZE: '100',
   // email: local inbox by default (P1-Q2); switch EMAIL_PROVIDER to mailjet to send real mail
   EMAIL_PROVIDER: 'mailpit',
   EMAIL_HTTP_TIMEOUT_MS: '10000',

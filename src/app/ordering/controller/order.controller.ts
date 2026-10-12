@@ -5,10 +5,17 @@ import { TOKENS } from '../../../lib/di';
 import { unauthenticated } from '../../../lib/error';
 import { HTTP_STATUS, parseListQuery, sendSuccess, validateDto } from '../../../lib/http';
 import { type ICustomerDirectory } from '../../customers';
-import { CheckoutDto, CUSTOMER_ORDER_LIST_SPEC, OrderIdParamsDto } from '../dto/order-request.dto';
+import {
+  CancelSellerOrderDto,
+  CheckoutDto,
+  CUSTOMER_ORDER_LIST_SPEC,
+  CustomerSellerOrderParamsDto,
+  OrderIdParamsDto,
+} from '../dto/order-request.dto';
 import { type CheckoutResultDto, toOrderDetailDto, toOrderSummaryDto } from '../dto/order-response.dto';
 import { profileMissing } from '../errors';
 import { type CheckoutService } from '../service/checkout.service';
+import { type OrderActionService } from '../service/order-action.service';
 import { type OrderViewService } from '../service/order-view.service';
 
 type ListEnv = Pick<ApiEnv, 'PAGINATION_DEFAULT_LIMIT' | 'PAGINATION_MAX_LIMIT'>;
@@ -19,6 +26,7 @@ export class OrderController {
   constructor(
     @inject(TOKENS.CheckoutService) private readonly checkoutService: CheckoutService,
     @inject(TOKENS.OrderViewService) private readonly views: OrderViewService,
+    @inject(TOKENS.OrderActionService) private readonly actions: OrderActionService,
     @inject(TOKENS.CustomerDirectory) private readonly customers: ICustomerDirectory,
     @inject(TOKENS.Env) private readonly env: ListEnv,
   ) {}
@@ -49,6 +57,19 @@ export class OrderController {
     const { orderId } = await validateDto(OrderIdParamsDto, req.params);
     const { customerId } = await this.callerOf(req);
     sendSuccess(res, HTTP_STATUS.OK, toOrderDetailDto(await this.views.getForCustomer(customerId, orderId)));
+  };
+
+  /** UC-OR-2: answers with the whole order after the change. */
+  cancelSellerOrder = async (req: Request, res: Response): Promise<void> => {
+    const { orderId, sellerOrderId } = await validateDto(CustomerSellerOrderParamsDto, req.params);
+    const { note } = await validateDto(CancelSellerOrderDto, req.body ?? {});
+    const caller = await this.callerOf(req);
+    await this.actions.customerCancel(caller, orderId, sellerOrderId, note ?? null);
+    sendSuccess(
+      res,
+      HTTP_STATUS.OK,
+      toOrderDetailDto(await this.views.getForCustomer(caller.customerId, orderId)),
+    );
   };
 
   private async callerOf(req: Request): Promise<{ customerId: string; userId: string }> {

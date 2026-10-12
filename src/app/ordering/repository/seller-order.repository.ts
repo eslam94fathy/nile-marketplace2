@@ -111,6 +111,15 @@ export interface NewSellerOrder {
   acceptDeadlineAt: Date | null;
 }
 
+/** What a transition writes besides the status: only the timestamps and cancel fields it sets. */
+export interface SellerOrderTransition {
+  status: SellerOrderStatus;
+  acceptedAt?: Date;
+  readyAt?: Date;
+  returnedAt?: Date;
+  cancel?: { reason: SellerOrderCancelReason; byUserId: string | null; at: Date };
+}
+
 @injectable()
 export class SellerOrderRepository {
   constructor(@inject(TOKENS.Database) private readonly db: IDatabase) {}
@@ -161,6 +170,78 @@ export class SellerOrderRepository {
       .whereIn('order_id', [...new Set(orderIds)])
       .orderBy([{ column: 'created_at' }, { column: 'id' }]);
     return rows.map(toModel);
+  }
+
+  /** Locks the seller orders of a locked order, in id order (spec 09 §1.2, OR-3). */
+  async lockByOrderId(orderId: string, trx: DbTransaction): Promise<SellerOrder[]> {
+    const rows = await trx<SellerOrderTable>(T)
+      .select(...COLUMNS)
+      .where({ order_id: orderId })
+      .orderBy('id')
+      .forUpdate();
+    return rows.map(toModel);
+  }
+
+  /**
+   * Conditional transition (spec 09 §1.2): applies only if the status is still one of `from`.
+   * Returns the row after the change, or null when it had moved on.
+   */
+  async transition(
+    id: string,
+    from: readonly SellerOrderStatus[],
+    change: SellerOrderTransition,
+    trx: DbTransaction,
+  ): Promise<SellerOrder | null> {
+    const [row] = await trx<SellerOrderTable>(T)
+      .update({
+        status: change.status,
+        ...(change.acceptedAt ? { accepted_at: change.acceptedAt } : {}),
+        ...(change.readyAt ? { ready_at: change.readyAt } : {}),
+        ...(change.returnedAt ? { returned_at: change.returnedAt } : {}),
+        ...(change.cancel
+          ? {
+              cancel_reason: change.cancel.reason,
+              cancelled_by_user_id: change.cancel.byUserId,
+              cancelled_at: change.cancel.at,
+            }
+          : {}),
+        updated_at: trx.fn.now(),
+      })
+      .where({ id })
+      .whereIn('status', [...from])
+      .returning<SellerOrderRow[]>(COLUMNS);
+    return row ? toModel(row) : null;
+  }
+
+  /** Partial item cancellation (spec 09 §3.5 step 3), under the order lock. */
+  async updateMoney(
+    id: string,
+    money: { subtotal: Money; commission: Money; sellerNet: Money },
+    trx: DbTransaction,
+  ): Promise<void> {
+    await trx<SellerOrderTable>(T)
+      .update({
+        subtotal: money.subtotal.toString(),
+        commission: money.commission.toString(),
+        seller_net: money.sellerNet.toString(),
+        updated_at: trx.fn.now(),
+      })
+      .where({ id });
+  }
+
+  /**
+   * Orders with a placed seller order past its acceptance deadline, oldest deadline first, read
+   * without locks (OR-5): idx_seller_orders_accept_deadline_at WHERE status = 'placed'.
+   */
+  async findOrderIdsPastAcceptDeadline(now: Date, limit: number): Promise<string[]> {
+    const rows = await this.db
+      .knex<SellerOrderTable>(T)
+      .select('order_id')
+      .where({ status: SellerOrderStatus.PLACED })
+      .where('accept_deadline_at', '<', now)
+      .orderBy('accept_deadline_at')
+      .limit(limit);
+    return [...new Set(rows.map((row) => row.order_id))];
   }
 
   /** One of the seller's orders, never while it awaits payment (spec 09 §4.2). */

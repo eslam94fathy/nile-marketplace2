@@ -1,7 +1,17 @@
-import { IsIn, IsString } from 'class-validator';
-import { FieldType, FilterOp, IsMoney, type ListSpec, UuidField } from '../../../lib/http';
+import { IsIn, IsString, ValidateIf } from 'class-validator';
+import {
+  FieldType,
+  FilterOp,
+  IntField,
+  IsMoney,
+  type ListSpec,
+  Optional,
+  StrField,
+  UuidField,
+} from '../../../lib/http';
 import { PaymentMethod } from '../../payments';
-import { OrderStatus, SellerOrderStatus } from '../enums';
+import { NOTE_MAX_LENGTH, ORDER_LINE_MAX_QUANTITY } from '../constants';
+import { ItemCancelReason, OrderStatus, SellerOrderStatus } from '../enums';
 
 /** Request DTOs for spec 09 §4. Notation: docs/spec/01-api-conventions.md §1.1. */
 
@@ -77,3 +87,41 @@ export const SELLER_ORDER_LIST_SPEC: ListSpec = {
   },
   defaultSort: '-createdAt',
 };
+
+/** `POST /orders/:orderId/seller-orders/:sellerOrderId/cancel` (spec 09 §4.1.4). */
+export class CustomerSellerOrderParamsDto {
+  @UuidField()
+  orderId!: string;
+
+  @UuidField()
+  sellerOrderId!: string;
+}
+
+export class SellerOrderItemParamsDto {
+  @UuidField()
+  sellerOrderId!: string;
+
+  @UuidField()
+  itemId!: string;
+}
+
+/** Customer and seller cancellation of a whole seller order (spec 09 §4.1.4, §4.2). */
+export class CancelSellerOrderDto {
+  @Optional()
+  @StrField(1, NOTE_MAX_LENGTH)
+  note?: string;
+}
+
+/** `POST /seller/orders/:sellerOrderId/items/:itemId/cancel` (spec 09 §4.2). */
+export class CancelOrderItemDto {
+  @IntField(1, ORDER_LINE_MAX_QUANTITY)
+  quantity!: number;
+
+  @IsIn(Object.values(ItemCancelReason))
+  reason!: ItemCancelReason;
+
+  /** Required when the reason is `other`. */
+  @ValidateIf((dto: CancelOrderItemDto) => dto.reason === ItemCancelReason.OTHER || dto.note !== undefined)
+  @StrField(1, NOTE_MAX_LENGTH)
+  note?: string;
+}

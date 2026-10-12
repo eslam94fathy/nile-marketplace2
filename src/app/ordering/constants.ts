@@ -14,9 +14,18 @@ export const ORDERING_PATHS = {
   ORDER: '/orders/:orderId',
   SELLER_ORDERS: '/seller/orders',
   SELLER_ORDER: '/seller/orders/:sellerOrderId',
+  CUSTOMER_CANCEL: '/orders/:orderId/seller-orders/:sellerOrderId/cancel',
+  SELLER_ACCEPT: '/seller/orders/:sellerOrderId/accept',
+  SELLER_READY: '/seller/orders/:sellerOrderId/ready',
+  SELLER_CANCEL: '/seller/orders/:sellerOrderId/cancel',
+  SELLER_ITEM_CANCEL: '/seller/orders/:sellerOrderId/items/:itemId/cancel',
+  SELLER_RETURN_RECEIVED: '/seller/orders/:sellerOrderId/return-received',
   ADMIN_ORDERS: '/admin/orders',
   ADMIN_ORDER: '/admin/orders/:orderId',
 } as const;
 
 /** `order_status_history.reason` / `order_item_cancellations.note` are VARCHAR(500). */
 export const NOTE_MAX_LENGTH = 500;
+
+/** Mirrors `chk_order_items_quantity` (the cart's per-line limit, DB-Q3). */
+export const ORDER_LINE_MAX_QUANTITY = 99;

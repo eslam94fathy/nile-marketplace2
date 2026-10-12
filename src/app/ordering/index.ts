@@ -9,37 +9,67 @@
 import { type Router } from 'express';
 import { type DependencyContainer } from 'tsyringe';
 import { type JwtVerifier } from '../../lib/auth';
-import { type ApiEnv } from '../../lib/config';
+import { type ApiEnv, type Env } from '../../lib/config';
 import { TOKENS } from '../../lib/di';
 import { type OpenApiRegistry } from '../../lib/http';
+import { type JobDefinition } from '../../lib/jobs';
 import { type ILogger } from '../../lib/logger';
 import { type RateLimiters, requireIdempotency } from '../../lib/middleware';
 import { type ICache } from '../../pkg/cache';
 import { AdminOrderController } from './controller/admin-order.controller';
 import { OrderController } from './controller/order.controller';
 import { SellerOrderController } from './controller/seller-order.controller';
+import { OrderItemCancellationRepository } from './repository/order-item-cancellation.repository';
 import { OrderItemRepository } from './repository/order-item.repository';
 import { OrderRepository } from './repository/order.repository';
 import { SellerOrderRepository } from './repository/seller-order.repository';
 import { StatusHistoryRepository } from './repository/status-history.repository';
 import { orderingRoutes } from './routes';
+import { AcceptanceTimeoutJob } from './service/acceptance-timeout.job';
 import { CheckoutService } from './service/checkout.service';
+import { OrderActionService } from './service/order-action.service';
+import { OrderLifecycleService } from './service/order-lifecycle.service';
 import { OrderViewService } from './service/order-view.service';
 
 export { OrderingErrorCode } from './errors';
 export { OrderStatus, SellerOrderStatus } from './enums';
 
-/** api process. Needs customers, cart, catalog, sellers, inventory, payments and delivery registered first. */
-export function registerOrderingModule(container: DependencyContainer): void {
+/** What both processes need: the repositories and the shared order write path. Needs inventory first. */
+function registerOrderingCore(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.OrderRepository, OrderRepository);
   container.registerSingleton(TOKENS.SellerOrderRepository, SellerOrderRepository);
   container.registerSingleton(TOKENS.OrderItemRepository, OrderItemRepository);
   container.registerSingleton(TOKENS.StatusHistoryRepository, StatusHistoryRepository);
+  container.registerSingleton(TOKENS.OrderItemCancellationRepository, OrderItemCancellationRepository);
+  container.registerSingleton(TOKENS.OrderLifecycleService, OrderLifecycleService);
+}
+
+/** api process. Needs customers, cart, catalog, sellers, inventory, payments and delivery registered first. */
+export function registerOrderingModule(container: DependencyContainer): void {
+  registerOrderingCore(container);
   container.registerSingleton(TOKENS.CheckoutService, CheckoutService);
+  container.registerSingleton(TOKENS.OrderActionService, OrderActionService);
   container.registerSingleton(TOKENS.OrderViewService, OrderViewService);
   container.registerSingleton(TOKENS.OrderController, OrderController);
   container.registerSingleton(TOKENS.SellerOrderController, SellerOrderController);
   container.registerSingleton(TOKENS.AdminOrderController, AdminOrderController);
+}
+
+/** worker process: the order jobs (spec 09 §3.10). Needs inventory registered first. */
+export function createOrderingJobs(
+  container: DependencyContainer,
+  env: Pick<Env, 'JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS' | 'ORDER_JOBS_BATCH_SIZE'>,
+): JobDefinition[] {
+  registerOrderingCore(container);
+  container.registerSingleton(TOKENS.AcceptanceTimeoutJob, AcceptanceTimeoutJob);
+  const timeout = container.resolve<AcceptanceTimeoutJob>(TOKENS.AcceptanceTimeoutJob);
+  return [
+    {
+      name: 'seller-acceptance-timeout',
+      intervalMs: env.JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS,
+      run: () => timeout.run(env.ORDER_JOBS_BATCH_SIZE),
+    },
+  ];
 }
 
 /** The module's HTTP routes, mounted by the composition root at `basePath` (`/api/v1`). */

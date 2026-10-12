@@ -87,6 +87,22 @@ export class OrderItemRepository {
     return rows.map(toModel);
   }
 
+  /** Partial cancellation (spec 09 §3.5 step 1), under the order lock the caller holds. */
+  async setCancelledQuantity(
+    id: string,
+    cancelledQuantity: number,
+    lineTotal: Money,
+    trx: DbTransaction,
+  ): Promise<void> {
+    await trx<OrderItemTable>(T)
+      .update({
+        cancelled_quantity: cancelledQuantity,
+        line_total: lineTotal.toString(),
+        updated_at: trx.fn.now(),
+      })
+      .where({ id });
+  }
+
   /** The lines of seller orders: WHERE seller_order_id = ANY(?) over idx_order_items_seller_order_id (G20). */
   async findBySellerOrderIds(sellerOrderIds: readonly string[], trx?: DbTransaction): Promise<OrderItem[]> {
     if (sellerOrderIds.length === 0) return [];

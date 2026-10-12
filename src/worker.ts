@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { createIdentityJobs } from './app/identity';
+import { createOrderingJobs } from './app/ordering';
 import { createWorkerContainer } from './container';
 import { createEventHandlers } from './event-handlers';
 import { closeInfrastructure, createWorkerInfrastructure } from './infrastructure';
@@ -41,6 +42,7 @@ async function main(): Promise<void> {
   });
   for (const job of createCleanupJobs(knex, infra.clock, env)) jobs.register(job);
   for (const job of createIdentityJobs(container, env)) jobs.register(job);
+  for (const job of createOrderingJobs(container, env)) jobs.register(job);
   jobs.start();
 
   logger.info('worker started');

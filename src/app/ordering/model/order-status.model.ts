@@ -31,8 +31,11 @@ export function deriveOrderStatus(sellerOrderStatuses: readonly SellerOrderStatu
     : OrderStatus.IN_PROGRESS;
 }
 
+export type ClosedOrderStatus =
+  typeof OrderStatus.COMPLETED | typeof OrderStatus.PARTIALLY_COMPLETED | typeof OrderStatus.CANCELLED;
+
 /** A closed order (completed, partially completed or cancelled) never changes again. */
-export const isClosed = (status: OrderStatus): boolean =>
+export const isClosed = (status: OrderStatus): status is ClosedOrderStatus =>
   status === OrderStatus.COMPLETED ||
   status === OrderStatus.PARTIALLY_COMPLETED ||
   status === OrderStatus.CANCELLED;

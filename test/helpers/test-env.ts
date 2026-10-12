@@ -89,6 +89,8 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     CART_MAX_LINES: '50',
     // ordering
     SELLER_ACCEPT_TIMEOUT_HOURS: '24',
+    JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS: '60000',
+    ORDER_JOBS_BATCH_SIZE: '100',
     // secrets in event payloads
     SECRETS_ENCRYPTION_KEYS: JSON.stringify({ [TEST_SECRETS_KEY_ID]: TEST_SECRETS_KEY.toString('base64') }),
     SECRETS_ENCRYPTION_ACTIVE_KEY_ID: TEST_SECRETS_KEY_ID,

@@ -113,6 +113,15 @@ export interface NewOrder {
   placedAt: Date | null;
 }
 
+export interface OrderStateUpdate {
+  status: OrderStatus;
+  itemsTotal: Money;
+  deliveryFee: Money;
+  total: Money;
+  completedAt: Date | null;
+  cancelledAt: Date | null;
+}
+
 @injectable()
 export class OrderRepository {
   constructor(@inject(TOKENS.Database) private readonly db: IDatabase) {}
@@ -160,6 +169,34 @@ export class OrderRepository {
       .where({ id })
       .first<OrderRow | undefined>();
     return row ? toModel(row) : null;
+  }
+
+  /**
+   * Locks the order row (`FOR UPDATE`): every write that touches a checkout takes it first (spec 09
+   * §1.2, OR-3). With `skipLocked` a busy order returns null (the jobs, OR-5).
+   */
+  async lock(id: string, trx: DbTransaction, options: { skipLocked?: boolean } = {}): Promise<Order | null> {
+    const qb = trx<OrderTable>(T)
+      .select(...COLUMNS)
+      .where({ id });
+    void (options.skipLocked ? qb.forUpdate().skipLocked() : qb.forUpdate());
+    const row = await qb.first<OrderRow | undefined>();
+    return row ? toModel(row) : null;
+  }
+
+  /** Writes the derived state computed under the order lock the caller holds (spec 09 §1.1, §3.9). */
+  async updateState(id: string, state: OrderStateUpdate, trx: DbTransaction): Promise<void> {
+    await trx<OrderTable>(T)
+      .update({
+        status: state.status,
+        items_total: state.itemsTotal.toString(),
+        delivery_fee: state.deliveryFee.toString(),
+        total: state.total.toString(),
+        completed_at: state.completedAt,
+        cancelled_at: state.cancelledAt,
+        updated_at: trx.fn.now(),
+      })
+      .where({ id });
   }
 
   /** One batched `id IN (...)` query (G20). */

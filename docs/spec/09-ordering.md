@@ -1,6 +1,6 @@
 # Spec 09 — ordering
 
-Status: **v1.0 APPROVED (2026-10-12).** Approved by the user with the Phase 5 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
+Status: **v1.1 APPROVED (2026-10-12).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: `amountCancelled` when the last units are cancelled (OR-12); what the order totals count (OR-13). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -251,3 +251,5 @@ Consumed: `payment.paid`, `payment.failed` (`ordering.payment-updates`); `shipme
 | OR-9 | Read models: business names come live from `sellers.getSummaries`; `OrderSummaryDto.itemCount` = Σ open quantities (`quantity − cancelled_quantity`); detail views load seller orders, items and histories with one batched query each; `canCancel` is `false` while the order is `pending_payment` (P5-Q13) | §4 |
 | OR-10 | The checkout `201` body is stored and replayed by the idempotency layer as is; a replay may show `checkoutUrl: null`, and the app then calls §4.1.2. The `checkout` rate limit (per user, fail closed) covers `POST /checkout` and §4.1.2 (P5-Q12) | §3.1, §4.1 |
 | OR-11 | `KASHIER_REDIRECT_URL` is an https app link agreed with the mobile team before staging; the app never trusts the redirect and reads `GET /orders/:id` (P5-Q14) | §4.1.2 |
+| OR-12 | When an item cancellation leaves no open unit, the seller order becomes `cancelled` and only `seller_order.cancelled` is published; its `amountCancelled` is the seller order's subtotal **before** that item cancellation, so the refund (Kashier) or COD reduction covers the last units too (Phase 5 step 4, v1.1) | §3.5 |
+| OR-13 | A cancelled or returned seller order keeps its own `subtotal` (the record of what was cancelled). The order's `items_total` sums only the seller orders that are neither `cancelled` nor `returned_to_seller`, recomputed under the order lock after every change, and `total = items_total + delivery_fee`, so the order total is always what the customer still owes (it matches the COD payment amount). The close step then zeroes the fee if nothing was delivered (Phase 5 step 6, v1.1) | §1.1, §3.2–§3.9 |

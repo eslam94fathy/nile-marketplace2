@@ -201,6 +201,12 @@ const orderingShape = {
   SELLER_ACCEPT_TIMEOUT_HOURS: positiveInt(24 * 30),
 };
 
+/** ordering jobs (spec 09 §3.10, OR-5, OR-8), worker only. */
+const orderJobsShape = {
+  JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS: positiveInt(3_600_000),
+  ORDER_JOBS_BATCH_SIZE: positiveInt(1_000),
+};
+
 /** Invites are also created by the seed-admin CLI. */
 const inviteShape = {
   INVITE_TTL_HOURS: positiveInt(24 * 30),
@@ -309,6 +315,7 @@ export const workerEnvSchema = z
     ...brokerConnectionShape,
     ...messagingShape,
     ...jobsShape,
+    ...orderJobsShape,
     ...secretsShape,
     ...emailShape,
   })

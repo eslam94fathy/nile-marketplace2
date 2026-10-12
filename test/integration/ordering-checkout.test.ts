@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   type AdminOrderDetailDto,
@@ -10,13 +9,11 @@ import {
   type SellerOrderDto,
 } from '../../src/app/ordering/dto/order-response.dto';
 import { errorBody, successBody } from '../helpers/http';
-import { API } from '../helpers/identity';
 import { signTestAccessToken } from '../helpers/jwt';
-import { orderFixtures } from '../helpers/order-fixtures';
+import { CAIRO_FEE as FEE, orderingApi } from '../helpers/ordering-api';
 import { startTestApp, type TestApp } from '../helpers/test-app';
 
 const UNKNOWN_ID = '0192f5e0-0000-7000-8000-000000000000';
-const FEE = '50.00';
 
 function must<T>(value: T | undefined): T {
   if (value === undefined) throw new Error('expected a value');
@@ -26,80 +23,19 @@ function must<T>(value: T | undefined): T {
 /* Spec 09 UC-OR-1 and the order views (§4.1.3, §4.2, §4.3) over HTTP, on real Postgres + Redis. */
 describe('ordering: COD checkout and order views', () => {
   let t: TestApp;
-  let fx: ReturnType<typeof orderFixtures>;
+  let api: ReturnType<typeof orderingApi>;
   let cairoId: string;
   let alexandriaId: string;
   let adminToken: string;
 
   const knex = () => t.infra.db.knex;
-  const as = (token: string | undefined) => {
-    const auth = (req: request.Test) => (token ? req.set('Authorization', `Bearer ${token}`) : req);
-    return {
-      get: (path: string) => auth(request(t.app).get(`${API}${path}`)),
-      checkout: (body: object, key: string | null = randomUUID()) => {
-        const req = auth(request(t.app).post(`${API}/checkout`));
-        return (key ? req.set('Idempotency-Key', key) : req).send(body);
-      },
-    };
-  };
-
-  /** A customer with an address in `governorateId` (Cairo by default) and a token. */
-  async function customer(governorateId = cairoId) {
-    const { customerId, userId } = await fx.insertCustomer();
-    const [address] = await knex()('customer_addresses')
-      .insert({
-        customer_id: customerId,
-        governorate_id: governorateId,
-        label: 'Home',
-        recipient_name: 'Mona Ali',
-        recipient_phone: '+201001234567',
-        city: 'Cairo',
-        area: 'Maadi',
-        street: 'Road 9',
-        building: '12',
-        floor: '3',
-        apartment: null,
-        landmark: null,
-        is_default: true,
-      })
-      .returning<{ id: string }[]>('id');
-    if (!address) throw new Error('fixture');
-    return {
-      customerId,
-      userId,
-      addressId: address.id,
-      token: await signTestAccessToken({ sub: userId, role: 'customer' }),
-    };
-  }
-
-  /** An active, visible variant with stock, of a fresh approved seller unless one is given. */
-  async function listedVariant(options: { price?: string; onHand?: number; sellerId?: string } = {}) {
-    const price = options.price ?? '100.00';
-    const seller = options.sellerId ? { sellerId: options.sellerId, userId: '' } : await fx.insertSeller();
-    const categoryId = await fx.insertCategory();
-    const productId = await fx.insertProduct(seller.sellerId, categoryId, {
-      status: 'active',
-      published_at: new Date(),
-      min_price: price,
-      max_price: price,
-      in_stock: true,
-    });
-    const variantId = await fx.insertVariant(productId, seller.sellerId, { price });
-    await fx.insertInventoryItem(variantId, options.onHand ?? 10, 0);
-    return { variantId, productId, sellerId: seller.sellerId, sellerUserId: seller.userId };
-  }
-
-  async function fillCart(customerId: string, lines: { variantId: string; quantity: number }[]) {
-    const cartId =
-      (await knex()('carts').where({ customer_id: customerId }).first<{ id: string } | undefined>('id'))
-        ?.id ?? (await fx.insertCart(customerId));
-    for (const line of lines) await fx.insertCartItem(cartId, line.variantId, line.quantity);
-  }
-
-  const stockOf = (variantId: string) =>
-    knex()('inventory_items')
-      .where({ variant_id: variantId })
-      .first<{ on_hand: number; reserved: number }>('on_hand', 'reserved');
+  const fx = () => api.fx;
+  const as = (token: string | undefined) => api.as(token);
+  const customer = (governorateId?: string) => api.customer(governorateId);
+  const listedVariant = (options?: { price?: string; onHand?: number }) => api.listedVariant(options);
+  const fillCart = (customerId: string, lines: { variantId: string; quantity: number }[]) =>
+    api.fillCart(customerId, lines);
+  const stockOf = (variantId: string) => api.stockOf(variantId);
   const cartLineCount = async (customerId: string) =>
     Number(
       (
@@ -119,27 +55,24 @@ describe('ordering: COD checkout and order views', () => {
     const buyer = await customer();
     const a = await listedVariant({ price: '100.00' });
     const b = await listedVariant({ price: '33.33' });
-    await fillCart(buyer.customerId, [
-      { variantId: a.variantId, quantity: 2 },
-      { variantId: b.variantId, quantity: 1 },
-    ]);
-    const res = await as(buyer.token).checkout({
-      addressId: buyer.addressId,
-      paymentMethod: 'cod',
-      expectedTotal: '283.33',
-    });
-    expect(res.status).toBe(201);
-    return { buyer, a, b, result: successBody<CheckoutResultDto>(res).data };
+    const result = await api.placeOrder(
+      buyer,
+      [
+        { variantId: a.variantId, quantity: 2 },
+        { variantId: b.variantId, quantity: 1 },
+      ],
+      '283.33',
+    );
+    return { buyer, a, b, result };
   }
 
   beforeAll(async () => {
     t = await startTestApp();
-    fx = orderFixtures(knex());
-    cairoId = await fx.governorateId();
-    // Set before the first request reads (and caches) the governorates.
-    await knex()('governorates').where({ id: cairoId }).update({ delivery_fee: FEE });
+    api = orderingApi(t);
+    await api.init();
+    cairoId = api.cairoId();
     alexandriaId = (await knex()('governorates').where({ code: 'EG-ALX' }).first<{ id: string }>('id')).id;
-    adminToken = await signTestAccessToken({ sub: await fx.insertUser('admin'), role: 'admin' });
+    adminToken = await signTestAccessToken({ sub: await fx().insertUser('admin'), role: 'admin' });
   });
   afterAll(async () => {
     await t.close();
@@ -259,7 +192,7 @@ describe('ordering: COD checkout and order views', () => {
       const body = { addressId: UNKNOWN_ID, paymentMethod: 'cod', expectedTotal: '1.00' };
       expect((await as(undefined).checkout(body)).status).toBe(401);
       const sellerToken = await signTestAccessToken({
-        sub: (await fx.insertSeller()).userId,
+        sub: (await fx().insertSeller()).userId,
         role: 'seller',
       });
       expect((await as(sellerToken).checkout(body)).status).toBe(403);

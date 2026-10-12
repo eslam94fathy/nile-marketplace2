@@ -63,6 +63,34 @@ export const orderNotFound = () => new AppError(C.ORDER_NOT_FOUND, 'Order not fo
 export const sellerOrderNotFound = () =>
   new AppError(C.SELLER_ORDER_NOT_FOUND, 'Seller order not found', S.NOT_FOUND);
 
+export const sellerOrderInvalidStatusTransition = (status: string) =>
+  new AppError(
+    C.SELLER_ORDER_INVALID_STATUS_TRANSITION,
+    `This action is not allowed while the seller order is ${status}`,
+    S.CONFLICT,
+  );
+
+/** Customer: only while placed. Seller: until it is picked up (Q-31). */
+export const sellerOrderNotCancellable = (status: string) =>
+  new AppError(
+    C.SELLER_ORDER_NOT_CANCELLABLE,
+    `A ${status} seller order can no longer be cancelled`,
+    S.CONFLICT,
+  );
+
+export const orderItemNotFound = () =>
+  new AppError(C.ORDER_ITEM_NOT_FOUND, 'Order item not found', S.NOT_FOUND);
+
+export const itemCancelQuantityInvalid = (open: number) =>
+  new AppError(
+    C.ITEM_CANCEL_QUANTITY_INVALID,
+    `At most ${open} can still be cancelled`,
+    S.UNPROCESSABLE_ENTITY,
+    {
+      details: [{ field: 'quantity', value: String(open), constraint: 'max', message: `open: ${open}` }],
+    },
+  );
+
 /** Registration creates the user and the profile in one transaction, so this is a bug (as cart CT-8). */
 export const profileMissing = (role: string, userId: string) =>
   internalError(new Error(`${role}-role user ${userId} has no ${role} profile`));
