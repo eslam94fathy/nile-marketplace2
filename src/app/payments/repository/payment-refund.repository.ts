@@ -1,10 +1,28 @@
-import { injectable } from 'tsyringe';
-import { type DbTransaction } from '../../../lib/db';
-import { type Money } from '../../../lib/money';
+import { inject, injectable } from 'tsyringe';
+import { type DbExecutor, type DbTransaction, type IDatabase } from '../../../lib/db';
+import { TOKENS } from '../../../lib/di';
+import { applyListQuery, type ParsedListQuery } from '../../../lib/http';
+import { Money } from '../../../lib/money';
 import { PAYMENTS_TABLES } from '../constants';
 import { type RefundReason, RefundStatus } from '../enums';
+import { type PaymentRefund } from '../model/refund.model';
 
 const T = PAYMENTS_TABLES.PAYMENT_REFUNDS;
+const P = PAYMENTS_TABLES.PAYMENTS;
+/** Refund columns plus the payment's order; one within-module join (G20). */
+const COLUMNS = [
+  'r.id',
+  'r.payment_id',
+  'p.order_id',
+  'r.seller_order_id',
+  'r.amount',
+  'r.reason',
+  'r.status',
+  'r.provider_refund_ref',
+  'r.recorded_by_user_id',
+  'r.recorded_at',
+  'r.created_at',
+] as const;
 
 interface PaymentRefundTable {
   id: string;
@@ -20,8 +38,38 @@ interface PaymentRefundTable {
   updated_at: Date;
 }
 
+type RefundRow = Omit<PaymentRefundTable, 'updated_at'> & { order_id: string };
+
+function toModel(row: RefundRow): PaymentRefund {
+  return {
+    id: row.id,
+    paymentId: row.payment_id,
+    orderId: row.order_id,
+    sellerOrderId: row.seller_order_id,
+    amount: Money.of(row.amount),
+    reason: row.reason,
+    status: row.status,
+    providerRefundRef: row.provider_refund_ref,
+    recordedByUserId: row.recorded_by_user_id,
+    recordedAt: row.recorded_at,
+    createdAt: row.created_at,
+  };
+}
+
 @injectable()
 export class PaymentRefundRepository {
+  constructor(@inject(TOKENS.Database) private readonly db: IDatabase) {}
+
+  private exec(trx?: DbTransaction): DbExecutor {
+    return trx ?? this.db.knex;
+  }
+
+  private select(trx?: DbTransaction) {
+    return this.exec(trx)(`${T} as r`)
+      .join(`${P} as p`, 'p.id', 'r.payment_id')
+      .select(...COLUMNS);
+  }
+
   /** A refund due, waiting for an admin to do it in the Kashier dashboard and record it (UC-PA-4). */
   async insertPending(
     refund: { paymentId: string; sellerOrderId: string | null; amount: Money; reason: RefundReason },
@@ -37,5 +85,48 @@ export class PaymentRefundRepository {
       recorded_at: null,
       provider_refund_ref: null,
     });
+  }
+
+  async findById(id: string, trx?: DbTransaction): Promise<PaymentRefund | null> {
+    const row = (await this.select(trx).where('r.id', id).first()) as RefundRow | undefined;
+    return row ? toModel(row) : null;
+  }
+
+  /** Refunds of a payment, oldest first: idx_payment_refunds_payment_id. */
+  async listByPaymentId(paymentId: string, trx?: DbTransaction): Promise<PaymentRefund[]> {
+    const rows = (await this.select(trx)
+      .where('r.payment_id', paymentId)
+      .orderBy([{ column: 'r.created_at' }, { column: 'r.id' }])) as RefundRow[];
+    return rows.map(toModel);
+  }
+
+  /**
+   * The admin refund queue, keyset page (`limit + 1` rows): pending ones over
+   * idx_payment_refunds_created_at_id (D-8).
+   */
+  async list(query: ParsedListQuery, trx?: DbTransaction): Promise<PaymentRefund[]> {
+    const rows = (await applyListQuery(this.select(trx), query, 'r.id')) as RefundRow[];
+    return rows.map(toModel);
+  }
+
+  /**
+   * UC-PA-4: `pending_manual → recorded`, conditional so a second record of the same refund is refused.
+   * The caller holds the payment's row lock. Returns false when it was already recorded.
+   */
+  async markRecorded(
+    id: string,
+    record: { providerRefundRef: string; recordedByUserId: string; recordedAt: Date },
+    trx: DbTransaction,
+  ): Promise<boolean> {
+    const updated = await trx<PaymentRefundTable>(T)
+      .update({
+        status: RefundStatus.RECORDED,
+        provider_refund_ref: record.providerRefundRef,
+        recorded_by_user_id: record.recordedByUserId,
+        recorded_at: record.recordedAt,
+        updated_at: trx.fn.now(),
+      })
+      .where({ id, status: RefundStatus.PENDING_MANUAL });
+    return updated === 1;
   }
 }

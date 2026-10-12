@@ -19,6 +19,11 @@ const payment = (overrides: Partial<Payment> = {}): Payment => ({
   amount: Money.of('300.00'),
   collectedAmount: Money.zero(),
   refundedAmount: Money.zero(),
+  session: null,
+  providerTransactionRef: null,
+  paidAt: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
   ...overrides,
 });
 

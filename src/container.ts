@@ -9,7 +9,7 @@ import { registerIdentityModule } from './app/identity';
 import { registerInventoryModule } from './app/inventory';
 import { registerNotificationsModule } from './app/notifications';
 import { registerOrderingModule, registerOrderingWorker } from './app/ordering';
-import { registerPaymentsModule } from './app/payments';
+import { registerPaymentsHttp, registerPaymentsModule } from './app/payments';
 import { TOKENS } from './lib/di';
 import { Outbox } from './lib/events';
 import { type ApiInfrastructure, type CoreInfrastructure, type WorkerInfrastructure } from './infrastructure';
@@ -41,6 +41,7 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
   container.register(TOKENS.PasswordHasher, { useValue: infra.passwordHasher });
   container.register(TOKENS.RateLimiters, { useValue: infra.rateLimiters });
   container.register(TOKENS.OpenApiRegistry, { useValue: infra.openApi });
+  container.register(TOKENS.PaymentGateway, { useValue: infra.paymentGateway });
 
   registerHealthModule(container);
   registerIdentityModule(container);
@@ -51,6 +52,7 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
   registerCatalogModule(container);
   registerCartModule(container);
   registerPaymentsModule(container);
+  registerPaymentsHttp(container);
   registerOrderingModule(container);
   return container;
 }
@@ -58,6 +60,7 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
 export function createWorkerContainer(infra: WorkerInfrastructure): DependencyContainer {
   const container = createCoreContainer(infra);
   container.register(TOKENS.EmailSender, { useValue: infra.emailSender });
+  container.register(TOKENS.PaymentGateway, { useValue: infra.paymentGateway });
 
   registerNotificationsModule(container);
   // catalog.listing-projections reads seller statuses and stock (spec 06 UC-CA-7).

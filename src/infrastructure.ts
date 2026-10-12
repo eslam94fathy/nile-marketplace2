@@ -1,7 +1,7 @@
 import { type Redis } from 'ioredis';
 import { JwtSigner, JwtVerifier } from './lib/auth';
 import { type IClock, SystemClock } from './lib/clock';
-import { type ApiEnv, EmailProvider, type WorkerEnv } from './lib/config';
+import { type ApiEnv, EmailProvider, PaymentGatewayName, type WorkerEnv } from './lib/config';
 import { createKnex, Database } from './lib/db';
 import { PgErrorMapper } from './lib/error';
 import { OpenApiRegistry } from './lib/http';
@@ -11,6 +11,7 @@ import { createRedis } from './lib/redis';
 import { type ICache, RedisCache } from './pkg/cache';
 import { AesGcmSecretBox, type ISecretBox } from './pkg/crypto';
 import { type IEmailSender, MailjetEmailSender, MailpitEmailSender } from './pkg/email';
+import { FakePaymentGateway, type IPaymentGateway, KashierPaymentGateway } from './pkg/payments';
 import { BcryptPasswordHasher, type IPasswordHasher } from './pkg/hashing';
 import { type IMessageBroker, RabbitMqBroker } from './pkg/messaging';
 import { toSeconds, TimeUnit } from './pkg/time';
@@ -30,6 +31,7 @@ export interface CoreInfrastructure<E> {
 
 /** HTTP process: adds Redis (rate limits, idempotency, cache), token verification and API docs. */
 export interface ApiInfrastructure extends CoreInfrastructure<ApiEnv> {
+  paymentGateway: IPaymentGateway;
   redis: Redis;
   cache: ICache;
   jwtVerifier: JwtVerifier;
@@ -42,6 +44,7 @@ export interface ApiInfrastructure extends CoreInfrastructure<ApiEnv> {
 /** Background process: outbox drain, consumers, jobs, email. No Redis, no JWT, no HTTP. */
 export interface WorkerInfrastructure extends CoreInfrastructure<WorkerEnv> {
   emailSender: IEmailSender;
+  paymentGateway: IPaymentGateway;
 }
 
 type CoreEnv = Pick<
@@ -115,6 +118,7 @@ export async function createApiInfrastructure(
     passwordHasher: new BcryptPasswordHasher(env.BCRYPT_COST),
     rateLimiters: new RateLimiters(redis, env, logger),
     openApi: new OpenApiRegistry(),
+    paymentGateway: createPaymentGateway(env),
   };
 }
 
@@ -122,7 +126,11 @@ export async function createWorkerInfrastructure(
   env: Readonly<WorkerEnv>,
   logger: ILogger,
 ): Promise<WorkerInfrastructure> {
-  return { ...(await createCore(env, logger)), emailSender: createEmailSender(env) };
+  return {
+    ...(await createCore(env, logger)),
+    emailSender: createEmailSender(env),
+    paymentGateway: createPaymentGateway(env),
+  };
 }
 
 /** P1-Q2: Mailjet in staging/production, Mailpit locally (the env schema enforces the required keys). */
@@ -141,6 +149,36 @@ export function createEmailSender(env: Readonly<WorkerEnv>): IEmailSender {
   }
   throw new Error('Email provider configuration is incomplete');
 }
+
+/** Where the fake's checkout links point: a reserved name that never resolves (RFC 2606). */
+const FAKE_CHECKOUT_BASE_URL = 'https://fake-kashier.invalid';
+
+/**
+ * Spec 10 PA-5: Kashier in staging/production, the fake locally and in tests (the env schema
+ * enforces which keys each needs). The worker only reads session statuses, which needs no credential
+ * (PA-13), so its Kashier gateway has no secret key or merchant id.
+ */
+export function createPaymentGateway(env: Readonly<Partial<ApiEnv> & WorkerEnvPaymentKeys>): IPaymentGateway {
+  if (env.PAYMENT_GATEWAY === PaymentGatewayName.FAKE) {
+    return new FakePaymentGateway({ apiKey: env.KASHIER_API_KEY, checkoutBaseUrl: FAKE_CHECKOUT_BASE_URL });
+  }
+  if (!env.KASHIER_BASE_URL) throw new Error('Kashier configuration is incomplete');
+  return new KashierPaymentGateway({
+    baseUrl: env.KASHIER_BASE_URL.replace(/\/+$/, ''),
+    apiKey: env.KASHIER_API_KEY,
+    // Only the api creates sessions; the schema requires these there.
+    merchantId: env.KASHIER_MERCHANT_ID ?? '',
+    secretKey: env.KASHIER_SECRET_KEY ?? '',
+    webhookUrl: env.KASHIER_WEBHOOK_URL ?? '',
+    redirectUrl: env.KASHIER_REDIRECT_URL ?? '',
+    timeoutMs: env.KASHIER_HTTP_TIMEOUT_MS,
+  });
+}
+
+type WorkerEnvPaymentKeys = Pick<
+  WorkerEnv,
+  'PAYMENT_GATEWAY' | 'KASHIER_API_KEY' | 'KASHIER_HTTP_TIMEOUT_MS' | 'KASHIER_BASE_URL'
+>;
 
 /** Each close is independent, so one failure doesn't block the rest. */
 export async function closeInfrastructure(infra: ApiInfrastructure | WorkerInfrastructure): Promise<void> {

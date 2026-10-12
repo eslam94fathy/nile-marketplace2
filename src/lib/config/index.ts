@@ -3,6 +3,8 @@ export {
   NodeEnv,
   LogLevelName,
   EmailProvider,
+  PaymentGatewayName,
+  KashierMode,
   apiEnvSchema,
   workerEnvSchema,
   migrateEnvSchema,

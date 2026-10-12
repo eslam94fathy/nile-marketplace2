@@ -6,6 +6,15 @@ export const PAYMENTS_TABLES = {
   PAYMENT_EVENTS: 'payment_events',
 } as const;
 
+/** Paths under /api/v1 (spec 10 §4). The webhook path also appears in http-app.ts (raw body). */
+export const PAYMENTS_PATHS = {
+  KASHIER_WEBHOOK: '/webhooks/kashier',
+  REFUNDS: '/admin/payments/refunds',
+  RECORD_REFUND: '/admin/payments/refunds/:refundId/record',
+  PAYMENT: '/admin/payments/:paymentId',
+  ORDER_PAYMENT: '/admin/orders/:orderId/payment',
+} as const;
+
 /** Queue of the order-adjustments consumer (docs/spec/02-events.md §2). */
 export const ORDER_ADJUSTMENTS_QUEUE = 'payments.order-adjustments';
 

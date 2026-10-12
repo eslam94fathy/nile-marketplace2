@@ -9,6 +9,8 @@ export const TEST_JWT_PUBLIC_KEY_PEM = publicKey.export({ type: 'spki', format: 
 
 export const TEST_SECRETS_KEY_ID = 'test-s1';
 export const TEST_SECRETS_KEY = randomBytes(32);
+/** Signs the fake gateway's webhooks in tests (spec 10 PA-5). */
+export const TEST_KASHIER_API_KEY = 'test-kashier-api-key';
 
 /**
  * A complete, valid environment for EVERY process (api, worker, migrate, seed-admin):
@@ -91,6 +93,10 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     SELLER_ACCEPT_TIMEOUT_HOURS: '24',
     JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS: '60000',
     ORDER_JOBS_BATCH_SIZE: '100',
+    // payments: the fake gateway, signing webhooks with TEST_KASHIER_API_KEY
+    PAYMENT_GATEWAY: 'fake',
+    KASHIER_API_KEY: TEST_KASHIER_API_KEY,
+    KASHIER_HTTP_TIMEOUT_MS: '2000',
     // secrets in event payloads
     SECRETS_ENCRYPTION_KEYS: JSON.stringify({ [TEST_SECRETS_KEY_ID]: TEST_SECRETS_KEY.toString('base64') }),
     SECRETS_ENCRYPTION_ACTIVE_KEY_ID: TEST_SECRETS_KEY_ID,

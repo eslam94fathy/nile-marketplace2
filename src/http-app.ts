@@ -9,6 +9,7 @@ import { createCustomersRouter } from './app/customers';
 import { createDeliveryRouter } from './app/delivery';
 import { createIdentityRouter } from './app/identity';
 import { createOrderingRouter } from './app/ordering';
+import { createPaymentsRouter, createPaymentsWebhookRouter, PAYMENTS_PATHS } from './app/payments';
 import { createSellersRouter } from './app/sellers';
 import { createErrorHandler } from './lib/error';
 import { createDocsRouter, recordMountPath } from './lib/http';
@@ -18,7 +19,7 @@ import { type ApiInfrastructure } from './infrastructure';
 export const API_BASE_PATH = '/api/v1';
 export const DOCS_PATH = `${API_BASE_PATH}/docs`;
 /** Needs the raw body for signature verification (architecture §4, §7.2). */
-export const KASHIER_WEBHOOK_PATH = `${API_BASE_PATH}/webhooks/kashier`;
+export const KASHIER_WEBHOOK_PATH = `${API_BASE_PATH}${PAYMENTS_PATHS.KASHIER_WEBHOOK}`;
 
 const API_INFO = { title: 'Nile Marketplace API', version: '1.0.0' } as const;
 const BYTES_PER_KB = 1024;
@@ -58,6 +59,9 @@ export function createApp(
   // Health probes are not rate limited (architecture §4).
   app.use(HEALTH_BASE_PATH, recordMountPath(), createHealthRouter(container));
 
+  // The Kashier webhook is signature-checked and not rate limited (spec 10 §4.1, architecture §10).
+  app.use(API_BASE_PATH, recordMountPath(), createPaymentsWebhookRouter(container, API_BASE_PATH));
+
   // 6. Global rate limit for the API.
   app.use(API_BASE_PATH, infra.rateLimiters.limit(RateLimitClass.GENERAL, byIp));
 
@@ -70,6 +74,7 @@ export function createApp(
   app.use(API_BASE_PATH, recordMountPath(), createCatalogRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createCartRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createOrderingRouter(container, API_BASE_PATH));
+  app.use(API_BASE_PATH, recordMountPath(), createPaymentsRouter(container, API_BASE_PATH));
   for (const { path, router } of options.extraRouters ?? []) app.use(path, recordMountPath(), router);
 
   // 8. 404, then the global error handler.

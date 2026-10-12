@@ -127,11 +127,19 @@ export const TOKENS = {
   AdminOrderController: Symbol.for('AdminOrderController'),
 
   // payments module
+  /** pkg/payments IPaymentGateway (Kashier or the fake), infrastructure. */
+  PaymentGateway: Symbol.for('PaymentGateway'),
   PaymentRepository: Symbol.for('PaymentRepository'),
   PaymentRefundRepository: Symbol.for('PaymentRefundRepository'),
   /** Public API of payments (spec 10 §2), injected into ordering. */
   PaymentDirectory: Symbol.for('PaymentDirectory'),
   OrderAdjustmentService: Symbol.for('OrderAdjustmentService'),
+  PaymentEventRepository: Symbol.for('PaymentEventRepository'),
+  PaymentSettlementService: Symbol.for('PaymentSettlementService'),
+  KashierWebhookService: Symbol.for('KashierWebhookService'),
+  PaymentAdminService: Symbol.for('PaymentAdminService'),
+  PaymentWebhookController: Symbol.for('PaymentWebhookController'),
+  PaymentAdminController: Symbol.for('PaymentAdminController'),
 
   // notifications module
   NotificationLogRepository: Symbol.for('NotificationLogRepository'),

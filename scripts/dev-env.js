@@ -107,6 +107,11 @@ const values = {
   SELLER_ACCEPT_TIMEOUT_HOURS: '24',
   JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS: '60000',
   ORDER_JOBS_BATCH_SIZE: '100',
+  // payments (P5-Q9): the fake gateway locally; set PAYMENT_GATEWAY=kashier plus the Kashier keys
+  // (test environment) to talk to Kashier. The fake signs webhooks with this key.
+  PAYMENT_GATEWAY: 'fake',
+  KASHIER_API_KEY: randomBytes(16).toString('hex'),
+  KASHIER_HTTP_TIMEOUT_MS: '10000',
   // email: local inbox by default (P1-Q2); switch EMAIL_PROVIDER to mailjet to send real mail
   EMAIL_PROVIDER: 'mailpit',
   EMAIL_HTTP_TIMEOUT_MS: '10000',

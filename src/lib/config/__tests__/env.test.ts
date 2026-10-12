@@ -169,8 +169,52 @@ describe('lib/config per-process env schemas (P1-Q1)', () => {
     const noMailpitUrl = testEnvInput();
     delete noMailpitUrl.MAILPIT_URL;
     expect(invalidKeys(() => loadEnv(workerEnvSchema, noMailpitUrl))).toEqual(['MAILPIT_URL']);
-    expect(invalidKeys(() => loadEnv(workerEnvSchema, testEnvInput({ NODE_ENV: 'production' })))).toEqual([
-      'EMAIL_PROVIDER',
+    expect(
+      invalidKeys(() => loadEnv(workerEnvSchema, testEnvInput({ NODE_ENV: 'production', ...KASHIER_TEST }))),
+    ).toEqual(['EMAIL_PROVIDER']);
+  });
+
+  it('payments: fake only outside staging/production; kashier needs its keys and a host matching its mode', () => {
+    expect(invalidKeys(() => loadEnv(apiEnvSchema, testEnvInput({ NODE_ENV: 'staging' })))).toEqual([
+      'PAYMENT_GATEWAY',
+    ]);
+    // The worker only reads session statuses: no secret key, merchant id or URLs needed (PA-13).
+    expect(invalidKeys(() => loadEnv(workerEnvSchema, testEnvInput({ PAYMENT_GATEWAY: 'kashier' })))).toEqual(
+      ['KASHIER_BASE_URL', 'KASHIER_MODE'],
+    );
+    expect(invalidKeys(() => loadEnv(apiEnvSchema, testEnvInput({ PAYMENT_GATEWAY: 'kashier' })))).toEqual([
+      'KASHIER_BASE_URL',
+      'KASHIER_MERCHANT_ID',
+      'KASHIER_MODE',
+      'KASHIER_REDIRECT_URL',
+      'KASHIER_SECRET_KEY',
+      'KASHIER_WEBHOOK_URL',
+    ]);
+    expect(() => loadEnv(apiEnvSchema, testEnvInput(KASHIER_TEST))).not.toThrow();
+    expect(
+      invalidKeys(() => loadEnv(apiEnvSchema, testEnvInput({ ...KASHIER_TEST, KASHIER_MODE: 'live' }))),
+    ).toEqual(['KASHIER_BASE_URL']);
+    expect(
+      invalidKeys(() =>
+        loadEnv(
+          apiEnvSchema,
+          testEnvInput({ ...KASHIER_TEST, KASHIER_WEBHOOK_URL: 'http://api.nile.test/x' }),
+        ),
+      ),
+    ).toEqual(['KASHIER_WEBHOOK_URL']);
+    expect(invalidKeys(() => loadEnv(apiEnvSchema, testEnvInput({ KASHIER_API_KEY: '' })))).toEqual([
+      'KASHIER_API_KEY',
     ]);
   });
 });
+
+/** A complete Kashier test-environment configuration (placeholder values). */
+const KASHIER_TEST = {
+  PAYMENT_GATEWAY: 'kashier',
+  KASHIER_BASE_URL: 'https://test-api.kashier.io',
+  KASHIER_MODE: 'test',
+  KASHIER_MERCHANT_ID: 'MID-1-2',
+  KASHIER_SECRET_KEY: 'secret$key',
+  KASHIER_REDIRECT_URL: 'https://app.nile.test/payment-return',
+  KASHIER_WEBHOOK_URL: 'https://api.nile.test/api/v1/webhooks/kashier',
+};

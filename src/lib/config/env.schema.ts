@@ -71,6 +71,14 @@ export const LogLevelName = {
   DEBUG: 'debug',
 } as const;
 export const EmailProvider = { MAILJET: 'mailjet', MAILPIT: 'mailpit' } as const;
+export const PaymentGatewayName = { KASHIER: 'kashier', FAKE: 'fake' } as const;
+export const KashierMode = { TEST: 'test', LIVE: 'live' } as const;
+
+/** The Kashier host each mode must use (spec 10 PA-14). */
+const KASHIER_HOST_BY_MODE = {
+  [KashierMode.TEST]: 'https://test-api.kashier.io',
+  [KashierMode.LIVE]: 'https://api.kashier.io',
+} as const;
 
 // ---------------------------------------------------------------------------------------------
 // Sections (plain shapes, combined per process below)
@@ -207,6 +215,28 @@ const orderJobsShape = {
   ORDER_JOBS_BATCH_SIZE: positiveInt(1_000),
 };
 
+/**
+ * Payment gateway, both processes (spec 10 PA-5, PA-9, PA-14). The API key also signs and verifies
+ * the fake's webhooks, so it is always required. Kashier-only keys are checked in `refinePayments`.
+ */
+const paymentGatewayShape = {
+  PAYMENT_GATEWAY: z.enum([PaymentGatewayName.KASHIER, PaymentGatewayName.FAKE]),
+  KASHIER_API_KEY: z.string().min(1),
+  KASHIER_HTTP_TIMEOUT_MS: positiveInt(60_000),
+  KASHIER_BASE_URL: z.url().optional(),
+  KASHIER_MODE: z.enum([KashierMode.TEST, KashierMode.LIVE]).optional(),
+};
+
+/** api only: creating sessions needs the secret key and the merchant id (the worker only reads statuses). */
+const kashierSessionShape = {
+  KASHIER_MERCHANT_ID: z.string().min(1).max(100).optional(),
+  KASHIER_SECRET_KEY: z.string().min(1).optional(),
+  /** https app link the customer returns to (PA-8). */
+  KASHIER_REDIRECT_URL: z.url().optional(),
+  /** Our public webhook URL, sent per session as `serverWebhook`. */
+  KASHIER_WEBHOOK_URL: z.url().optional(),
+};
+
 /** Invites are also created by the seed-admin CLI. */
 const inviteShape = {
   INVITE_TTL_HOURS: positiveInt(24 * 30),
@@ -248,6 +278,44 @@ function refineSecrets(
 ): void {
   if (!(env.SECRETS_ENCRYPTION_ACTIVE_KEY_ID in env.SECRETS_ENCRYPTION_KEYS)) {
     issue(ctx, 'SECRETS_ENCRYPTION_ACTIVE_KEY_ID', 'must name a key in SECRETS_ENCRYPTION_KEYS');
+  }
+}
+
+type PaymentEnv = z.output<z.ZodObject<typeof paymentGatewayShape>> &
+  Partial<z.output<z.ZodObject<typeof kashierSessionShape>>> & { NODE_ENV: string };
+
+/** `createsSessions` = the api, which also needs the session keys. */
+function refinePayments(env: PaymentEnv, ctx: Ctx, createsSessions: boolean): void {
+  if (env.PAYMENT_GATEWAY === PaymentGatewayName.FAKE) {
+    if (env.NODE_ENV === NodeEnv.STAGING || env.NODE_ENV === NodeEnv.PRODUCTION) {
+      issue(ctx, 'PAYMENT_GATEWAY', 'fake is for development and tests only');
+    }
+    return;
+  }
+  const required = ['KASHIER_BASE_URL', 'KASHIER_MODE'] as const;
+  const sessionKeys = [
+    'KASHIER_MERCHANT_ID',
+    'KASHIER_SECRET_KEY',
+    'KASHIER_REDIRECT_URL',
+    'KASHIER_WEBHOOK_URL',
+  ] as const;
+  for (const key of [...required, ...(createsSessions ? sessionKeys : [])]) {
+    if (!env[key]) issue(ctx, key, 'required when PAYMENT_GATEWAY=kashier');
+  }
+  if (
+    env.KASHIER_MODE &&
+    env.KASHIER_BASE_URL &&
+    env.KASHIER_BASE_URL.replace(/\/+$/, '') !== KASHIER_HOST_BY_MODE[env.KASHIER_MODE]
+  ) {
+    issue(
+      ctx,
+      'KASHIER_BASE_URL',
+      `must be ${KASHIER_HOST_BY_MODE[env.KASHIER_MODE]} when KASHIER_MODE=${env.KASHIER_MODE}`,
+    );
+  }
+  for (const key of ['KASHIER_REDIRECT_URL', 'KASHIER_WEBHOOK_URL'] as const) {
+    const url = env[key];
+    if (createsSessions && url && !url.startsWith('https://')) issue(ctx, key, 'must be an https URL');
   }
 }
 
@@ -294,12 +362,15 @@ export const apiEnvSchema = z
     ...catalogShape,
     ...cartShape,
     ...orderingShape,
+    ...paymentGatewayShape,
+    ...kashierSessionShape,
     ...inviteShape,
     ...secretsShape,
   })
   .superRefine((env, ctx) => {
     refinePool(env, ctx);
     refineSecrets(env, ctx);
+    refinePayments(env, ctx, true);
     if (env.PAGINATION_DEFAULT_LIMIT > env.PAGINATION_MAX_LIMIT) {
       issue(ctx, 'PAGINATION_DEFAULT_LIMIT', 'must be <= PAGINATION_MAX_LIMIT');
     }
@@ -316,6 +387,7 @@ export const workerEnvSchema = z
     ...messagingShape,
     ...jobsShape,
     ...orderJobsShape,
+    ...paymentGatewayShape,
     ...secretsShape,
     ...emailShape,
   })
@@ -323,6 +395,7 @@ export const workerEnvSchema = z
     refinePool(env, ctx);
     refineSecrets(env, ctx);
     refineEmail(env, ctx);
+    refinePayments(env, ctx, false);
   });
 
 export type MigrateEnv = z.output<typeof migrateEnvSchema>;

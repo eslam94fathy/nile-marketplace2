@@ -11,6 +11,12 @@ export interface Payment {
   amount: Money;
   collectedAmount: Money;
   refundedAmount: Money;
+  /** The Kashier session (PA-3): all three set together, or none. */
+  session: { id: string; url: string; expiresAt: Date } | null;
+  providerTransactionRef: string | null;
+  paidAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 /** What ordering's order views read (spec 10 §2 `getSummaries`). Amounts are decimal strings. */

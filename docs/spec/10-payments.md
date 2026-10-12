@@ -1,6 +1,6 @@
 # Spec 10 — payments
 
-Status: **v1.1 APPROVED (2026-10-12).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: what Kashier's test environment showed (PA-11…PA-17: no abandon, one open session per order, status mapping, config). Changes from now on need explicit approval and a version bump.
+Status: **v1.2 APPROVED (2026-10-12).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: what Kashier's test environment showed (PA-11…PA-17: no abandon, one open session per order, status mapping, config). v1.2: the worker holds no Kashier secret (PA-18); the webhook answers in the standard envelope (PA-19). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -64,7 +64,7 @@ After refunding in the Kashier dashboard, the admin records it: refund `pending_
 
 ### 4.1 `POST /webhooks/kashier`   auth: webhook (signature) · rate: none (body-size limited) · idem: – (deduped on the provider event id)
 Raw body; no DTO whitelist (the provider's schema is validated by a lenient parser that reads only the fields we need).
-`200 { "received": true }`. Errors: `INVALID_WEBHOOK_SIGNATURE` 401.
+`200 { "success": true, "data": { "received": true } }` (the standard envelope, PA-19). Errors: `INVALID_WEBHOOK_SIGNATURE` 401.
 
 ### 4.2 Admin   auth: admin · rate: general
 ```ts
@@ -129,3 +129,5 @@ Consumed: `seller_order.items_cancelled`, `seller_order.cancelled`, `seller_orde
 | PA-15 | Webhook dedupe id `provider_event_id` = `<event>:<data.transactionId>` (K-5) | UC-PA-1 |
 | PA-16 | `KASHIER_SECRET_KEY` can contain `$`: it is single-quoted in `.env` so neither Node nor docker compose expands it; `.env.example` says so (K-6) | §1 |
 | PA-17 | Kashier checks secret-key calls against an IP allow-list: the staging and production egress IPs must be allow-listed (or the list kept empty) before staging; open item for Phase 8 (K-7) | §1 |
+| PA-18 | Supersedes PA-9 for the worker: it only reads session statuses (PA-13, no credential), so its env has `PAYMENT_GATEWAY`, `KASHIER_API_KEY`, `KASHIER_HTTP_TIMEOUT_MS`, `KASHIER_BASE_URL` and `KASHIER_MODE` only: never the secret key, merchant id, redirect or webhook URL (Phase 5 step 10, v1.2) | §1 |
+| PA-19 | The webhook answers `200` in the standard success envelope (CLAUDE.md §7); Kashier only reads the status code (Phase 5 step 10, v1.2) | §4.1 |
