@@ -255,6 +255,7 @@ The user accepted every recommendation (2026-10-08). Answers are logged in §9.1
 | D-8 | `02-database.md` §6, §8, §9 | `idx_orders_created_at_id`, `idx_payment_events_payment_id`, refund queue index with `id`, `payments.provider_session_url` / `provider_session_expires_at`, `RefundReason` `amount_mismatch`, FK `ON DELETE RESTRICT`, unindexed FKs documented, `order_number_seq` with `orders` | Admin lists, one Kashier session per payment, amount-mismatch refunds (P5-Q4, P5-Q7, P5-Q11) | **Applied** (v1.8, approved 2026-10-12) |
 | D-9 | `02-database.md` §6 | `inventory_reservations.quantity >= 0` (was `> 0`) + `chk_inventory_reservations_released` (released ⇔ 0) | Spec 07 UC-IN-2 lowers the quantity to 0 on a full release | **Applied** (v1.9, approved 2026-10-12) |
 | D-10 | `02-database.md` §10 | `idx_shipments_created_at_desc_id`, `idx_shipments_agent_id_created_at_id`, retry index with `id`, `idx_delivery_agents_created_at_id`, `shipments.seller_order_cancelled_at`, FK `ON DELETE RESTRICT`, no index on `shipment_attempts.agent_id` | Admin and agent lists, a return after a late cancellation (P6-Q3, P6-Q5) | **Applied** (v1.10, approved 2026-10-12) |
+| D-11 | `02-database.md` §0 | Every timestamp a list cursor sorts on is `TIMESTAMPTZ(3)` (10 columns, one migration) | The cursor carries milliseconds; microsecond columns repeated or skipped rows across pages | **Applied** (v1.11, approved 2026-10-12) |
 
 ## 9. Answered log (2026-10-07)
 
