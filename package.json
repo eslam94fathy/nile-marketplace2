@@ -28,7 +28,8 @@
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test": "vitest run",
-    "dev:env": "node scripts/dev-env.js"
+    "dev:env": "node scripts/dev-env.js",
+    "dev:kashier-webhook": "node --env-file=.env scripts/dev-kashier-webhook.js"
   },
   "dependencies": {
     "amqp-connection-manager": "5.0.0",

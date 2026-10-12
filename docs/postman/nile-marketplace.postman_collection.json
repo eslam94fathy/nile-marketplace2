@@ -1,8 +1,8 @@
 {
   "info": {
-    "name": "Nile Marketplace API (Phases 1–5a)",
+    "name": "Nile Marketplace API (Phases 1–5)",
     "_postman_id": "c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01",
-    "description": "Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), COD checkout and orders (spec 09) and delivery reference data (spec 11 §4.1, §4.3).\n\nVariables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.\n\nLocal first run (docker compose):\n1. `docker compose run --rm api node dist/seed-admin.js --email you@example.com`, then set the `email` variable to that address.\n2. Local helpers (Mailpit) → \"Latest email\" → \"Extract OTP / invite token\".\n3. Auth → \"Accept invite\" (sets your password and logs you in).\n4. Admin requests now work with the stored access token.\n\nCustomer / seller flow: set `email` to a fresh address → \"Register customer\" (or \"Register seller\") → Local helpers → \"Latest email\" → \"Extract OTP / invite token\" → Auth → \"Verify email\" (logs you in). \"Delivery\" → \"List governorates\" stores Cairo in `governorateId` first, because addresses and pickup addresses need one.\n\nSample delivery fees and a sample catalog for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees; the catalog has a category tree with attributes and an approved demo seller with active products).\n\nCatalog flow: \"Admin: catalog\" → Create category → Add attribute → Add option (stores `categoryId`, `attributeId`, `optionId`). Then log in as an approved seller → \"Seller: catalog\" → Create product → Add variant (put option ids in `optionIds`, or `[]` in a category without attributes) → Activate. \"Catalog\" (public) → List products / Product detail.\n\nCart flow: log in as a customer → \"Catalog\" → List products → Product detail (stores the first variant in `variantId`) → \"Cart\" → Add item (stores the line in `cartItemId`) → My cart → Change quantity / Remove item / Empty cart.\n\nOrder flow (COD): with items in the cart and an address (`addressId`) in a deliverable governorate → \"Checkout & orders\" → Checkout. The first send usually answers 409 ORDER_TOTAL_CHANGED and stores the current total in `expectedTotal`; send again. It stores `orderId`, `sellerOrderId` and `orderItemId`. Log in as that seller → \"Seller: orders\" → Accept → Ready (or Cancel item quantities / Cancel). Shipment steps arrive with delivery (Phase 6).\n\nTokens are per account: log in as the admin again (Auth → Login) before the \"Admin: …\" folders.\n\nErrors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.",
+    "description": "Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10) and delivery reference data (spec 11 §4.1, §4.3).\n\nVariables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.\n\nLocal first run (docker compose):\n1. `docker compose run --rm api node dist/seed-admin.js --email you@example.com`, then set the `email` variable to that address.\n2. Local helpers (Mailpit) → \"Latest email\" → \"Extract OTP / invite token\".\n3. Auth → \"Accept invite\" (sets your password and logs you in).\n4. Admin requests now work with the stored access token.\n\nCustomer / seller flow: set `email` to a fresh address → \"Register customer\" (or \"Register seller\") → Local helpers → \"Latest email\" → \"Extract OTP / invite token\" → Auth → \"Verify email\" (logs you in). \"Delivery\" → \"List governorates\" stores Cairo in `governorateId` first, because addresses and pickup addresses need one.\n\nSample delivery fees and a sample catalog for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees; the catalog has a category tree with attributes and an approved demo seller with active products).\n\nCatalog flow: \"Admin: catalog\" → Create category → Add attribute → Add option (stores `categoryId`, `attributeId`, `optionId`). Then log in as an approved seller → \"Seller: catalog\" → Create product → Add variant (put option ids in `optionIds`, or `[]` in a category without attributes) → Activate. \"Catalog\" (public) → List products / Product detail.\n\nCart flow: log in as a customer → \"Catalog\" → List products → Product detail (stores the first variant in `variantId`) → \"Cart\" → Add item (stores the line in `cartItemId`) → My cart → Change quantity / Remove item / Empty cart.\n\nOrder flow (COD): with items in the cart and an address (`addressId`) in a deliverable governorate → \"Checkout & orders\" → Checkout. The first send usually answers 409 ORDER_TOTAL_CHANGED and stores the current total in `expectedTotal`; send again. It stores `orderId`, `sellerOrderId` and `orderItemId`. Log in as that seller → \"Seller: orders\" → Accept → Ready (or Cancel item quantities / Cancel). Shipment steps arrive with delivery (Phase 6).\n\nKashier flow (local, PAYMENT_GATEWAY=fake): set `paymentMethod` to kashier → Checkout (the order awaits payment; the fake payment page URL is not a real page). Pay it with `npm run dev:kashier-webhook -- {{orderId}}` (or `... failed`, or an amount to try a mismatch); the worker then places the order. \"Kashier payment page\" asks again for the page while the window is open. Unpaid orders are cancelled by the worker after KASHIER_PAYMENT_TTL_MINUTES. \"Admin: payments\" shows the payment, its webhook events and the refund queue.\n\nTokens are per account: log in as the admin again (Auth → Login) before the \"Admin: …\" folders.\n\nErrors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -128,6 +128,18 @@
     {
       "key": "expectedTotal",
       "value": "0.00"
+    },
+    {
+      "key": "paymentMethod",
+      "value": "cod"
+    },
+    {
+      "key": "paymentId",
+      "value": ""
+    },
+    {
+      "key": "refundId",
+      "value": ""
     },
     {
       "key": "orderId",
@@ -3891,7 +3903,7 @@
     },
     {
       "name": "Checkout & orders",
-      "description": "spec 09 §4.1. Customer role. Checkout is COD only until the Kashier flow lands (Phase 5 PR b), needs an Idempotency-Key and has its own per-user rate limit. Amounts are EGP strings.",
+      "description": "spec 09 §4.1. Customer role. Checkout (paymentMethod cod | kashier) needs an Idempotency-Key and has its own per-user rate limit, shared with \"Kashier payment page\". Amounts are EGP strings.",
       "item": [
         {
           "name": "Checkout",
@@ -3911,6 +3923,8 @@
                   "  const { order } = pm.response.json().data;",
                   "  pm.collectionVariables.set('orderId', order.id);",
                   "  const first = order.sellerOrders[0];",
+                  "  const { kashier } = pm.response.json().data;",
+                  "  if (kashier) console.log('Kashier payment page:', kashier.checkoutUrl, 'until', kashier.expiresAt);",
                   "  if (first) {",
                   "    pm.collectionVariables.set('sellerOrderId', first.id);",
                   "    if (first.items[0]) pm.collectionVariables.set('orderItemId', first.items[0].id);",
@@ -3944,7 +3958,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"addressId\": \"{{addressId}}\",\n  \"paymentMethod\": \"cod\",\n  \"expectedTotal\": \"{{expectedTotal}}\"\n}",
+              "raw": "{\n  \"addressId\": \"{{addressId}}\",\n  \"paymentMethod\": \"{{paymentMethod}}\",\n  \"expectedTotal\": \"{{expectedTotal}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3962,7 +3976,7 @@
                 "checkout"
               ]
             },
-            "description": "Places the cart as one order split per seller, reserves stock and empties the cart (201). CART_EMPTY 422, CART_HAS_ISSUES 409 (details: variant ids), ADDRESS_NOT_FOUND 422, GOVERNORATE_NOT_DELIVERABLE 422, ORDER_TOTAL_CHANGED 409 (details[0].value = current total; stored in expectedTotal), INSUFFICIENT_STOCK 409. A repeat with the same Idempotency-Key replays the first answer."
+            "description": "Places the cart as one order split per seller, reserves stock and empties the cart (201). COD: placed. Kashier: pending_payment, with data.kashier.checkoutUrl (null if Kashier failed: use \"Kashier payment page\"). CART_EMPTY 422, CART_HAS_ISSUES 409 (details: variant ids), ADDRESS_NOT_FOUND 422, GOVERNORATE_NOT_DELIVERABLE 422, ORDER_TOTAL_CHANGED 409 (details[0].value = current total; stored in expectedTotal), INSUFFICIENT_STOCK 409. A repeat with the same Idempotency-Key replays the first answer."
           }
         },
         {
@@ -4060,6 +4074,49 @@
               ]
             },
             "description": "Seller orders with items and timelines, shipping snapshot, payment status. ORDER_NOT_FOUND 404."
+          }
+        },
+        {
+          "name": "Kashier payment page",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/orders/{{orderId}}/payment/kashier-session",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{orderId}}",
+                "payment",
+                "kashier-session"
+              ]
+            },
+            "description": "The payment page of a Kashier order while it awaits payment; the same session every time. ORDER_NOT_FOUND 404, ORDER_NOT_AWAITING_PAYMENT 409 (COD, paid, or the window closed), PAYMENT_PROVIDER_UNAVAILABLE 502 (retry)."
           }
         },
         {
@@ -4603,6 +4660,224 @@
               ]
             },
             "description": "Adds commission per seller order and the full status histories (actor role, actor id, reason)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin: payments",
+      "description": "spec 10 §4.2. Admin role. R1 refunds are done by hand in the Kashier dashboard, then recorded here; the queue lists the refunds due, oldest first.",
+      "item": [
+        {
+          "name": "Payment of an order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  const value = body.data && body.data.id;",
+                  "  if (value) pm.collectionVariables.set('paymentId', value);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/orders/{{orderId}}/payment",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "orders",
+                "{{orderId}}",
+                "payment"
+              ]
+            },
+            "description": "Amounts, Kashier references, refunds and webhook events (no payloads). PAYMENT_NOT_FOUND 404."
+          }
+        },
+        {
+          "name": "Payment detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/payments/{{paymentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "payments",
+                "{{paymentId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Refund queue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  const value = body.data[0] && body.data[0].id;",
+                  "  if (value) pm.collectionVariables.set('refundId', value);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/payments/refunds?status[eq]=pending_manual&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "payments",
+                "refunds"
+              ],
+              "query": [
+                {
+                  "key": "status[eq]",
+                  "value": "pending_manual"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "reason[in]",
+                  "value": "seller_order_cancelled,late_payment_after_expiry",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Record a refund",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"providerRefundRef\": \"KASHIER-REFUND-REF\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/payments/refunds/{{refundId}}/record",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "payments",
+                "refunds",
+                "{{refundId}}",
+                "record"
+              ]
+            },
+            "description": "After refunding in the Kashier dashboard. The payment becomes partially_refunded_manually or refunded_manually. REFUND_NOT_FOUND 404, REFUND_ALREADY_RECORDED 409."
           }
         }
       ]

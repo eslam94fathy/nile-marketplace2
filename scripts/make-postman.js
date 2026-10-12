@@ -60,10 +60,10 @@ const idempotencyKey = { key: 'Idempotency-Key', value: '{{$guid}}' };
 const API = '/api/v1';
 const collection = {
   info: {
-    name: 'Nile Marketplace API (Phases 1–5a)',
+    name: 'Nile Marketplace API (Phases 1–5)',
     _postman_id: 'c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01',
     description: [
-      'Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), COD checkout and orders (spec 09) and delivery reference data (spec 11 §4.1, §4.3).',
+      'Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10) and delivery reference data (spec 11 §4.1, §4.3).',
       '',
       'Variables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.',
       '',
@@ -82,6 +82,8 @@ const collection = {
       'Cart flow: log in as a customer → "Catalog" → List products → Product detail (stores the first variant in `variantId`) → "Cart" → Add item (stores the line in `cartItemId`) → My cart → Change quantity / Remove item / Empty cart.',
       '',
       'Order flow (COD): with items in the cart and an address (`addressId`) in a deliverable governorate → "Checkout & orders" → Checkout. The first send usually answers 409 ORDER_TOTAL_CHANGED and stores the current total in `expectedTotal`; send again. It stores `orderId`, `sellerOrderId` and `orderItemId`. Log in as that seller → "Seller: orders" → Accept → Ready (or Cancel item quantities / Cancel). Shipment steps arrive with delivery (Phase 6).',
+      '',
+      'Kashier flow (local, PAYMENT_GATEWAY=fake): set `paymentMethod` to kashier → Checkout (the order awaits payment; the fake payment page URL is not a real page). Pay it with `npm run dev:kashier-webhook -- {{orderId}}` (or `... failed`, or an amount to try a mismatch); the worker then places the order. "Kashier payment page" asks again for the page while the window is open. Unpaid orders are cancelled by the worker after KASHIER_PAYMENT_TTL_MINUTES. "Admin: payments" shows the payment, its webhook events and the refund queue.',
       '',
       'Tokens are per account: log in as the admin again (Auth → Login) before the "Admin: …" folders.',
       '',
@@ -130,6 +132,9 @@ const collection = {
     { key: 'variantId', value: '' },
     { key: 'cartItemId', value: '' },
     { key: 'expectedTotal', value: '0.00' },
+    { key: 'paymentMethod', value: 'cod' },
+    { key: 'paymentId', value: '' },
+    { key: 'refundId', value: '' },
     { key: 'orderId', value: '' },
     { key: 'sellerOrderId', value: '' },
     { key: 'orderItemId', value: '' },
@@ -973,7 +978,7 @@ if (pm.response.code === 201) {
     {
       name: 'Checkout & orders',
       description:
-        'spec 09 §4.1. Customer role. Checkout is COD only until the Kashier flow lands (Phase 5 PR b), needs an Idempotency-Key and has its own per-user rate limit. Amounts are EGP strings.',
+        'spec 09 §4.1. Customer role. Checkout (paymentMethod cod | kashier) needs an Idempotency-Key and has its own per-user rate limit, shared with "Kashier payment page". Amounts are EGP strings.',
       item: [
         req({
           name: 'Checkout',
@@ -981,9 +986,13 @@ if (pm.response.code === 201) {
           path: `${API}/checkout`,
           auth: true,
           headers: [idempotencyKey],
-          body: { addressId: '{{addressId}}', paymentMethod: 'cod', expectedTotal: '{{expectedTotal}}' },
+          body: {
+            addressId: '{{addressId}}',
+            paymentMethod: '{{paymentMethod}}',
+            expectedTotal: '{{expectedTotal}}',
+          },
           description:
-            'Places the cart as one order split per seller, reserves stock and empties the cart (201). CART_EMPTY 422, CART_HAS_ISSUES 409 (details: variant ids), ADDRESS_NOT_FOUND 422, GOVERNORATE_NOT_DELIVERABLE 422, ORDER_TOTAL_CHANGED 409 (details[0].value = current total; stored in expectedTotal), INSUFFICIENT_STOCK 409. A repeat with the same Idempotency-Key replays the first answer.',
+            'Places the cart as one order split per seller, reserves stock and empties the cart (201). COD: placed. Kashier: pending_payment, with data.kashier.checkoutUrl (null if Kashier failed: use "Kashier payment page"). CART_EMPTY 422, CART_HAS_ISSUES 409 (details: variant ids), ADDRESS_NOT_FOUND 422, GOVERNORATE_NOT_DELIVERABLE 422, ORDER_TOTAL_CHANGED 409 (details[0].value = current total; stored in expectedTotal), INSUFFICIENT_STOCK 409. A repeat with the same Idempotency-Key replays the first answer.',
           tests: `
 if (pm.response.code === 409 && pm.response.json().error.code === 'ORDER_TOTAL_CHANGED') {
   pm.collectionVariables.set('expectedTotal', pm.response.json().error.details[0].value);
@@ -995,6 +1004,8 @@ if (pm.response.code === 201) {
   const { order } = pm.response.json().data;
   pm.collectionVariables.set('orderId', order.id);
   const first = order.sellerOrders[0];
+  const { kashier } = pm.response.json().data;
+  if (kashier) console.log('Kashier payment page:', kashier.checkoutUrl, 'until', kashier.expiresAt);
   if (first) {
     pm.collectionVariables.set('sellerOrderId', first.id);
     if (first.items[0]) pm.collectionVariables.set('orderItemId', first.items[0].id);
@@ -1021,6 +1032,15 @@ if (pm.response.code === 201) {
           auth: true,
           description:
             'Seller orders with items and timelines, shipping snapshot, payment status. ORDER_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Kashier payment page',
+          method: 'POST',
+          path: `${API}/orders/{{orderId}}/payment/kashier-session`,
+          auth: true,
+          description:
+            'The payment page of a Kashier order while it awaits payment; the same session every time. ORDER_NOT_FOUND 404, ORDER_NOT_AWAITING_PAYMENT 409 (COD, paid, or the window closed), PAYMENT_PROVIDER_UNAVAILABLE 502 (retry).',
           tests: expect(200),
         }),
         req({
@@ -1136,6 +1156,52 @@ if (pm.response.code === 201) {
           auth: true,
           description:
             'Adds commission per seller order and the full status histories (actor role, actor id, reason).',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: payments',
+      description:
+        'spec 10 §4.2. Admin role. R1 refunds are done by hand in the Kashier dashboard, then recorded here; the queue lists the refunds due, oldest first.',
+      item: [
+        req({
+          name: 'Payment of an order',
+          method: 'GET',
+          path: `${API}/admin/orders/{{orderId}}/payment`,
+          auth: true,
+          description:
+            'Amounts, Kashier references, refunds and webhook events (no payloads). PAYMENT_NOT_FOUND 404.',
+          tests: saveId('paymentId'),
+        }),
+        req({
+          name: 'Payment detail',
+          method: 'GET',
+          path: `${API}/admin/payments/{{paymentId}}`,
+          auth: true,
+          tests: expect(200),
+        }),
+        req({
+          name: 'Refund queue',
+          method: 'GET',
+          path: `${API}/admin/payments/refunds`,
+          auth: true,
+          query: [
+            { key: 'status[eq]', value: 'pending_manual' },
+            { key: 'limit', value: '20' },
+            { key: 'reason[in]', value: 'seller_order_cancelled,late_payment_after_expiry', disabled: true },
+          ],
+          tests: saveId('refundId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Record a refund',
+          method: 'POST',
+          path: `${API}/admin/payments/refunds/{{refundId}}/record`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { providerRefundRef: 'KASHIER-REFUND-REF' },
+          description:
+            'After refunding in the Kashier dashboard. The payment becomes partially_refunded_manually or refunded_manually. REFUND_NOT_FOUND 404, REFUND_ALREADY_RECORDED 409.',
           tests: expect(200),
         }),
       ],
