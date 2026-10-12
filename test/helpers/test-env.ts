@@ -87,6 +87,8 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     SEARCH_WORD_SIMILARITY_THRESHOLD: '0.35',
     // cart
     CART_MAX_LINES: '50',
+    // ordering
+    SELLER_ACCEPT_TIMEOUT_HOURS: '24',
     // secrets in event payloads
     SECRETS_ENCRYPTION_KEYS: JSON.stringify({ [TEST_SECRETS_KEY_ID]: TEST_SECRETS_KEY.toString('base64') }),
     SECRETS_ENCRYPTION_ACTIVE_KEY_ID: TEST_SECRETS_KEY_ID,

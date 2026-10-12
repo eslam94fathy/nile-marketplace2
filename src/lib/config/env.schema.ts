@@ -196,6 +196,11 @@ const cartShape = {
   CART_MAX_LINES: positiveInt(500),
 };
 
+/** ordering (spec 09 §1, OR-8): COD checkout sets the acceptance deadline. */
+const orderingShape = {
+  SELLER_ACCEPT_TIMEOUT_HOURS: positiveInt(24 * 30),
+};
+
 /** Invites are also created by the seed-admin CLI. */
 const inviteShape = {
   INVITE_TTL_HOURS: positiveInt(24 * 30),
@@ -282,6 +287,7 @@ export const apiEnvSchema = z
     ...deliveryShape,
     ...catalogShape,
     ...cartShape,
+    ...orderingShape,
     ...inviteShape,
     ...secretsShape,
   })

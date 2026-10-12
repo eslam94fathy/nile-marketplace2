@@ -110,6 +110,17 @@ export const TOKENS = {
   CartViewService: Symbol.for('CartViewService'),
   CartController: Symbol.for('CartController'),
 
+  // ordering module
+  OrderRepository: Symbol.for('OrderRepository'),
+  SellerOrderRepository: Symbol.for('SellerOrderRepository'),
+  OrderItemRepository: Symbol.for('OrderItemRepository'),
+  StatusHistoryRepository: Symbol.for('StatusHistoryRepository'),
+  CheckoutService: Symbol.for('CheckoutService'),
+  OrderViewService: Symbol.for('OrderViewService'),
+  OrderController: Symbol.for('OrderController'),
+  SellerOrderController: Symbol.for('SellerOrderController'),
+  AdminOrderController: Symbol.for('AdminOrderController'),
+
   // payments module
   PaymentRepository: Symbol.for('PaymentRepository'),
   PaymentRefundRepository: Symbol.for('PaymentRefundRepository'),

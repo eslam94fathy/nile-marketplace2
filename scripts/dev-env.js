@@ -103,6 +103,8 @@ const values = {
   SEARCH_WORD_SIMILARITY_THRESHOLD: '0.35',
   // cart (P4-Q10)
   CART_MAX_LINES: '50',
+  // ordering (P5-Q10)
+  SELLER_ACCEPT_TIMEOUT_HOURS: '24',
   // email: local inbox by default (P1-Q2); switch EMAIL_PROVIDER to mailjet to send real mail
   EMAIL_PROVIDER: 'mailpit',
   EMAIL_HTTP_TIMEOUT_MS: '10000',
