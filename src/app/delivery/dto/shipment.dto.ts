@@ -9,7 +9,16 @@ import {
   IsUUID,
   ValidateNested,
 } from 'class-validator';
-import { FieldType, FilterOp, IsMoney, type ListSpec, UuidField } from '../../../lib/http';
+import {
+  FieldType,
+  FilterOp,
+  IsMoney,
+  type ListSpec,
+  Optional,
+  StrField,
+  UuidField,
+} from '../../../lib/http';
+import { ATTEMPT_NOTE_MAX_LENGTH } from '../constants';
 import { AttemptFailureReason, DeliveryActorRole, ShipmentStatus } from '../enums';
 import { amountToCollect } from '../model/shipment.model';
 import { type ShipmentView } from '../service/shipment-view.service';
@@ -25,6 +34,43 @@ export class ShipmentIdParamsDto {
 export class AssignShipmentDto {
   @UuidField()
   agentId!: string;
+}
+
+/** §4.2 whitelist for `GET /agent/shipments`: without `status`, the active ones (DE-12). */
+export const AGENT_SHIPMENT_LIST_SPEC: ListSpec = {
+  fields: {
+    status: {
+      column: 'status',
+      type: FieldType.ENUM,
+      ops: [FilterOp.EQ, FilterOp.IN],
+      enumValues: Object.values(ShipmentStatus),
+    },
+    createdAt: {
+      column: 'created_at',
+      type: FieldType.DATE,
+      ops: [FilterOp.GTE, FilterOp.LTE],
+      sortable: true,
+    },
+  },
+  defaultSort: 'createdAt',
+};
+
+/** `POST /agent/shipments/:shipmentId/delivered`: required for COD, forbidden for Kashier (UC-DE-3). */
+export class DeliveredDto {
+  @Optional()
+  @IsString()
+  @IsMoney()
+  codCollectedAmount?: string;
+}
+
+/** `POST /agent/shipments/:shipmentId/failed-attempt` (UC-DE-3). */
+export class FailedAttemptDto {
+  @IsIn(Object.values(AttemptFailureReason))
+  reason!: AttemptFailureReason;
+
+  @Optional()
+  @StrField(1, ATTEMPT_NOTE_MAX_LENGTH)
+  note?: string;
 }
 
 /** §4.3 whitelist for `GET /admin/shipments`. */

@@ -77,6 +77,8 @@ export const TOKENS = {
   ShipmentHistoryRepository: Symbol.for('ShipmentHistoryRepository'),
   ShipmentAssignmentService: Symbol.for('ShipmentAssignmentService'),
   ShipmentViewService: Symbol.for('ShipmentViewService'),
+  ShipmentWorkService: Symbol.for('ShipmentWorkService'),
+  AgentShipmentController: Symbol.for('AgentShipmentController'),
   SellerOrderUpdateService: Symbol.for('SellerOrderUpdateService'),
   AssignmentRetryJob: Symbol.for('AssignmentRetryJob'),
   ShipmentAdminController: Symbol.for('ShipmentAdminController'),

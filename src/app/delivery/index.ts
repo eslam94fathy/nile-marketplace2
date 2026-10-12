@@ -12,7 +12,10 @@ import { type DependencyContainer } from 'tsyringe';
 import { type JwtVerifier } from '../../lib/auth';
 import { TOKENS } from '../../lib/di';
 import { type OpenApiRegistry } from '../../lib/http';
-import { type Env } from '../../lib/config';
+import { type ApiEnv, type Env } from '../../lib/config';
+import { type ILogger } from '../../lib/logger';
+import { requireIdempotency } from '../../lib/middleware';
+import { type ICache } from '../../pkg/cache';
 import { type PgErrorMapper } from '../../lib/error';
 import { type EventHandlerDefinition, SellerOrderReadyForPickup } from '../../lib/events';
 import { type JobDefinition } from '../../lib/jobs';
@@ -21,6 +24,8 @@ import { AgentAdminController, AgentSelfController } from './controller/delivery
 import { DeliverySettingsController } from './controller/delivery-settings.controller';
 import { registerDeliveryConstraintErrors } from './errors';
 import { ShipmentAdminController } from './controller/shipment-admin.controller';
+import { AgentShipmentController } from './controller/agent-shipment.controller';
+import { ShipmentWorkService } from './service/shipment-work.service';
 import { DeliveryAgentRepository } from './repository/delivery-agent.repository';
 import { ShipmentHistoryRepository } from './repository/shipment-history.repository';
 import { ShipmentRepository } from './repository/shipment.repository';
@@ -93,6 +98,8 @@ export function registerDeliveryModule(container: DependencyContainer): void {
   registerDeliveryCore(container);
   container.registerSingleton(TOKENS.ShipmentViewService, ShipmentViewService);
   container.registerSingleton(TOKENS.ShipmentAdminController, ShipmentAdminController);
+  container.registerSingleton(TOKENS.ShipmentWorkService, ShipmentWorkService);
+  container.registerSingleton(TOKENS.AgentShipmentController, AgentShipmentController);
   container.registerSingleton(TOKENS.DeliveryAgentService, DeliveryAgentService);
   container.registerSingleton(TOKENS.DeliveryAgentDirectory, DeliveryAgentDirectory);
   container.registerSingleton(TOKENS.AgentSelfController, AgentSelfController);
@@ -114,6 +121,12 @@ export function createDeliveryRouter(container: DependencyContainer, basePath: s
     agentSelf: container.resolve<AgentSelfController>(TOKENS.AgentSelfController),
     agentAdmin: container.resolve<AgentAdminController>(TOKENS.AgentAdminController),
     shipmentAdmin: container.resolve<ShipmentAdminController>(TOKENS.ShipmentAdminController),
+    agentShipments: container.resolve<AgentShipmentController>(TOKENS.AgentShipmentController),
+    idempotency: requireIdempotency(
+      container.resolve<ICache>(TOKENS.Cache),
+      container.resolve<ApiEnv>(TOKENS.Env),
+      container.resolve<ILogger>(TOKENS.Logger),
+    ),
     jwtVerifier: container.resolve<JwtVerifier>(TOKENS.JwtVerifier),
     docs: container.resolve<OpenApiRegistry>(TOKENS.OpenApiRegistry),
     basePath,

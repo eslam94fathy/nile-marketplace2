@@ -28,6 +28,28 @@ export class ShipmentViewService {
     return view;
   }
 
+  /** Another agent's shipment is not found (spec 11 UC-DE-3). */
+  async getForAgent(agentId: string, shipmentId: string): Promise<ShipmentView> {
+    const shipment = await this.shipments.findById(shipmentId);
+    if (!shipment || shipment.agentId !== agentId) throw shipmentNotFound();
+    return this.viewOf(shipment);
+  }
+
+  async listForAgent(
+    agentId: string,
+    query: ParsedListQuery,
+  ): Promise<{ items: ShipmentView[]; meta: PageMeta }> {
+    const page = toPage(await this.shipments.listForAgent(agentId, query), query, (s) => s.createdAt);
+    return { items: await this.viewsOf(page.items, false), meta: page.meta };
+  }
+
+  /** One shipment after a change, without its history (the agent's response). */
+  async viewOf(shipment: Shipment): Promise<ShipmentView> {
+    const [view] = await this.viewsOf([shipment], false);
+    if (!view) throw shipmentNotFound();
+    return view;
+  }
+
   async listForAdmin(query: ParsedListQuery): Promise<{ items: ShipmentView[]; meta: PageMeta }> {
     const page = toPage(await this.shipments.list(query), query, (shipment) => shipment.createdAt);
     return { items: await this.viewsOf(page.items, false), meta: page.meta };

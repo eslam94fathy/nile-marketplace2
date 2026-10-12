@@ -16,6 +16,13 @@ export const DELIVERY_PATHS = {
 export const AGENT_PATHS = {
   PROFILE: '/agent/profile',
   AVAILABILITY: '/agent/availability',
+  SHIPMENTS: '/agent/shipments',
+  SHIPMENT: '/agent/shipments/:shipmentId',
+  SHIPMENT_PICKED_UP: '/agent/shipments/:shipmentId/picked-up',
+  SHIPMENT_OUT_FOR_DELIVERY: '/agent/shipments/:shipmentId/out-for-delivery',
+  SHIPMENT_DELIVERED: '/agent/shipments/:shipmentId/delivered',
+  SHIPMENT_FAILED_ATTEMPT: '/agent/shipments/:shipmentId/failed-attempt',
+  SHIPMENT_RETURNED: '/agent/shipments/:shipmentId/returned',
 } as const;
 
 export const DELIVERY_ADMIN_PATHS = {
@@ -30,6 +37,9 @@ export const DELIVERY_ADMIN_PATHS = {
   SHIPMENT: '/admin/shipments/:shipmentId',
   SHIPMENT_ASSIGN: '/admin/shipments/:shipmentId/assign',
 } as const;
+
+/** `shipment_attempts.note VARCHAR(500)` (spec 11 §4.2). */
+export const ATTEMPT_NOTE_MAX_LENGTH = 500;
 
 /** Queue of the seller-order consumer (docs/spec/02-events.md §2). */
 export const SELLER_ORDER_UPDATES_QUEUE = 'delivery.seller-order-updates';

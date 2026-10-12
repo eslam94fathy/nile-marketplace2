@@ -4,7 +4,7 @@ import { TOKENS } from '../../../lib/di';
 import { applyListQuery, type ParsedListQuery } from '../../../lib/http';
 import { Money } from '../../../lib/money';
 import { DELIVERY_TABLES } from '../constants';
-import { ShipmentStatus } from '../enums';
+import { ACTIVE_SHIPMENT_STATUSES, ShipmentStatus } from '../enums';
 import {
   type Shipment,
   type ShipmentDropoff,
@@ -320,6 +320,21 @@ export class ShipmentRepository {
       .orderBy([{ column: 'created_at' }, { column: 'id' }])
       .limit(limit);
     return rows.map((row) => row.id);
+  }
+
+  /**
+   * The agent's list, keyset page: idx_shipments_agent_id_created_at_id (D-10). Without a status
+   * filter only the active statuses (DE-12).
+   */
+  async listForAgent(agentId: string, query: ParsedListQuery, trx?: DbTransaction): Promise<Shipment[]> {
+    const qb = this.exec(trx)<ShipmentTable>(T)
+      .select(...COLUMNS)
+      .where({ agent_id: agentId });
+    if (!query.filters.some((filter) => filter.field === 'status')) {
+      void qb.whereIn('status', [...ACTIVE_SHIPMENT_STATUSES]);
+    }
+    const rows = (await applyListQuery(qb, query, 'id')) as ShipmentRow[];
+    return rows.map(toModel);
   }
 
   /** Admin list, keyset page (`limit + 1` rows): D-3 / D-10 indexes. */
