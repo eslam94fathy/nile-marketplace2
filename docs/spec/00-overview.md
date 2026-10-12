@@ -243,7 +243,7 @@ The user accepted every recommendation (2026-10-08). Answers are logged in §9.1
 | O-3 | `00-overview.md` §7 | Event list: replace with `02-events.md` | Detailed specs | **Applied** (v1.1), implied by approving `02-events.md` |
 | A-1 | `01-architecture.md` §3, §5 | Event names and queue bindings as in `02-events.md` | E-1…E-7 | **Applied** (v1.1), implied by approving `02-events.md` |
 | A-2 | `01-architecture.md` §2 | Dependency edges: `customers → identity`, `sellers → identity` (self-registration routes live in the profile modules, so identity depends on nobody); `cart → sellers` (display names); `finance → sellers, delivery` (profile resolution, display names) | Still acyclic | **Applied** (architecture v1.3, approved 2026-10-09) |
-| A-3 | `01-architecture.md` §7.1 | Checkout inserts the order rows **before** `inventory.reserve` (a reservation references `order_item_id`); same transaction, so a shortfall still rolls everything back | Schema FK | **Pending** |
+| A-3 | `01-architecture.md` §7.1 | Checkout inserts the order rows **before** `inventory.reserve` (a reservation references `order_item_id`); same transaction, so a shortfall still rolls everything back | Schema FK | **Applied** (architecture v1.7, approved 2026-10-12) |
 | A-4 | `01-architecture.md` §2 | Dependency edge `cart → customers` (JWT `sub` → `customerId`) | Spec 08 §1 needs it; still acyclic (P4-Q2) | **Applied** (architecture v1.6, approved 2026-10-11) |
 | D-1 | `02-database.md` §9 | `payments.status`: add `cancelled` (COD) | S-12 | **Applied** (v1.1), implied by accepting S-12 |
 | D-2 | `02-database.md` §10 | `shipments`: add `payment_method VARCHAR(20)` (CHECK), `order_number VARCHAR(20)`, `order_delivery_fee money`, `pickup_business_name VARCHAR(150)`; drop `agent_fee_share` (ordering computes it, and the ledger records it) | Fee carrier + agent screen need them, and delivery can't call ordering | **Pending** |
@@ -252,6 +252,7 @@ The user accepted every recommendation (2026-10-08). Answers are logged in §9.1
 | D-5 | `02-database.md` §5 | Public listing indexes on `published_at` instead of `created_at` | "Newest" means newly published (P3-Q7) | **Applied** (v1.5, approved 2026-10-10) |
 | D-6 | `02-database.md` §6 | Stock-history index gains the `id` tie-break | Keyset pagination (P3-Q8) | **Applied** (v1.5, approved 2026-10-10) |
 | D-7 | `02-database.md` §5 | Add `idx_products_category_id (category_id)` | Category usage checks outside VIS (CLAUDE.md §6.3) | **Applied** (v1.6, approved 2026-10-10) |
+| D-8 | `02-database.md` §6, §8, §9 | `idx_orders_created_at_id`, `idx_payment_events_payment_id`, refund queue index with `id`, `payments.provider_session_url` / `provider_session_expires_at`, `RefundReason` `amount_mismatch`, FK `ON DELETE RESTRICT`, unindexed FKs documented, `order_number_seq` with `orders` | Admin lists, one Kashier session per payment, amount-mismatch refunds (P5-Q4, P5-Q7, P5-Q11) | **Applied** (v1.8, approved 2026-10-12) |
 
 ## 9. Answered log (2026-10-07)
 

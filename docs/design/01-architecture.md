@@ -1,6 +1,6 @@
 # System Design 01 — Architecture (Release 1)
 
-Status: **v1.6 APPROVED (2026-10-11).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). v1.4: catalog cache keys and TTLs (§8), "newest" sorts on `published_at` (§9) (Phase 3). v1.5: typo search matches words (§9, P3-O1). v1.6: edge `cart → customers` (§2, A-4, Phase 4). SD-3d (region, §12.2) is still open and only blocks Terraform provisioning. Changes from now on need explicit approval and a version bump.
+Status: **v1.7 APPROVED (2026-10-12).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). v1.4: catalog cache keys and TTLs (§8), "newest" sorts on `published_at` (§9) (Phase 3). v1.5: typo search matches words (§9, P3-O1). v1.6: edge `cart → customers` (§2, A-4, Phase 4). v1.7: checkout inserts the order rows before reserving stock (§7.1, A-3); one lock order across ordering, inventory and payments (§3.1); order jobs handle one order per transaction (§6); Kashier sessions and webhook signature (§7.2) (Phase 5). SD-3d (region, §12.2) is still open and only blocks Terraform provisioning. Changes from now on need explicit approval and a version bump.
 Inputs: `CLAUDE.md` (engineering rules), `docs/spec/00-overview.md` v1.0 (business). Schema: `02-database.md`.
 
 ---
@@ -95,7 +95,7 @@ The rules:
 ### 3.1 Transactions across modules
 - One `lib/db` `TransactionRunner.run(async trx => …)` starts the transaction. Every public module method that writes accepts `trx` and passes it to its repositories.
 - Outbox inserts use the same `trx`, so the state change and its event commit or roll back together.
-- Lock ordering inside checkout, to avoid deadlocks: inventory rows are locked/updated **sorted by `inventory_item.id`**.
+- Lock ordering, to avoid deadlocks: `carts` (checkout only) → `orders` → `seller_orders` (by id) → `inventory_items` (by id) → `payments`. Inventory rows are locked/updated **sorted by `inventory_item.id`**. The Kashier webhook never locks `orders`, and ordering's payment consumer never locks `payments` [v1.7, spec 09 OR-3].
 
 ### 3.2 Consistency guards for consumers
 - At-least-once delivery. Every consumer records `(consumer, event_id)` in `processed_events` **in the same transaction** as its effects, and a duplicate is acknowledged and skipped.
@@ -136,8 +136,8 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 | Job | Every | What it does |
 |---|---|---|
 | `outbox-drain` | 1 s | Publish pending outbox rows |
-| `kashier-payment-expiry` | 30 s | `pending_payment` orders older than 15 min → payment `expired`, seller orders `cancelled`, reservations released, all in one trx (batched, `SKIP LOCKED`). Before expiring, it asks Kashier for the payment status so it doesn't race a late success (SD-5) |
-| `seller-acceptance-timeout` | 1 min | `placed` seller orders with `accept_deadline_at < now()` → `cancelled` (reason `seller_acceptance_timeout`) |
+| `kashier-payment-expiry` | 30 s | `pending_payment` orders past `payment_expires_at` → seller orders `cancelled`, reservations released, payment `expired`, one short trx **per order** (`FOR UPDATE SKIP LOCKED` on the order row, batch size from env). Before expiring, outside the trx, it skips payments already `paid` locally, asks Kashier for the session status so it doesn't race a late success (SD-5), and abandons the session [v1.7, spec 09 §3.10] |
+| `seller-acceptance-timeout` | 1 min | `placed` seller orders with `accept_deadline_at < now()` → `cancelled` (reason `seller_acceptance_timeout`), one short trx per order as above [v1.7] |
 | `shipment-assignment-retry` | 1 min | Retry auto-assignment for `unassigned` shipments |
 | `outbox-cleanup` | daily | Delete dispatched outbox rows older than the retention period (env) |
 | `processed-events-cleanup` | daily | Delete dedupe rows older than the retention period |
@@ -145,22 +145,23 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 
 ## 7. Key flows
 
-### 7.1 Checkout (`POST /api/v1/checkout`, Idempotency-Key required)
-1. Validate the DTO (`addressId`, `paymentMethod`). Load the cart (cart API).
-2. Batch-load the variants with their product/seller data (catalog API, one query) and the seller status/commission/pickup snapshot (sellers API, one query). Reject if any variant is inactive or deleted, or any seller is not approved.
-3. Load the address (customers API). Get the governorate fee (delivery API). Reject if the governorate isn't deliverable.
-4. Compute the money with `decimal.js` (spec §5).
-5. **One transaction:**
-   - `inventory.reserve(items, trx)`: an atomic conditional update per item, sorted by id. Any shortfall → `409 INSUFFICIENT_STOCK` with the affected variant ids.
-   - Insert `orders`, `seller_orders`, `order_items`, and the status history.
+### 7.1 Checkout (`POST /api/v1/checkout`, Idempotency-Key required) [v1.7, A-3; detail in spec 09 §3.1]
+1. Validate the DTO (`addressId`, `paymentMethod`, `expectedTotal`).
+2. Before the transaction (reads): the address snapshot (customers API), the governorate fee (delivery API; reject if not deliverable) and the agent fee-share rate.
+3. **One transaction:**
+   - Load and lock the cart (cart API). Empty → `CART_EMPTY`.
+   - Batch-load the variants with their product/seller data (catalog API, one query) and the seller status/commission/pickup snapshot (sellers API, one query). Reject if any variant isn't purchasable or any seller isn't approved.
+   - Compute the money with `decimal.js` (overview §5); reject if it differs from `expectedTotal`.
+   - Insert `orders`, `seller_orders`, `order_items` and the status history (multi-row inserts). The rows come **before** the reservation, because a reservation references `order_item_id`.
+   - `inventory.reserve(lines, trx)`: an atomic conditional update per item, sorted by id. Any shortfall → `409 INSUFFICIENT_STOCK` with the affected variant ids, and the whole transaction (order rows included) rolls back.
    - `payments.createForOrder(trx)` (COD → `pending`, Kashier → `initiated`).
    - `cart.clear(trx)`.
    - Outbox `order.placed` (COD only; for Kashier, `placed` happens on payment).
    - Commit.
-6. The response includes the order. For Kashier, it also includes what the app needs to open the Kashier payment page (session created **after** commit; SD-5 covers the failure case).
+4. The response includes the order. For Kashier, it also includes the Kashier session URL (session created **after** commit, one per payment; SD-5 covers the failure case).
 
 ### 7.2 Kashier webhook (`POST /api/v1/webhooks/kashier`)
-- Verify the signature over the **raw body** using the secret from env. Invalid → `401`, logged at `warn` (no payload in logs).
+- Parse the **raw body** and verify `x-kashier-signature` (an HMAC over the signed fields Kashier lists, keyed by the payment API key from env) [v1.7, spec 10 PA-1]. Invalid → `401`, logged at `warn` (no payload in logs), nothing stored.
 - Insert `payment_events` with `uq(provider, provider_event_id)`. A duplicate → `200` with no further work.
 - Check the amount and the order reference against the payment. On a mismatch: `error` log, payment `failed`, and an admin review flag.
 - Transition the payment, plus the outbox `payment.paid` / `payment.failed` event, then respond `200` quickly.

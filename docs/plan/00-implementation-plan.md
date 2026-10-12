@@ -1,7 +1,7 @@
 # Implementation Plan (Release 1)
 
-Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09). P3 (§5) v1.0 APPROVED (2026-10-10). P4 (§6) v1.0 APPROVED (2026-10-11) and implemented (see the P4 status after §6.6).** Later phases are detailed when their specs are approved.
-Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.6, `docs/design/02-database.md` v1.7, `docs/spec/01-api-conventions.md` v1.3, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
+Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09). P3 (§5) v1.0 APPROVED (2026-10-10). P4 (§6) v1.0 APPROVED (2026-10-11) and implemented (see the P4 status after §6.6). P5 (§7) v1.0 APPROVED (2026-10-12).** Later phases are detailed when their specs are approved.
+Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.7, `docs/design/02-database.md` v1.8, `docs/spec/01-api-conventions.md` v1.3, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
 
 ---
 
@@ -21,7 +21,7 @@ Each phase ends green in CI (lint, type-check, unit, integration, build, Docker 
 | P7 | finance | Spec 12 |
 | P8 | Hardening: load test against the targets, security review, Terraform (`infra/terraform`), staging deploy | SD-3d (region) |
 
-P0–P4 are detailed below (§2–§6). P5–P8 get their own section when their specs are approved.
+P0–P5 are detailed below (§2–§7). P6–P8 get their own section when their specs are approved.
 
 ---
 
@@ -416,3 +416,81 @@ Needs approved: spec `08-cart.md` and A-4 (both approved now: spec 08 v1.0, arch
 - Test helpers: `test/helpers/cart-fixtures.ts` (SQL fixtures for customers, carts and lines, on top of the catalog fixtures).
 - Found during P4: Postgres raises `23001` (not `23503`) when deleting a row protected by an `ON DELETE RESTRICT` FK; the cart schema tests expect `23001` (already mapped to `409` since P3-Q11).
 - Tooling: Postman collection regenerated (76 requests, new "Cart" folder; "Product detail" stores the first variant in `variantId`, "Add item" stores the added line in `cartItemId`).
+
+---
+
+## 7. Phase 5: ordering + payments
+
+Status: **v1.0 APPROVED (2026-10-12).** All P5-Q recommendations accepted; the branch `p5-ordering-payments` is stacked on `p4-cart`.
+Needs approved: spec `09-ordering.md` and spec `10-payments.md` (both v1.0 now), A-3 (architecture v1.7), the database changes in P5-Q4 (D-8, database v1.8), plus the P5-Q decisions below. It does **not** need D-2 / D-3 (shipments, P6) or spec 12 (finance, P7).
+
+### 7.1 What P5 delivers, and what it can't yet
+- **ordering:** checkout (COD and Kashier), the per-seller split with snapshots and money, customer / seller / admin order views, customer cancel, seller accept / ready / cancel / partial item cancel / return received, the stored order status and the close step, the `seller-acceptance-timeout` and `kashier-payment-expiry` jobs, and the consumers `ordering.payment-updates` and `ordering.shipment-updates` (P5-Q2).
+- **payments:** the payment record per checkout, Kashier sessions through a `pkg/payments` gateway, the signed webhook, provider status lookups for the expiry job, the `payments.order-adjustments` consumer (refund flags, COD amounts), and the admin refund queue with manual refund recording.
+- **inventory:** `inventory_reservations` and `reserve` / `release` / `commit` (P3-Q2, IN-1).
+- **Not yet:** shipments (P6), so in a real run seller orders stop at `ready_for_pickup`; everything after that is driven in tests by publishing the `shipment.*` contract events. Finance (P7) consumes nothing yet.
+
+### 7.2 Decisions to approve (P5-Q)
+
+| # | Topic | Options / recommendation |
+|---|---|---|
+| P5-Q1 | Approvals and branch | **Rec:** approve spec 09 and spec 10 → v1.0 with the clarifications in P5-Q2…Q14 written into them; A-3 (architecture v1.7: §7.1 rewritten to the spec 09 §3.1 step order, order rows inserted before `inventory.reserve`); database v1.8 (D-8, P5-Q4); spec 07 v1.2 (reservations land). One branch `p5-ordering-payments` stacked on `p4-cart`, delivered as **two PRs**: (a) ordering + inventory reservations + COD payments, (b) Kashier (gateway, sessions, webhook, expiry job, admin refunds) · or one PR (about twice the size of P3) |
+| P5-Q2 | Shipment-driven use cases before delivery exists | UC-OR-6/7/8 (picked up, out, failed, delivered + agent fee share + `inventory.commit`, return received) and the COD-collection part of UC-PA-3 only run once P6 emits `shipment.*`. **Rec:** build them in P5, so ordering and payments are each finished in one go (as P2-Q8), and test them by publishing the contract events in integration tests · or move them to P6 (P5 then ends at `ready_for_pickup` and cancellations) |
+| P5-Q3 | Lock order across ordering, payments and inventory | Spec 09 §1.2 fixes `orders → seller_orders → inventory items` but doesn't place `payments`, and the expiry job (spec 09 §3.10 step 3) calls `payments.expire` *before* touching seller orders. **Rec:** one order everywhere: `carts` (checkout only) → `orders` → `seller_orders` (by id) → `inventory_items` (by id) → `payments`. The expiry job locks the order and its seller orders, releases stock, then calls `payments.expire`; `false` (the webhook won) rolls the transaction back and skips the order. The webhook never locks `orders` and the `ordering.payment-updates` consumer never locks `payments`, so there's no cycle |
+| P5-Q4 | Schema gaps in `02-database.md` §8–§9 (**D-8**) | (a) `GET /admin/orders` without a status filter sorts every order by `-createdAt` with no index → add `idx_orders_created_at_id (created_at DESC, id DESC)`; (b) the admin payment view lists events per payment → add `idx_payment_events_payment_id (payment_id)`; (c) the refund queue is cursor-paginated → `idx_payment_refunds_created_at_id (created_at, id) WHERE status = 'pending_manual'` (adds the `id` tie-break, as D-6); (d) returning a still-valid Kashier session (P5-Q7) needs `payments.provider_session_url VARCHAR(500) NULL` and `provider_session_expires_at TIMESTAMPTZ NULL` (null for COD and before a session exists); (e) every FK `ON DELETE RESTRICT`; no indexes on `order_items.variant_id` / `product_id`, `inventory_reservations.inventory_item_id`, `payment_refunds.seller_order_id` (nothing looks them up, rows are never hard-deleted; reason in a SQL comment, as P4-Q11); (f) `order_number_seq` created in the `orders` migration. **Rec:** all of (a)–(f) |
+| P5-Q5 | Jobs: batching and locking | Spec 09 §3.10 says "batch, `FOR UPDATE SKIP LOCKED` after locking their orders", which one statement can't do in the P5-Q3 order. **Rec:** each run reads up to `ORDER_JOBS_BATCH_SIZE` candidate order ids from the partial index without locks, then handles **one order per short transaction**: `SELECT … FROM orders WHERE id = ? FOR UPDATE SKIP LOCKED` (busy → left for the next run), then conditional updates on the expected status and deadline. A failing order is logged at `error` and doesn't stop the batch. The expiry job makes its provider calls per order **before** opening that order's transaction (CLAUDE.md §6.4) |
+| P5-Q6 | Expiry job details (spec 09 §3.10) | **Rec:** (a) check the local payment first: already `paid` (webhook applied, consumer not run yet) → skip without calling Kashier, so the job doesn't loop on the provider; (b) provider says unpaid or is unreachable → **abandon the Kashier session** (best effort, logged on failure) and expire, so the customer can't pay into a cancelled order in most cases; one that still slips through is SD-5 (late payment → `paid` + full refund flag); (c) the session is created with `expireAt = payment_expires_at`, so Kashier stops accepting payment at the same moment |
+| P5-Q7 | One Kashier session per payment (spec 09 §4.1.2) | Two sessions for one payment could both be paid. Session creation runs outside any transaction (after checkout commits, and from `POST /orders/:id/payment/kashier-session`), so two calls can race. **Rec:** `createKashierSession` returns the stored session while `provider_session_expires_at > now()`; otherwise it creates one and stores it with a conditional `UPDATE payments … WHERE id = ? AND status = 'initiated' AND provider_order_ref IS NULL`; the loser of a race abandons its own session and returns the winner's. No new session after the payment window (`ORDER_NOT_AWAITING_PAYMENT`) |
+| P5-Q8 | Kashier integration details (spec 10 §1: "confirm at implementation") | Kashier's current docs ([payment sessions](https://developers.kashier.io/docs/accept-payments/payment-sessions), [webhooks](https://developers.kashier.io/docs/webhooks), [payloads](https://developers.kashier.io/docs/webhooks/payloads)) show v3 **payment sessions** (create with `expireAt`, amount, order id, per-session `serverWebhook`; response `sessionUrl`), an unauthenticated **get session** (status, history) and **abandon session**; webhooks are signed in `x-kashier-signature` as an HMAC over the alphabetically sorted `data.signatureKeys` values, keyed by the **payment API key** (spec 10 assumed a separate secret), and success is read from `data.status`, not `event`. **Rec:** use payment sessions; `fetchProviderStatus` = get session; spec 10 §1 config becomes `KASHIER_MERCHANT_ID`, `KASHIER_API_KEY` (api-key header + webhook HMAC), `KASHIER_SECRET_KEY` (Authorization header), `KASHIER_BASE_URL`, `KASHIER_MODE`, `KASHIER_REDIRECT_URL`, `KASHIER_WEBHOOK_URL`, `KASHIER_HTTP_TIMEOUT_MS`; `provider_event_id` = Kashier's own event/transaction id if the payload has one, else `<event>:<transactionId>:<status>`. All verified against the Kashier test environment before PR (b) merges. Needs a Kashier test account (like P1-Q8 for Mailjet) |
+| P5-Q9 | Gateway in tests and local dev | Kashier can't reach `localhost` for webhooks. **Rec:** `PAYMENT_GATEWAY` env `kashier` / `fake` (no default, like `EMAIL_PROVIDER`; `fake` refused in staging/production). The fake returns a local `checkoutUrl` and keeps session state in memory; a dev-only script `npm run dev:kashier-webhook -- <paymentId> paid|failed` sends a correctly **signed** webhook to the local api, so the real verification path runs. Integration tests use the fake and the same signer. One manual run against the Kashier test environment (through a tunnel) before staging · or Kashier test mode only (a tunnel for every local run) |
+| P5-Q10 | Env keys (process split, P1-Q1) | **Rec:** api: `PAYMENT_GATEWAY`, `KASHIER_*`, `KASHIER_PAYMENT_TTL_MINUTES` (15), `SELLER_ACCEPT_TIMEOUT_HOURS` (24, COD checkout sets the deadline). Worker: `PAYMENT_GATEWAY`, `KASHIER_*` without the redirect/webhook URLs (it only reads and abandons sessions), `SELLER_ACCEPT_TIMEOUT_HOURS` (the payment consumer sets the deadline), `JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS` (60 000), `JOB_KASHIER_PAYMENT_EXPIRY_INTERVAL_MS` (30 000), `ORDER_JOBS_BATCH_SIZE` (100). No defaults; in `.env.example`, `dev-env.js` and the test env |
+| P5-Q11 | Webhook edge cases | (a) The signature is checked before anything is stored, so an invalid one stores nothing and `payment_events.signature_valid` is always `true`. **Rec:** keep it (storing unsigned requests lets anyone fill the table); the column stays. (b) Amount mismatch on a successful payment: spec 10 marks the payment `failed` and cancels the order, while the customer's money was taken, and nothing tells an admin to refund it. **Rec:** also set `collected_amount` to the paid amount and flag a full refund with a new `RefundReason` `amount_mismatch`, so it appears in the refund queue · or log only and investigate by hand |
+| P5-Q12 | Checkout response and idempotency | The `201` body (with `checkoutUrl`, possibly `null`) is what the idempotency layer stores and replays. **Rec:** keep it: a replay may show `checkoutUrl: null` and the app then calls `kashier-session`, which returns the stored session (P5-Q7). The `checkout` rate limit (per user, fail closed) covers `POST /checkout` and `kashier-session` |
+| P5-Q13 | Read models | **Rec:** (a) seller business names in order views come live from `sellers.getSummaries` (seller orders keep no name snapshot; the shipment does in P6); (b) `OrderSummaryDto.itemCount` = Σ open quantities (`quantity − cancelled_quantity`); (c) detail views load seller orders, items and histories with one batched query each (no N+1); (d) `canCancel` is `false` while the order is `pending_payment` |
+| P5-Q14 | `KASHIER_REDIRECT_URL` | Where Kashier sends the customer after paying. **Rec:** an https app link, like `INVITE_URL_BASE` (P1-Q6), value agreed with the mobile team before staging; the app never trusts the redirect and reads `GET /orders/:id` |
+
+### 7.3 Scope
+
+| Area | Content |
+|---|---|
+| Docs | Spec 09 → v1.0, spec 10 → v1.0 (P5-Q clarifications); spec 07 → v1.2; architecture → v1.7 (A-3, §6 job wording); database → v1.8 (D-8); overview §8.2 A-3 applied, D-8 added; CLAUDE.md §14 (P5-Q decisions) |
+| Migrations (FK order) | `orders` (+ `order_number_seq`), `seller_orders`, `order_items`, `order_item_cancellations`, `order_status_history`, `seller_order_status_history`, `inventory_reservations`, `payments`, `payment_refunds`, `payment_events` |
+| `pkg/payments` | `IPaymentGateway` (`createSession`, `getSession`, `abandonSession`, `verifyWebhookSignature`), Kashier adapter (`fetch` + timeout, secrets redacted from errors), fake adapter |
+| `app/inventory` | `InventoryReservationRepository`; `reserve` / `release` / `commit` (UC-IN-1…3), movements, `stock_status_changed` on reserve / release |
+| `app/payments` | Module skeleton; repositories; `PaymentDirectory` (public API, spec 10 §2); webhook controller + service (UC-PA-1/2); `payments.order-adjustments` consumer (UC-PA-3); admin refunds (UC-PA-4); DTOs, errors, OpenAPI |
+| `app/ordering` | Module skeleton; repositories; `CheckoutService`, `OrderStatusService` (derive + close, agent fee share), customer / seller / admin services and views; consumers `ordering.payment-updates`, `ordering.shipment-updates`; jobs `seller-acceptance-timeout`, `kashier-payment-expiry`; DTOs, errors, OpenAPI |
+| Composition roots | api: payments + ordering modules and routers; worker: the three consumers, both jobs, the gateway |
+| Tooling | Postman "Checkout & orders", "Seller: orders", "Admin: orders & payments" folders; `dev:kashier-webhook`; `.env.example` |
+
+### 7.4 Tests
+- **Unit:** checkout money (per-seller split, commission rounding, totals), partial-cancel recompute, the order status derivation (every rule in spec 09 §1.1), the agent fee share (equal split, remainder only to the closing delivery, S-13), refund / COD adjustment rules per event, the Kashier signature (known vectors from the docs), the fake gateway.
+- **Integration, per endpoint** (CLAUDE.md §12): happy path, validation failure, authz failure (other roles; another customer's or seller's order → `404`), not-found. Plus:
+  - checkout: COD and Kashier, two sellers → two seller orders; `CART_EMPTY`, `CART_HAS_ISSUES`, `GOVERNORATE_NOT_DELIVERABLE`, `ADDRESS_NOT_FOUND` (422), `ORDER_TOTAL_CHANGED`, `INSUFFICIENT_STOCK` with everything rolled back (no order, cart intact, stock unchanged); idempotent replay returns the same order; missing key `400`
+  - concurrency: two customers checking out the last unit in parallel → one `201`, one `409`; the same checkout twice in parallel with one key → one order
+  - Kashier: session failure → `checkoutUrl: null`, then `kashier-session` creates it; two parallel `kashier-session` calls → one stored session; webhook signed / unsigned / duplicate / unknown order / amount mismatch; paid → `order.placed`, seller orders `placed` with a deadline; expiry: unpaid → everything cancelled and stock released; provider says paid → not expired; webhook after expiry → `paid` + refund flag, order stays cancelled
+  - seller flow: accept, ready (`seller_order.ready_for_pickup` payload), cancel, partial cancel (last open line → whole seller order cancelled, one event), return received; `pending_payment` orders invisible to sellers; the timeout job cancels only expired `placed` ones, and an accept racing the job → exactly one wins
+  - shipment events (published by the test): picked up → out → delivered with `inventory.commit` and the fee share; failed / returning; events for a cancelled seller order ignored; duplicates are no-ops
+  - close: all delivered / some / none (fee → 0, Kashier fee refund flag, COD final status)
+  - admin: order list filters and detail with histories; refund queue; record a refund (partial → full status, `REFUND_ALREADY_RECORDED`)
+
+### 7.5 Order of work (one commit each)
+PR (a):
+1. Docs: approvals applied (specs 07/09/10, architecture A-3, database D-8, overview, CLAUDE.md).
+2. Migrations (all ten), with schema tests.
+3. inventory: reservations, `reserve` / `release` / `commit`, tests.
+4. payments: module skeleton, `PaymentDirectory` (`createForOrder`, `getSummaries`), COD side of `payments.order-adjustments`, tests.
+5. ordering: COD checkout and order views, tests.
+6. ordering: customer cancel, seller accept / ready / cancel / partial cancel / return received, timeout job, tests.
+7. ordering: shipment consumer, delivered + fee share, close, tests.
+8. Postman, `.env.example`, plan status.
+
+PR (b):
+9. `pkg/payments`: gateway interface, fake, Kashier adapter, tests.
+10. payments: sessions, webhook, Kashier side of `payments.order-adjustments`, admin refunds, tests.
+11. ordering: Kashier checkout, `kashier-session`, payment consumer, expiry job, tests.
+12. Postman, `dev:kashier-webhook`, plan status.
+
+### 7.6 Done when
+- CI green; every P5 endpoint is in the OpenAPI document with its DTOs.
+- Locally (docker-compose): a customer checks out a two-seller cart with COD → two seller orders `placed`, stock reserved, cart empty → one seller accepts and marks ready, the other cancels one item and then times out (short `SELLER_ACCEPT_TIMEOUT_HOURS` for the walkthrough) → stock released, order `in_progress`. A Kashier checkout paid through `dev:kashier-webhook` → `placed`; another left unpaid → cancelled after the TTL, stock released. Admin sees both orders, the payment and the refund queue.
+- One manual run against the Kashier test environment (session → pay with a test card → signed webhook received) before staging.

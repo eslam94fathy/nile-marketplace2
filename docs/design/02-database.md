@@ -1,6 +1,6 @@
 # System Design 02 — Database Schema (Release 1)
 
-Status: **v1.7 APPROVED (2026-10-11).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). v1.5: public product listings sort on `published_at` (D-5); `id` tie-break on the stock-history index (D-6). v1.6: `idx_products_category_id` for category usage checks (D-7). v1.7: cart FK `ON DELETE` behaviour and why `cart_items.variant_id` has no index (§7, P4-Q11). Changes from now on need explicit approval and a version bump. Decisions: §13.
+Status: **v1.8 APPROVED (2026-10-12).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). v1.5: public product listings sort on `published_at` (D-5); `id` tie-break on the stock-history index (D-6). v1.6: `idx_products_category_id` for category usage checks (D-7). v1.7: cart FK `ON DELETE` behaviour and why `cart_items.variant_id` has no index (§7, P4-Q11). v1.8: ordering/payments indexes, Kashier session columns, refund reason `amount_mismatch`, FK behaviour and unindexed FKs (§6, §8, §9, D-8, Phase 5). Changes from now on need explicit approval and a version bump. Decisions: §13.
 Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §6. Business rules: `docs/spec/00-overview.md` v1.0.
 
 ---
@@ -269,6 +269,7 @@ Index: `uq_inventory_items_variant_id`: batched lookup `variant_id = ANY(?)` (ca
 ### inventory_reservations
 std columns · `inventory_item_id` fk · `order_item_id` fk → order_items · `quantity INTEGER CHECK (quantity > 0)` · `status VARCHAR(20)` (`active, committed, released`).
 - `uq_inventory_reservations_order_item_id (order_item_id)`: one reservation per order line. Also the commit/release lookup.
+- FKs `ON DELETE RESTRICT`. No index on `inventory_item_id`: nothing looks reservations up by item, and items are never deleted [v1.8, D-8].
 - Partial item cancellation lowers `quantity` and releases the difference, with a movement row.
 
 ### inventory_movements (append-only, audit)
@@ -295,7 +296,7 @@ No index on `variant_id`: nothing looks lines up by variant, and variants are ne
 | column | type | rules |
 |---|---|---|
 | std columns | | |
-| order_number | VARCHAR(20) | `'NM-' \|\| lpad(nextval('order_number_seq')::text, 9, '0')`, set explicitly in the INSERT [SD-10] |
+| order_number | VARCHAR(20) | `'NM-' \|\| lpad(nextval('order_number_seq')::text, 9, '0')`, set explicitly in the INSERT [SD-10]. The sequence is created in the `orders` migration [v1.8] |
 | customer_id | UUID | fk → customers |
 | status | VARCHAR(30) | `pending_payment, placed, in_progress, completed, partially_completed, cancelled` |
 | payment_method | VARCHAR(20) | `cod, kashier` |
@@ -320,6 +321,7 @@ Indexes:
 - `idx_orders_customer_id_created_at_id (customer_id, created_at DESC, id DESC)`: "my orders".
 - `idx_orders_payment_expires_at (payment_expires_at) WHERE status = 'pending_payment'`: the expiry job.
 - `idx_orders_status_created_at_id (status, created_at DESC, id DESC)`: admin order list by status.
+- `idx_orders_created_at_id (created_at DESC, id DESC)`: admin order list without a status filter (default sort `-createdAt`) [v1.8, D-8].
 
 ### seller_orders
 | column | type | rules |
@@ -365,6 +367,7 @@ Indexes:
 | line_total | money | `= unit_price × (quantity − cancelled_quantity)` |
 
 Index: `idx_order_items_seller_order_id (seller_order_id)`: items of seller orders (batched `= ANY(?)`).
+No indexes on `variant_id` / `product_id`: nothing looks order lines up by variant or product, and variants and products are only soft-deleted, so the `RESTRICT` check never runs [v1.8, D-8].
 
 ### order_item_cancellations (append-only)
 `order_item_id` fk · `quantity INTEGER CHECK (> 0)` · `reason VARCHAR(40)` (`out_of_stock, seller_request, other`) · `note VARCHAR(500) null` · `actor_user_id` fk → users.
@@ -373,6 +376,8 @@ Index: `idx_order_item_cancellations_order_item_id (order_item_id)`.
 ### order_status_history / seller_order_status_history (append-only)
 `order_id` (or `seller_order_id`) fk · `from_status VARCHAR(30) null` · `to_status VARCHAR(30)` · `actor_role VARCHAR(20)` (`customer, seller, admin, delivery_agent, system`) · `actor_user_id UUID null` · `reason VARCHAR(500) null`.
 Index: `(order_id | seller_order_id, created_at)`: timeline view.
+
+Every FK in §8 is `ON DELETE RESTRICT` [v1.8, D-8].
 
 ---
 
@@ -388,7 +393,9 @@ Index: `(order_id | seller_order_id, created_at)`: timeline view.
 | amount | money | order total at checkout (adjusted on cancellations before payment) |
 | collected_amount | money | COD: sum collected by agents. Kashier: amount paid. The app inserts 0 |
 | refunded_amount | money | app inserts 0. `CHECK (refunded_amount <= collected_amount)` |
-| provider_order_ref | VARCHAR(100) null | the Kashier order/session id |
+| provider_order_ref | VARCHAR(100) null | the Kashier session id |
+| provider_session_url | VARCHAR(500) null | Kashier `sessionUrl`; null for COD and before a session exists [v1.8, D-8] |
+| provider_session_expires_at | TIMESTAMPTZ null | the session's `expireAt`; set together with the two columns above (`chk_payments_session_columns`: all three null or all three set) [v1.8, D-8] |
 | provider_transaction_ref | VARCHAR(100) null | the Kashier transaction id |
 | paid_at | TIMESTAMPTZ null | |
 
@@ -397,14 +404,17 @@ Indexes:
 - `uq_payments_provider_order_ref (provider_order_ref) WHERE provider_order_ref IS NOT NULL`: webhook → payment lookup.
 
 ### payment_refunds
-std columns · `payment_id` fk · `seller_order_id UUID null` fk (null = whole order / fee) · `amount money CHECK (> 0)` · `reason VARCHAR(40)` (`seller_order_cancelled, items_cancelled, delivery_failed, late_payment_after_expiry, all_cancelled_fee`) · `status VARCHAR(20)` (`pending_manual, recorded`) · `recorded_by_user_id UUID null` · `recorded_at TIMESTAMPTZ null` · `provider_refund_ref VARCHAR(100) null`.
+std columns · `payment_id` fk · `seller_order_id UUID null` fk (null = whole order / fee) · `amount money CHECK (> 0)` · `reason VARCHAR(40)` (`seller_order_cancelled, items_cancelled, delivery_failed, late_payment_after_expiry, all_cancelled_fee, amount_mismatch`; `amount_mismatch` v1.8, spec 10 PA-6) · `status VARCHAR(20)` (`pending_manual, recorded`) · `recorded_by_user_id UUID null` · `recorded_at TIMESTAMPTZ null` · `provider_refund_ref VARCHAR(100) null`.
 Indexes:
-- `idx_payment_refunds_created_at WHERE status = 'pending_manual'`: the admin refund queue.
+- `idx_payment_refunds_created_at_id (created_at, id) WHERE status = 'pending_manual'`: the admin refund queue, oldest first, with the keyset `id` tie-break [v1.8, D-8].
 - `idx_payment_refunds_payment_id (payment_id)`.
+- No index on `seller_order_id`: nothing looks refunds up by seller order [v1.8, D-8].
 
 ### payment_events (append-only, webhook inbox)
 `payment_id UUID null` fk · `provider VARCHAR(20)` (`kashier`) · `provider_event_id VARCHAR(100)` · `event_type VARCHAR(50)` · `payload JSONB` (secrets/card data stripped) · `signature_valid BOOLEAN` · `processed_at TIMESTAMPTZ null`.
 `uq_payment_events_provider_provider_event_id (provider, provider_event_id)`: webhook dedupe.
+`idx_payment_events_payment_id (payment_id)`: the admin payment view lists a payment's events [v1.8, D-8].
+Every FK in §9 is `ON DELETE RESTRICT` [v1.8, D-8].
 
 ---
 
@@ -522,5 +532,6 @@ Index: `idx_processed_events_processed_at`: the cleanup job.
 | D-5 | Public product listings sort "newest" on `published_at`; the two public listing indexes use `(…, published_at DESC, id DESC) WHERE VIS` (P3-Q7, 2026-10-10) |
 | D-6 | `idx_inventory_movements_inventory_item_id_created_at_id` includes `id` for the keyset tie-break (P3-Q8, 2026-10-10) |
 | D-7 | `idx_products_category_id (category_id)`: the category usage checks run outside VIS and would otherwise scan `products` (Phase 3 implementation, 2026-10-10) |
+| D-8 | Phase 5 (P5-Q4, 2026-10-12): `idx_orders_created_at_id`; `idx_payment_events_payment_id`; refund queue index with `id`; `payments.provider_session_url` + `provider_session_expires_at`; `RefundReason` `amount_mismatch`; every ordering/payments/reservation FK `ON DELETE RESTRICT`; no indexes on `order_items.variant_id` / `product_id`, `inventory_reservations.inventory_item_id`, `payment_refunds.seller_order_id`; `order_number_seq` created with `orders` |
 
 No open schema questions.
