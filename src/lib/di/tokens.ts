@@ -67,6 +67,12 @@ export const TOKENS = {
   DeliveryReferenceService: Symbol.for('DeliveryReferenceService'),
   GovernorateController: Symbol.for('GovernorateController'),
   DeliverySettingsController: Symbol.for('DeliverySettingsController'),
+  DeliveryAgentRepository: Symbol.for('DeliveryAgentRepository'),
+  DeliveryAgentService: Symbol.for('DeliveryAgentService'),
+  /** Public API of delivery for finance (spec 11 §2, DE-11). */
+  DeliveryAgentDirectory: Symbol.for('DeliveryAgentDirectory'),
+  AgentSelfController: Symbol.for('AgentSelfController'),
+  AgentAdminController: Symbol.for('AgentAdminController'),
 
   // catalog module
   CategoryRepository: Symbol.for('CategoryRepository'),
