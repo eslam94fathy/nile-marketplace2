@@ -110,6 +110,13 @@ export const TOKENS = {
   CartViewService: Symbol.for('CartViewService'),
   CartController: Symbol.for('CartController'),
 
+  // payments module
+  PaymentRepository: Symbol.for('PaymentRepository'),
+  PaymentRefundRepository: Symbol.for('PaymentRefundRepository'),
+  /** Public API of payments (spec 10 §2), injected into ordering. */
+  PaymentDirectory: Symbol.for('PaymentDirectory'),
+  OrderAdjustmentService: Symbol.for('OrderAdjustmentService'),
+
   // notifications module
   NotificationLogRepository: Symbol.for('NotificationLogRepository'),
   EmailNotificationService: Symbol.for('EmailNotificationService'),

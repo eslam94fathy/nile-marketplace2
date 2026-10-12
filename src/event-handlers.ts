@@ -1,6 +1,7 @@
 import { type DependencyContainer } from 'tsyringe';
 import { createCatalogHandlers } from './app/catalog';
 import { createNotificationHandlers } from './app/notifications';
+import { createPaymentsHandlers } from './app/payments';
 import { type EventHandlerDefinition } from './lib/events';
 
 /**
@@ -8,5 +9,9 @@ import { type EventHandlerDefinition } from './lib/events';
  * Modules export their handler definitions from their index.ts and are added here in their phase.
  */
 export function createEventHandlers(container: DependencyContainer): EventHandlerDefinition[] {
-  return [...createNotificationHandlers(container), ...createCatalogHandlers(container)];
+  return [
+    ...createNotificationHandlers(container),
+    ...createCatalogHandlers(container),
+    ...createPaymentsHandlers(container),
+  ];
 }

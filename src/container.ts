@@ -8,6 +8,7 @@ import { registerHealthModule } from './app/health';
 import { registerIdentityModule } from './app/identity';
 import { registerInventoryModule } from './app/inventory';
 import { registerNotificationsModule } from './app/notifications';
+import { registerPaymentsModule } from './app/payments';
 import { TOKENS } from './lib/di';
 import { Outbox } from './lib/events';
 import { type ApiInfrastructure, type CoreInfrastructure, type WorkerInfrastructure } from './infrastructure';
@@ -48,6 +49,7 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
   registerInventoryModule(container);
   registerCatalogModule(container);
   registerCartModule(container);
+  registerPaymentsModule(container);
   return container;
 }
 
@@ -60,5 +62,6 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   registerSellersModule(container);
   registerInventoryModule(container);
   registerCatalogProjections(container);
+  registerPaymentsModule(container);
   return container;
 }
