@@ -35,6 +35,10 @@ import * as m20261012120007 from './20261012120007_create_inventory_reservations
 import * as m20261012120008 from './20261012120008_create_payments';
 import * as m20261012120009 from './20261012120009_create_payment_refunds';
 import * as m20261012120010 from './20261012120010_create_payment_events';
+import * as m20261012130001 from './20261012130001_create_delivery_agents';
+import * as m20261012130002 from './20261012130002_create_shipments';
+import * as m20261012130003 from './20261012130003_create_shipment_attempts';
+import * as m20261012130004 from './20261012130004_create_shipment_status_history';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -75,5 +79,9 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261012120008_create_payments', module: m20261012120008 },
   { name: '20261012120009_create_payment_refunds', module: m20261012120009 },
   { name: '20261012120010_create_payment_events', module: m20261012120010 },
+  { name: '20261012130001_create_delivery_agents', module: m20261012130001 },
+  { name: '20261012130002_create_shipments', module: m20261012130002 },
+  { name: '20261012130003_create_shipment_attempts', module: m20261012130003 },
+  { name: '20261012130004_create_shipment_status_history', module: m20261012130004 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

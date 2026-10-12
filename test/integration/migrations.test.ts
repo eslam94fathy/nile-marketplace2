@@ -5,6 +5,7 @@ import { migrateDownAll, migrateLatest } from '../../src/lib/db/migrator';
 import { MIGRATIONS } from '../../src/migrations';
 import { cartFixtures } from '../helpers/cart-fixtures';
 import { catalogFixtures, signatureOf } from '../helpers/catalog-fixtures';
+import { deliveryFixtures } from '../helpers/delivery-fixtures';
 import { orderFixtures } from '../helpers/order-fixtures';
 import { createTestResources, type TestResources } from '../helpers/test-resources';
 
@@ -908,6 +909,193 @@ describe('migrations on a real Postgres 18', () => {
       );
       expect(refundQueue).toContain('idx_payment_refunds_created_at_id');
       expect(refundQueue).not.toContain('Sort');
+    });
+  });
+
+  describe('delivery agents, shipments, attempts and history (P6)', () => {
+    const fx = () => deliveryFixtures(db);
+
+    it('delivery_agents: one per user, E.164 phone, an inactive agent is never on shift', async () => {
+      const { insertAgent, insertUser } = fx();
+      const { userId } = await insertAgent();
+      const again = () =>
+        db('delivery_agents').insert({
+          user_id: userId,
+          full_name: 'Twice',
+          phone: '+201101234567',
+          home_governorate_id: db('governorates').select('id').where({ code: 'EG-C' }),
+          status: 'active',
+          on_shift: false,
+          last_assigned_at: null,
+        });
+      expect((await pgFailure(again)).constraint).toBe('uq_delivery_agents_user_id');
+      const fresh = async (overrides: Record<string, unknown>) =>
+        insertAgent({ user_id: await insertUser('delivery_agent'), ...overrides });
+      expect((await pgFailure(() => fresh({ phone: '0101234567' }))).constraint).toBe(
+        'chk_delivery_agents_phone',
+      );
+      expect((await pgFailure(() => fresh({ status: 'inactive', on_shift: true }))).constraint).toBe(
+        'chk_delivery_agents_on_shift',
+      );
+      expect((await pgFailure(() => fresh({ status: 'retired' }))).constraint).toBe(
+        'chk_delivery_agents_status',
+      );
+      await fresh({ status: 'inactive', on_shift: false });
+    });
+
+    it('shipments: one per seller order, snapshots required, agent rules per status', async () => {
+      const { insertShipmentChain, insertShipment, insertAgent } = fx();
+      const { sellerOrderId, orderId, shipmentId } = await insertShipmentChain();
+      expect((await pgFailure(() => insertShipment({ sellerOrderId, orderId }))).constraint).toBe(
+        'uq_shipments_seller_order_id',
+      );
+      const { agentId } = await insertAgent();
+      const set = (values: Record<string, unknown>) =>
+        db('shipments').where({ id: shipmentId }).update(values);
+      expect((await pgFailure(() => set({ agent_id: agentId }))).constraint).toBe('chk_shipments_agent');
+      expect((await pgFailure(() => set({ status: 'assigned' }))).constraint).toBe('chk_shipments_agent');
+      await set({ status: 'assigned', agent_id: agentId, assigned_at: new Date() });
+      expect((await pgFailure(() => set({ status: 'delivered' }))).constraint).toBe(
+        'chk_shipments_delivered',
+      );
+      await set({ status: 'cancelled' }); // cancelled may keep its agent
+      expect((await pgFailure(() => set({ attempt_count: 4 }))).constraint).toBe(
+        'chk_shipments_attempt_count',
+      );
+      expect((await pgFailure(() => set({ status: 'lost' }))).constraint).toBe('chk_shipments_status');
+      expect(
+        (await pgFailure(() => db('shipments').insert({ seller_order_id: sellerOrderId, order_id: orderId })))
+          .code,
+      ).toBe('23502');
+    });
+
+    it('fee carrier: holds exactly the checkout fee; at most one per checkout; Kashier collects nothing', async () => {
+      const { insertShipmentChain, insertShipment, insertSellerOrder, insertSeller } = fx();
+      const first = await insertShipmentChain();
+      const carry = (id: string, fee: string) =>
+        db('shipments').where({ id }).update({ carries_delivery_fee: true, cod_fee_amount: fee });
+      expect((await pgFailure(() => carry(first.shipmentId, '49.00'))).constraint).toBe(
+        'chk_shipments_fee_carrier',
+      );
+      expect(
+        (
+          await pgFailure(() =>
+            db('shipments').where({ id: first.shipmentId }).update({ cod_fee_amount: '1.00' }),
+          )
+        ).constraint,
+      ).toBe('chk_shipments_fee_carrier');
+      await carry(first.shipmentId, '50.00');
+
+      const sibling = await insertSellerOrder(first.orderId, (await insertSeller()).sellerId);
+      const siblingShipment = await insertShipment({ sellerOrderId: sibling, orderId: first.orderId });
+      expect((await pgFailure(() => carry(siblingShipment, '50.00'))).constraint).toBe(
+        'uq_shipments_order_id_fee_carrier',
+      );
+
+      const kashier = await fx().insertShipmentChain({
+        payment_method: 'kashier',
+        order_delivery_fee: '0.00',
+        cod_items_amount: '0.00',
+      });
+      expect(
+        (
+          await pgFailure(() =>
+            db('shipments').where({ id: kashier.shipmentId }).update({ cod_items_amount: '10.00' }),
+          )
+        ).constraint,
+      ).toBe('chk_shipments_kashier_no_cash');
+      expect(
+        (
+          await pgFailure(() =>
+            db('shipments').where({ id: kashier.shipmentId }).update({ cod_collected_amount: '0.00' }),
+          )
+        ).constraint,
+      ).toBe('chk_shipments_kashier_no_cash');
+    });
+
+    it('shipment_attempts: numbers 1..3, unique per shipment, whitelisted reasons; history whitelists', async () => {
+      const { insertShipmentChain, insertAgent } = fx();
+      const { shipmentId } = await insertShipmentChain();
+      const { agentId } = await insertAgent();
+      const attempt = (row: Record<string, unknown>) =>
+        db('shipment_attempts').insert({ shipment_id: shipmentId, agent_id: agentId, note: null, ...row });
+      expect(
+        (await pgFailure(() => attempt({ attempt_number: 4, reason: 'wrong_address' }))).constraint,
+      ).toBe('chk_shipment_attempts_attempt_number');
+      expect((await pgFailure(() => attempt({ attempt_number: 1, reason: 'rain' }))).constraint).toBe(
+        'chk_shipment_attempts_reason',
+      );
+      await attempt({ attempt_number: 1, reason: 'customer_unreachable' });
+      expect(
+        (await pgFailure(() => attempt({ attempt_number: 1, reason: 'wrong_address' }))).constraint,
+      ).toBe('uq_shipment_attempts_shipment_id_attempt_number');
+
+      const history = (row: Record<string, unknown>) =>
+        db('shipment_status_history').insert({
+          shipment_id: shipmentId,
+          from_status: null,
+          reason: null,
+          ...row,
+        });
+      expect(
+        (await pgFailure(() => history({ to_status: 'lost', actor_role: 'system', actor_user_id: null })))
+          .constraint,
+      ).toBe('chk_shipment_status_history_to_status');
+      const adminId = await fx().insertUser('admin');
+      expect(
+        (
+          await pgFailure(() =>
+            history({ to_status: 'assigned', actor_role: 'system', actor_user_id: adminId }),
+          )
+        ).constraint,
+      ).toBe('chk_shipment_status_history_system_actor');
+      await history({ to_status: 'unassigned', actor_role: 'system', actor_user_id: null });
+    });
+
+    it('D-3 / D-10 indexes exist and serve the admin, agent and retry lists without a sort', async () => {
+      const definitions = await db.raw<{ rows: { name: string; definition: string }[] }>(
+        `SELECT c.relname AS name, pg_get_indexdef(i.indexrelid) AS definition
+           FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+          WHERE c.relname IN ('idx_shipments_status_created_at_id', 'idx_shipments_created_at_desc_id',
+                              'idx_shipments_agent_id_created_at_id', 'idx_shipments_created_at_id',
+                              'idx_delivery_agents_created_at_id', 'uq_shipments_order_id_fee_carrier')`,
+      );
+      const byName = Object.fromEntries(definitions.rows.map((row) => [row.name, row.definition]));
+      expect(byName.idx_shipments_status_created_at_id).toMatch(/\(status, created_at DESC, id DESC\)$/);
+      expect(byName.idx_shipments_created_at_desc_id).toMatch(/\(created_at DESC, id DESC\)$/);
+      expect(byName.idx_shipments_agent_id_created_at_id).toMatch(
+        /\(agent_id, created_at, id\) WHERE \(agent_id IS NOT NULL\)/,
+      );
+      expect(byName.idx_shipments_created_at_id).toMatch(/\(created_at, id\) WHERE.*'unassigned'/);
+      expect(byName.idx_delivery_agents_created_at_id).toMatch(/\(created_at DESC, id DESC\)$/);
+      expect(byName.uq_shipments_order_id_fee_carrier).toMatch(
+        /UNIQUE.*\(order_id\) WHERE carries_delivery_fee/,
+      );
+
+      const planOf = (sql: string) =>
+        db.transaction(async (trx) => {
+          await trx.raw('SET LOCAL enable_seqscan = off; SET LOCAL enable_bitmapscan = off');
+          const result = await trx.raw<{ rows: { 'QUERY PLAN': string }[] }>(`EXPLAIN ${sql}`);
+          return result.rows.map((row) => row['QUERY PLAN']).join('\n');
+        });
+      for (const [sql, index] of [
+        [
+          `SELECT id FROM shipments ORDER BY created_at DESC, id DESC LIMIT 21`,
+          'idx_shipments_created_at_desc_id',
+        ],
+        [
+          `SELECT id FROM shipments WHERE agent_id = '0192f5e0-0000-7000-8000-000000000000' ORDER BY created_at, id LIMIT 21`,
+          'idx_shipments_agent_id_created_at_id',
+        ],
+        [
+          `SELECT id FROM shipments WHERE status = 'unassigned' ORDER BY created_at, id LIMIT 100`,
+          'idx_shipments_created_at_id',
+        ],
+      ] as const) {
+        const plan = await planOf(sql);
+        expect(plan).toContain(index);
+        expect(plan).not.toContain('Sort');
+      }
     });
   });
 });

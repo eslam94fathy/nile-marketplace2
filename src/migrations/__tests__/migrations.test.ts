@@ -47,6 +47,10 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261012120008_create_payments',
       '20261012120009_create_payment_refunds',
       '20261012120010_create_payment_events',
+      '20261012130001_create_delivery_agents',
+      '20261012130002_create_shipments',
+      '20261012130003_create_shipment_attempts',
+      '20261012130004_create_shipment_status_history',
     ]);
   });
 
