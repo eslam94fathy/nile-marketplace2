@@ -1,6 +1,6 @@
 # System Design 02 — Database Schema (Release 1)
 
-Status: **v1.8 APPROVED (2026-10-12).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). v1.5: public product listings sort on `published_at` (D-5); `id` tie-break on the stock-history index (D-6). v1.6: `idx_products_category_id` for category usage checks (D-7). v1.7: cart FK `ON DELETE` behaviour and why `cart_items.variant_id` has no index (§7, P4-Q11). v1.8: ordering/payments indexes, Kashier session columns, refund reason `amount_mismatch`, FK behaviour and unindexed FKs (§6, §8, §9, D-8, Phase 5). Changes from now on need explicit approval and a version bump. Decisions: §13.
+Status: **v1.9 APPROVED (2026-10-12).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). v1.5: public product listings sort on `published_at` (D-5); `id` tie-break on the stock-history index (D-6). v1.6: `idx_products_category_id` for category usage checks (D-7). v1.7: cart FK `ON DELETE` behaviour and why `cart_items.variant_id` has no index (§7, P4-Q11). v1.8: ordering/payments indexes, Kashier session columns, refund reason `amount_mismatch`, FK behaviour and unindexed FKs (§6, §8, §9, D-8, Phase 5). v1.9: `inventory_reservations.quantity` is what is still reserved, `>= 0`, and 0 exactly when `released` (§6, D-9). Changes from now on need explicit approval and a version bump. Decisions: §13.
 Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §6. Business rules: `docs/spec/00-overview.md` v1.0.
 
 ---
@@ -267,7 +267,7 @@ Indexes:
 Index: `uq_inventory_items_variant_id`: batched lookup `variant_id = ANY(?)` (cart, checkout, product detail).
 
 ### inventory_reservations
-std columns · `inventory_item_id` fk · `order_item_id` fk → order_items · `quantity INTEGER CHECK (quantity > 0)` · `status VARCHAR(20)` (`active, committed, released`).
+std columns · `inventory_item_id` fk · `order_item_id` fk → order_items · `quantity INTEGER CHECK (quantity >= 0)`: what is still reserved; a release lowers it, a commit keeps it [v1.9] · `status VARCHAR(20)` (`active, committed, released`) · `chk_inventory_reservations_released CHECK ((status = 'released') = (quantity = 0))` [v1.9, D-9].
 - `uq_inventory_reservations_order_item_id (order_item_id)`: one reservation per order line. Also the commit/release lookup.
 - FKs `ON DELETE RESTRICT`. No index on `inventory_item_id`: nothing looks reservations up by item, and items are never deleted [v1.8, D-8].
 - Partial item cancellation lowers `quantity` and releases the difference, with a movement row.
@@ -533,5 +533,6 @@ Index: `idx_processed_events_processed_at`: the cleanup job.
 | D-6 | `idx_inventory_movements_inventory_item_id_created_at_id` includes `id` for the keyset tie-break (P3-Q8, 2026-10-10) |
 | D-7 | `idx_products_category_id (category_id)`: the category usage checks run outside VIS and would otherwise scan `products` (Phase 3 implementation, 2026-10-10) |
 | D-8 | Phase 5 (P5-Q4, 2026-10-12): `idx_orders_created_at_id`; `idx_payment_events_payment_id`; refund queue index with `id`; `payments.provider_session_url` + `provider_session_expires_at`; `RefundReason` `amount_mismatch`; every ordering/payments/reservation FK `ON DELETE RESTRICT`; no indexes on `order_items.variant_id` / `product_id`, `inventory_reservations.inventory_item_id`, `payment_refunds.seller_order_id`; `order_number_seq` created with `orders` |
+| D-9 | `inventory_reservations.quantity >= 0` with `chk_inventory_reservations_released` (released ⇔ 0), so a full release can lower it to 0 as spec 07 UC-IN-2 says; the earlier `> 0` contradicted it (Phase 5 migrations, 2026-10-12) |
 
 No open schema questions.

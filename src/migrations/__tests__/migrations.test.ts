@@ -37,6 +37,16 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261010120008_create_inventory_movements',
       '20261011120001_create_carts',
       '20261011120002_create_cart_items',
+      '20261012120001_create_orders',
+      '20261012120002_create_seller_orders',
+      '20261012120003_create_order_items',
+      '20261012120004_create_order_item_cancellations',
+      '20261012120005_create_order_status_history',
+      '20261012120006_create_seller_order_status_history',
+      '20261012120007_create_inventory_reservations',
+      '20261012120008_create_payments',
+      '20261012120009_create_payment_refunds',
+      '20261012120010_create_payment_events',
     ]);
   });
 

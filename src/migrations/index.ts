@@ -25,6 +25,16 @@ import * as m20261010120007 from './20261010120007_create_inventory_items';
 import * as m20261010120008 from './20261010120008_create_inventory_movements';
 import * as m20261011120001 from './20261011120001_create_carts';
 import * as m20261011120002 from './20261011120002_create_cart_items';
+import * as m20261012120001 from './20261012120001_create_orders';
+import * as m20261012120002 from './20261012120002_create_seller_orders';
+import * as m20261012120003 from './20261012120003_create_order_items';
+import * as m20261012120004 from './20261012120004_create_order_item_cancellations';
+import * as m20261012120005 from './20261012120005_create_order_status_history';
+import * as m20261012120006 from './20261012120006_create_seller_order_status_history';
+import * as m20261012120007 from './20261012120007_create_inventory_reservations';
+import * as m20261012120008 from './20261012120008_create_payments';
+import * as m20261012120009 from './20261012120009_create_payment_refunds';
+import * as m20261012120010 from './20261012120010_create_payment_events';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -55,5 +65,15 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261010120008_create_inventory_movements', module: m20261010120008 },
   { name: '20261011120001_create_carts', module: m20261011120001 },
   { name: '20261011120002_create_cart_items', module: m20261011120002 },
+  { name: '20261012120001_create_orders', module: m20261012120001 },
+  { name: '20261012120002_create_seller_orders', module: m20261012120002 },
+  { name: '20261012120003_create_order_items', module: m20261012120003 },
+  { name: '20261012120004_create_order_item_cancellations', module: m20261012120004 },
+  { name: '20261012120005_create_order_status_history', module: m20261012120005 },
+  { name: '20261012120006_create_seller_order_status_history', module: m20261012120006 },
+  { name: '20261012120007_create_inventory_reservations', module: m20261012120007 },
+  { name: '20261012120008_create_payments', module: m20261012120008 },
+  { name: '20261012120009_create_payment_refunds', module: m20261012120009 },
+  { name: '20261012120010_create_payment_events', module: m20261012120010 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

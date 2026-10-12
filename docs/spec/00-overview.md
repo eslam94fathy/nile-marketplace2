@@ -253,6 +253,7 @@ The user accepted every recommendation (2026-10-08). Answers are logged in §9.1
 | D-6 | `02-database.md` §6 | Stock-history index gains the `id` tie-break | Keyset pagination (P3-Q8) | **Applied** (v1.5, approved 2026-10-10) |
 | D-7 | `02-database.md` §5 | Add `idx_products_category_id (category_id)` | Category usage checks outside VIS (CLAUDE.md §6.3) | **Applied** (v1.6, approved 2026-10-10) |
 | D-8 | `02-database.md` §6, §8, §9 | `idx_orders_created_at_id`, `idx_payment_events_payment_id`, refund queue index with `id`, `payments.provider_session_url` / `provider_session_expires_at`, `RefundReason` `amount_mismatch`, FK `ON DELETE RESTRICT`, unindexed FKs documented, `order_number_seq` with `orders` | Admin lists, one Kashier session per payment, amount-mismatch refunds (P5-Q4, P5-Q7, P5-Q11) | **Applied** (v1.8, approved 2026-10-12) |
+| D-9 | `02-database.md` §6 | `inventory_reservations.quantity >= 0` (was `> 0`) + `chk_inventory_reservations_released` (released ⇔ 0) | Spec 07 UC-IN-2 lowers the quantity to 0 on a full release | **Applied** (v1.9, approved 2026-10-12) |
 
 ## 9. Answered log (2026-10-07)
 
