@@ -12,6 +12,7 @@ import {
   AdminOrderDetailDto,
   AdminOrderSummaryDto,
   CheckoutResultDto,
+  KashierSessionDto,
   OrderDetailDto,
   OrderSummaryDto,
   SellerOrderDto,
@@ -53,6 +54,7 @@ export function orderingRoutes(deps: OrderingRouteDeps): Router {
   router.post(P.CHECKOUT, ...customerOnly, checkoutLimit, deps.idempotency, orders.checkout);
   router.get(P.ORDERS, ...customerOnly, orders.list);
   router.get(P.ORDER, ...customerOnly, orders.get);
+  router.post(P.KASHIER_SESSION, ...customerOnly, checkoutLimit, orders.kashierSession);
   router.post(P.CUSTOMER_CANCEL, ...customerOnly, deps.idempotency, orders.cancelSellerOrder);
 
   router.get(P.SELLER_ORDERS, ...sellerOnly, sellerOrders.list);
@@ -72,7 +74,7 @@ export function orderingRoutes(deps: OrderingRouteDeps): Router {
     method: 'post',
     path: `${basePath}${P.CHECKOUT}`,
     summary:
-      'Place an order from my cart, split per seller; reserves stock and empties the cart. COD only until the Kashier flow lands (CART_EMPTY 422, CART_HAS_ISSUES 409, ADDRESS_NOT_FOUND 422, GOVERNORATE_NOT_DELIVERABLE 422, ORDER_TOTAL_CHANGED 409, INSUFFICIENT_STOCK 409)',
+      'Place an order from my cart, split per seller; reserves stock and empties the cart. COD: placed at once. Kashier: awaiting payment for KASHIER_PAYMENT_TTL_MINUTES, with the payment page in kashier.checkoutUrl (null when Kashier failed; ask again through kashier-session) (CART_EMPTY 422, CART_HAS_ISSUES 409, ADDRESS_NOT_FOUND 422, GOVERNORATE_NOT_DELIVERABLE 422, ORDER_TOTAL_CHANGED 409, INSUFFICIENT_STOCK 409)',
     requestBody: CheckoutDto,
     idempotent: true,
     responses: { 201: { description: 'The placed order', body: CheckoutResultDto } },
@@ -104,6 +106,15 @@ export function orderingRoutes(deps: OrderingRouteDeps): Router {
     requestBody: CancelSellerOrderDto,
     idempotent: true,
     responses: { 200: { description: 'The order after the change', body: OrderDetailDto } },
+  });
+
+  docs.add({
+    ...customer,
+    method: 'post',
+    path: `${basePath}${P.KASHIER_SESSION}`,
+    summary:
+      'The Kashier payment page of my order while it awaits payment; the same session on every call (ORDER_NOT_FOUND 404, ORDER_NOT_AWAITING_PAYMENT 409, PAYMENT_PROVIDER_UNAVAILABLE 502)',
+    responses: { 200: { description: 'The payment page', body: KashierSessionDto } },
   });
 
   const seller = { tags: ['seller: orders'], auth: true } as const;

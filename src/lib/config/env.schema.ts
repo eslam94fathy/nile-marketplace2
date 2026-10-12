@@ -209,9 +209,15 @@ const orderingShape = {
   SELLER_ACCEPT_TIMEOUT_HOURS: positiveInt(24 * 30),
 };
 
+/** api only: the Kashier payment window set at checkout (spec 09 §3.1, Q-12). */
+const kashierCheckoutShape = {
+  KASHIER_PAYMENT_TTL_MINUTES: positiveInt(24 * 60),
+};
+
 /** ordering jobs (spec 09 §3.10, OR-5, OR-8), worker only. */
 const orderJobsShape = {
   JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS: positiveInt(3_600_000),
+  JOB_KASHIER_PAYMENT_EXPIRY_INTERVAL_MS: positiveInt(3_600_000),
   ORDER_JOBS_BATCH_SIZE: positiveInt(1_000),
 };
 
@@ -362,6 +368,7 @@ export const apiEnvSchema = z
     ...catalogShape,
     ...cartShape,
     ...orderingShape,
+    ...kashierCheckoutShape,
     ...paymentGatewayShape,
     ...kashierSessionShape,
     ...inviteShape,
@@ -387,6 +394,8 @@ export const workerEnvSchema = z
     ...messagingShape,
     ...jobsShape,
     ...orderJobsShape,
+    // The payment consumer sets the acceptance deadline when a Kashier order is placed (OR-8).
+    ...orderingShape,
     ...paymentGatewayShape,
     ...secretsShape,
     ...emailShape,

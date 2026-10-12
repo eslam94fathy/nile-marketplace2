@@ -9,12 +9,15 @@ export const ORDERING_TABLES = {
 
 /** Queue of the shipment consumer (docs/spec/02-events.md §2). */
 export const SHIPMENT_UPDATES_QUEUE = 'ordering.shipment-updates';
+/** Queue of the payment consumer (docs/spec/02-events.md §2). */
+export const PAYMENT_UPDATES_QUEUE = 'ordering.payment-updates';
 
 /** Paths under /api/v1 (spec 09 §4). */
 export const ORDERING_PATHS = {
   CHECKOUT: '/checkout',
   ORDERS: '/orders',
   ORDER: '/orders/:orderId',
+  KASHIER_SESSION: '/orders/:orderId/payment/kashier-session',
   SELLER_ORDERS: '/seller/orders',
   SELLER_ORDER: '/seller/orders/:sellerOrderId',
   CUSTOMER_CANCEL: '/orders/:orderId/seller-orders/:sellerOrderId/cancel',

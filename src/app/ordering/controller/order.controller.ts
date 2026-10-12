@@ -12,7 +12,12 @@ import {
   CustomerSellerOrderParamsDto,
   OrderIdParamsDto,
 } from '../dto/order-request.dto';
-import { type CheckoutResultDto, toOrderDetailDto, toOrderSummaryDto } from '../dto/order-response.dto';
+import {
+  type CheckoutResultDto,
+  type KashierSessionDto,
+  toOrderDetailDto,
+  toOrderSummaryDto,
+} from '../dto/order-response.dto';
 import { profileMissing } from '../errors';
 import { type CheckoutService } from '../service/checkout.service';
 import { type OrderActionService } from '../service/order-action.service';
@@ -34,13 +39,25 @@ export class OrderController {
   checkout = async (req: Request, res: Response): Promise<void> => {
     const input = await validateDto(CheckoutDto, req.body);
     const { customerId, userId } = await this.callerOf(req);
-    const order = await this.checkoutService.checkout(customerId, userId, input);
+    const { order, kashier } = await this.checkoutService.checkout(customerId, userId, input);
     // Built after the commit, from what was stored.
     const body: CheckoutResultDto = {
       order: toOrderDetailDto(await this.views.getForCustomer(customerId, order.id)),
-      kashier: null,
+      kashier: kashier && { checkoutUrl: kashier.checkoutUrl, expiresAt: kashier.expiresAt.toISOString() },
     };
     sendSuccess(res, HTTP_STATUS.CREATED, body);
+  };
+
+  /** Spec 09 §4.1.2: the payment page (again) while the window is open. */
+  kashierSession = async (req: Request, res: Response): Promise<void> => {
+    const { orderId } = await validateDto(OrderIdParamsDto, req.params);
+    const { customerId } = await this.callerOf(req);
+    const page = await this.checkoutService.paymentPage(customerId, orderId);
+    const body: KashierSessionDto = {
+      checkoutUrl: page.checkoutUrl,
+      expiresAt: page.expiresAt.toISOString(),
+    };
+    sendSuccess(res, HTTP_STATUS.OK, body);
   };
 
   list = async (req: Request, res: Response): Promise<void> => {

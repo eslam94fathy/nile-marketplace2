@@ -78,17 +78,7 @@ export class OrderAdjustmentService {
     const payment = await this.lock(orderId, trx);
     const sellerOrderId = uuidField(envelope, 'sellerOrderId');
     if (isRefundableKashier(payment)) {
-      // A seller order whose lines were all cancelled before may report 0: nothing left to refund.
-      if (amount.isZero()) return;
-      await this.refunds.insertPending({ paymentId: payment.id, sellerOrderId, amount, reason }, trx);
-      this.logger.info('refund due recorded', {
-        event: 'REFUND_DUE',
-        paymentId: payment.id,
-        orderId,
-        sellerOrderId,
-        reason,
-        amount: amount.toString(),
-      });
+      await this.flagRefund(payment, sellerOrderId, amount, reason, trx);
       return;
     }
     if (isOpenCod(payment)) {
@@ -137,15 +127,7 @@ export class OrderAdjustmentService {
     if (isRefundableKashier(payment)) {
       // Nothing was delivered: the fee is refunded too (Q-28).
       if (deliveryFee.isZero() && originalDeliveryFee.greaterThan(Money.zero())) {
-        await this.refunds.insertPending(
-          {
-            paymentId: payment.id,
-            sellerOrderId: null,
-            amount: originalDeliveryFee,
-            reason: RefundReason.ALL_CANCELLED_FEE,
-          },
-          trx,
-        );
+        await this.flagRefund(payment, null, originalDeliveryFee, RefundReason.ALL_CANCELLED_FEE, trx);
       }
       return;
     }
@@ -186,6 +168,44 @@ export class OrderAdjustmentService {
       },
       trx,
     );
+  }
+
+  /**
+   * Flags a refund due, never beyond what was collected (PA-20): the refunds already flagged on the
+   * payment (pending or recorded) count first. A late payment's full refund (SD-5) and the refunds
+   * of the cancellation events of the same order can arrive in either order; this keeps their sum at
+   * most the money taken.
+   */
+  private async flagRefund(
+    payment: Payment,
+    sellerOrderId: string | null,
+    amount: Money,
+    reason: RefundReason,
+    trx: DbTransaction,
+  ): Promise<void> {
+    const room = payment.collectedAmount.minus(await this.refunds.sumForPayment(payment.id, trx));
+    const refund = amount.greaterThan(room) ? room : amount;
+    const fields = {
+      paymentId: payment.id,
+      orderId: payment.orderId,
+      sellerOrderId,
+      reason,
+      amount: amount.toString(),
+    };
+    if (!refund.greaterThan(Money.zero())) {
+      // Includes a seller order whose lines were all cancelled before (it reports 0).
+      this.logger.info('no refund left to flag', { event: 'REFUND_ALREADY_COVERED', ...fields });
+      return;
+    }
+    if (!refund.equals(amount)) {
+      this.logger.warn('refund capped at what is left of the payment', {
+        event: 'REFUND_CAPPED',
+        ...fields,
+        flagged: refund.toString(),
+      });
+    }
+    await this.refunds.insertPending({ paymentId: payment.id, sellerOrderId, amount: refund, reason }, trx);
+    this.logger.info('refund due recorded', { event: 'REFUND_DUE', ...fields, flagged: refund.toString() });
   }
 
   /** Every checkout creates its payment in the same transaction, so a missing one can't be retried away. */

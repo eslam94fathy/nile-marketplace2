@@ -13,6 +13,8 @@ import { type ApiEnv, type Env } from '../../lib/config';
 import { TOKENS } from '../../lib/di';
 import {
   type EventHandlerDefinition,
+  PaymentFailed,
+  PaymentPaid,
   ShipmentAttemptFailed,
   ShipmentDelivered,
   ShipmentOutForDelivery,
@@ -31,13 +33,15 @@ import { OrderItemRepository } from './repository/order-item.repository';
 import { OrderRepository } from './repository/order.repository';
 import { SellerOrderRepository } from './repository/seller-order.repository';
 import { StatusHistoryRepository } from './repository/status-history.repository';
-import { SHIPMENT_UPDATES_QUEUE } from './constants';
+import { PAYMENT_UPDATES_QUEUE, SHIPMENT_UPDATES_QUEUE } from './constants';
 import { orderingRoutes } from './routes';
 import { AcceptanceTimeoutJob } from './service/acceptance-timeout.job';
 import { CheckoutService } from './service/checkout.service';
 import { OrderActionService } from './service/order-action.service';
 import { OrderLifecycleService } from './service/order-lifecycle.service';
 import { OrderViewService } from './service/order-view.service';
+import { PaymentExpiryJob } from './service/payment-expiry.job';
+import { PaymentUpdateService } from './service/payment-update.service';
 import { ShipmentUpdateService } from './service/shipment-update.service';
 
 export { OrderingErrorCode } from './errors';
@@ -68,12 +72,19 @@ export function registerOrderingModule(container: DependencyContainer): void {
 export function registerOrderingWorker(container: DependencyContainer): void {
   registerOrderingCore(container);
   container.registerSingleton(TOKENS.ShipmentUpdateService, ShipmentUpdateService);
+  container.registerSingleton(TOKENS.PaymentUpdateService, PaymentUpdateService);
 }
 
-/** Consumer `ordering.shipment-updates` (spec 09 UC-OR-6, UC-OR-8, spec 02 §2). */
+/** Consumers `ordering.payment-updates` (spec 09 §3.11) and `ordering.shipment-updates` (UC-OR-6, UC-OR-8). */
 export function createOrderingHandlers(container: DependencyContainer): EventHandlerDefinition[] {
   const shipments = container.resolve<ShipmentUpdateService>(TOKENS.ShipmentUpdateService);
+  const payments = container.resolve<PaymentUpdateService>(TOKENS.PaymentUpdateService);
   return [
+    {
+      name: PAYMENT_UPDATES_QUEUE,
+      events: [PaymentPaid, PaymentFailed],
+      handle: (envelope, trx) => payments.handle(envelope, trx),
+    },
     {
       name: SHIPMENT_UPDATES_QUEUE,
       events: [ShipmentPickedUp, ShipmentOutForDelivery, ShipmentAttemptFailed, ShipmentDelivered],
@@ -85,11 +96,23 @@ export function createOrderingHandlers(container: DependencyContainer): EventHan
 /** The order jobs (spec 09 §3.10), on a container with the ordering core registered. */
 export function createOrderingJobs(
   container: DependencyContainer,
-  env: Pick<Env, 'JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS' | 'ORDER_JOBS_BATCH_SIZE'>,
+  env: Pick<
+    Env,
+    | 'JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS'
+    | 'JOB_KASHIER_PAYMENT_EXPIRY_INTERVAL_MS'
+    | 'ORDER_JOBS_BATCH_SIZE'
+  >,
 ): JobDefinition[] {
   container.registerSingleton(TOKENS.AcceptanceTimeoutJob, AcceptanceTimeoutJob);
+  container.registerSingleton(TOKENS.PaymentExpiryJob, PaymentExpiryJob);
   const timeout = container.resolve<AcceptanceTimeoutJob>(TOKENS.AcceptanceTimeoutJob);
+  const expiry = container.resolve<PaymentExpiryJob>(TOKENS.PaymentExpiryJob);
   return [
+    {
+      name: 'kashier-payment-expiry',
+      intervalMs: env.JOB_KASHIER_PAYMENT_EXPIRY_INTERVAL_MS,
+      run: () => expiry.run(env.ORDER_JOBS_BATCH_SIZE),
+    },
     {
       name: 'seller-acceptance-timeout',
       intervalMs: env.JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS,

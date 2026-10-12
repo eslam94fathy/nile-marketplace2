@@ -87,6 +87,15 @@ export class PaymentRefundRepository {
     });
   }
 
+  /** Every refund flagged on the payment, pending or recorded (PA-20); the caller holds the payment lock. */
+  async sumForPayment(paymentId: string, trx: DbTransaction): Promise<Money> {
+    const { rows } = await trx.raw<{ rows: { total: string }[] }>(
+      `SELECT COALESCE(SUM(amount), 0)::numeric(12,2)::text AS total FROM ${T} WHERE payment_id = ?`,
+      [paymentId],
+    );
+    return Money.of(rows[0]?.total ?? '0.00');
+  }
+
   async findById(id: string, trx?: DbTransaction): Promise<PaymentRefund | null> {
     const row = (await this.select(trx).where('r.id', id).first()) as RefundRow | undefined;
     return row ? toModel(row) : null;

@@ -168,14 +168,14 @@ describe('ordering: COD checkout and order views', () => {
       expect(await orderCount(buyer.customerId)).toBe(1);
     });
 
-    it('validation: Idempotency-Key required, COD only for now, strict body', async () => {
+    it('validation: Idempotency-Key required, a known payment method, strict body', async () => {
       const buyer = await customer();
       const valid = { addressId: buyer.addressId, paymentMethod: 'cod', expectedTotal: '1.00' };
       expect(errorBody(await as(buyer.token).checkout(valid, null)).error.code).toBe(
         'IDEMPOTENCY_KEY_REQUIRED',
       );
       for (const body of [
-        { ...valid, paymentMethod: 'kashier' },
+        { ...valid, paymentMethod: 'card' },
         { ...valid, addressId: 'nope' },
         { ...valid, expectedTotal: '1.005' },
         { ...valid, expectedTotal: 1 },

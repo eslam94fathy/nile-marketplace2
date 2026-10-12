@@ -15,16 +15,12 @@ import { ItemCancelReason, OrderStatus, SellerOrderStatus } from '../enums';
 
 /** Request DTOs for spec 09 §4. Notation: docs/spec/01-api-conventions.md §1.1. */
 
-/**
- * `POST /checkout` (spec 09 §4.1.1). Only COD until the Kashier flow lands (plan §7.5 PR b): Kashier
- * needs the payment session, the webhook and the expiry job, so it is refused here rather than
- * leaving stock reserved with nothing to release it.
- */
+/** `POST /checkout` (spec 09 §4.1.1). */
 export class CheckoutDto {
   @UuidField()
   addressId!: string;
 
-  @IsIn([PaymentMethod.COD])
+  @IsIn(Object.values(PaymentMethod))
   paymentMethod!: PaymentMethod;
 
   /** The total the app showed (S-8). */

@@ -13,7 +13,7 @@ import { type ICatalogDirectory } from '../../catalog';
 import { CustomersErrorCode, type AddressSnapshot, type ICustomerDirectory } from '../../customers';
 import { type IDeliveryReferenceService } from '../../delivery';
 import { type IInventoryService } from '../../inventory';
-import { type IPaymentDirectory, type PaymentMethod } from '../../payments';
+import { type IPaymentDirectory, PaymentMethod } from '../../payments';
 import { type ISellerDirectory, SellerStatus } from '../../sellers';
 import { ActorRole, OrderStatus, SellerOrderStatus } from '../enums';
 import {
@@ -21,6 +21,8 @@ import {
   cartHasIssues,
   checkoutAddressNotFound,
   governorateNotDeliverable,
+  orderNotAwaitingPayment,
+  orderNotFound,
   orderTotalChanged,
 } from '../errors';
 import { type CheckoutMoney, computeCheckoutMoney, type PricedLine } from '../model/checkout-money.model';
@@ -30,13 +32,31 @@ import { type OrderRepository } from '../repository/order.repository';
 import { type SellerOrderRepository } from '../repository/seller-order.repository';
 import { type StatusHistoryRepository } from '../repository/status-history.repository';
 
-type CheckoutEnv = Pick<ApiEnv, 'SELLER_ACCEPT_TIMEOUT_HOURS'>;
+type CheckoutEnv = Pick<ApiEnv, 'SELLER_ACCEPT_TIMEOUT_HOURS' | 'KASHIER_PAYMENT_TTL_MINUTES'>;
 
 export interface CheckoutInput {
   addressId: string;
   paymentMethod: PaymentMethod;
   /** Money string the client showed (S-8). */
   expectedTotal: string;
+}
+
+/** What checkout returns: the order, and for Kashier the payment page (null when it failed, SD-5). */
+export interface CheckoutResult {
+  order: Order;
+  kashier: { checkoutUrl: string | null; expiresAt: Date } | null;
+}
+
+/**
+ * Where a new order starts (spec 09 §3.1 step 6): COD is placed at once with the acceptance deadline;
+ * Kashier waits for its payment inside the window, with no deadline yet.
+ */
+interface StartState {
+  orderStatus: OrderStatus;
+  sellerOrderStatus: SellerOrderStatus;
+  placedAt: Date | null;
+  acceptDeadlineAt: Date | null;
+  paymentExpiresAt: Date | null;
 }
 
 /** What the transaction reads from the other modules before it writes anything. */
@@ -72,18 +92,87 @@ export class CheckoutService {
     @inject(TOKENS.StatusHistoryRepository) private readonly history: StatusHistoryRepository,
   ) {}
 
-  /** Places a COD order (Kashier lands with PR b) and returns it. */
-  async checkout(customerId: string, userId: string, input: CheckoutInput): Promise<Order> {
+  /** Places the order; for Kashier, asks payments for the payment page after the commit (step 11). */
+  async checkout(customerId: string, userId: string, input: CheckoutInput): Promise<CheckoutResult> {
     const context = await this.readContext(customerId, input.addressId);
     const order = await this.tx.run((trx) => this.placeOrder(customerId, userId, input, context, trx));
-    this.logger.info('order placed', {
-      event: 'ORDER_PLACED',
+    this.logger.info(order.paymentExpiresAt ? 'order awaiting payment' : 'order placed', {
+      event: order.paymentExpiresAt ? 'ORDER_AWAITING_PAYMENT' : 'ORDER_PLACED',
       orderId: order.id,
       orderNumber: order.orderNumber,
       paymentMethod: order.paymentMethod,
       total: order.total.toString(),
     });
-    return order;
+    if (!order.paymentExpiresAt) return { order, kashier: null };
+    return { order, kashier: await this.kashierSession(order, order.paymentExpiresAt) };
+  }
+
+  /**
+   * Step 11, outside any transaction: the payment page. A failure never fails the checkout: the order
+   * is committed, `checkoutUrl` is null and the app asks again through §4.1.2 (SD-5).
+   */
+  private async kashierSession(
+    order: Order,
+    expiresAt: Date,
+  ): Promise<NonNullable<CheckoutResult['kashier']>> {
+    try {
+      const session = await this.payments.createKashierSession(order.id, {
+        expiresAt,
+        description: `Nile order ${order.orderNumber}`,
+      });
+      if (session.kind === 'session')
+        return { checkoutUrl: session.checkoutUrl, expiresAt: session.expiresAt };
+    } catch (error) {
+      this.logger.warn('kashier session not created at checkout; the app retries', {
+        event: 'CHECKOUT_SESSION_FAILED',
+        orderId: order.id,
+        error,
+      });
+    }
+    return { checkoutUrl: null, expiresAt };
+  }
+
+  /**
+   * `POST /orders/:orderId/payment/kashier-session` (spec 09 §4.1.2, OR-7): the payment page of the
+   * caller's Kashier order while its window is open; the stored session when there is one.
+   */
+  async paymentPage(customerId: string, orderId: string): Promise<{ checkoutUrl: string; expiresAt: Date }> {
+    const order = await this.orders.findById(orderId);
+    if (!order || order.customerId !== customerId) throw orderNotFound();
+    const expiresAt = order.paymentExpiresAt;
+    if (
+      order.paymentMethod !== PaymentMethod.KASHIER ||
+      order.status !== OrderStatus.PENDING_PAYMENT ||
+      !expiresAt ||
+      expiresAt <= this.clock.now()
+    ) {
+      throw orderNotAwaitingPayment();
+    }
+    const session = await this.payments.createKashierSession(order.id, {
+      expiresAt,
+      description: `Nile order ${order.orderNumber}`,
+    });
+    if (session.kind !== 'session') throw orderNotAwaitingPayment();
+    return { checkoutUrl: session.checkoutUrl, expiresAt: session.expiresAt };
+  }
+
+  private startState(method: PaymentMethod, now: Date): StartState {
+    if (method === PaymentMethod.COD) {
+      return {
+        orderStatus: OrderStatus.PLACED,
+        sellerOrderStatus: SellerOrderStatus.PLACED,
+        placedAt: now,
+        acceptDeadlineAt: addDuration(now, this.env.SELLER_ACCEPT_TIMEOUT_HOURS, TimeUnit.HOUR),
+        paymentExpiresAt: null,
+      };
+    }
+    return {
+      orderStatus: OrderStatus.PENDING_PAYMENT,
+      sellerOrderStatus: SellerOrderStatus.PENDING_PAYMENT,
+      placedAt: null,
+      acceptDeadlineAt: null,
+      paymentExpiresAt: addDuration(now, this.env.KASHIER_PAYMENT_TTL_MINUTES, TimeUnit.MINUTE),
+    };
   }
 
   /** Steps 1–2: reads only, before the transaction. */
@@ -125,28 +214,29 @@ export class CheckoutService {
     if (!Money.of(input.expectedTotal).equals(money.total)) throw orderTotalChanged(money.total.toString());
 
     const now = this.clock.now();
+    const start = this.startState(input.paymentMethod, now);
     const order = await this.orders.insert(
       {
         customerId,
-        status: OrderStatus.PLACED,
+        status: start.orderStatus,
         paymentMethod: input.paymentMethod,
         itemsTotal: money.itemsTotal,
         deliveryFee: money.deliveryFee,
         agentFeeShareRate: context.agentFeeShareRate,
         total: money.total,
         shipping: context.shipping,
-        paymentExpiresAt: null,
-        placedAt: now,
+        paymentExpiresAt: start.paymentExpiresAt,
+        placedAt: start.placedAt,
       },
       trx,
     );
-    const sellerOrderIds = await this.insertSellerOrders(order, money, pickups, now, userId, trx);
+    const sellerOrderIds = await this.insertSellerOrders(order, money, pickups, start, userId, trx);
     await this.history.addOrderEntries(
       [
         {
           subjectId: order.id,
           fromStatus: null,
-          toStatus: OrderStatus.PLACED,
+          toStatus: start.orderStatus,
           actorRole: ActorRole.CUSTOMER,
           actorUserId: userId,
           reason: null,
@@ -160,6 +250,8 @@ export class CheckoutService {
       trx,
     );
     await this.cart.clear(customerId, trx);
+    // Kashier: `order.placed` is published when the payment arrives (spec 09 §3.11).
+    if (!start.placedAt) return order;
     await this.outbox.add(trx, {
       contract: OrderPlaced,
       aggregateId: order.id,
@@ -172,7 +264,7 @@ export class CheckoutService {
         itemsTotal: money.itemsTotal.toString(),
         deliveryFee: money.deliveryFee.toString(),
         total: money.total.toString(),
-        placedAt: now.toISOString(),
+        placedAt: start.placedAt.toISOString(),
       },
     });
     return order;
@@ -228,11 +320,10 @@ export class CheckoutService {
     order: Order,
     money: CheckoutMoney,
     pickups: ReadonlyMap<string, PickupSnapshot>,
-    now: Date,
+    start: StartState,
     userId: string,
     trx: DbTransaction,
   ): Promise<string[]> {
-    const acceptDeadlineAt = addDuration(now, this.env.SELLER_ACCEPT_TIMEOUT_HOURS, TimeUnit.HOUR);
     const sellerOrders = await this.sellerOrders.insertMany(
       money.sellers.map((split) => {
         const pickup = pickups.get(split.sellerId);
@@ -240,13 +331,13 @@ export class CheckoutService {
         return {
           orderId: order.id,
           sellerId: split.sellerId,
-          status: SellerOrderStatus.PLACED,
+          status: start.sellerOrderStatus,
           subtotal: split.subtotal,
           commissionRate: split.commissionRate,
           commission: split.commission,
           sellerNet: split.sellerNet,
           pickup,
-          acceptDeadlineAt,
+          acceptDeadlineAt: start.acceptDeadlineAt,
         };
       }),
       trx,
@@ -272,7 +363,7 @@ export class CheckoutService {
       sellerOrders.map((s) => ({
         subjectId: s.id,
         fromStatus: null,
-        toStatus: SellerOrderStatus.PLACED,
+        toStatus: start.sellerOrderStatus,
         actorRole: ActorRole.CUSTOMER,
         actorUserId: userId,
         reason: null,

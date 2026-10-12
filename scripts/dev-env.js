@@ -106,6 +106,8 @@ const values = {
   // ordering (P5-Q10)
   SELLER_ACCEPT_TIMEOUT_HOURS: '24',
   JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS: '60000',
+  JOB_KASHIER_PAYMENT_EXPIRY_INTERVAL_MS: '30000',
+  KASHIER_PAYMENT_TTL_MINUTES: '15',
   ORDER_JOBS_BATCH_SIZE: '100',
   // payments (P5-Q9): the fake gateway locally; set PAYMENT_GATEWAY=kashier plus the Kashier keys
   // (test environment) to talk to Kashier. The fake signs webhooks with this key.

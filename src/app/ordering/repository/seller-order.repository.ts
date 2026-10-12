@@ -114,6 +114,8 @@ export interface NewSellerOrder {
 /** What a transition writes besides the status: only the timestamps and cancel fields it sets. */
 export interface SellerOrderTransition {
   status: SellerOrderStatus;
+  /** Set when a Kashier order is placed on payment (spec 09 §3.11). */
+  acceptDeadlineAt?: Date;
   acceptedAt?: Date;
   readyAt?: Date;
   pickedUpAt?: Date;
@@ -197,6 +199,7 @@ export class SellerOrderRepository {
     const [row] = await trx<SellerOrderTable>(T)
       .update({
         status: change.status,
+        ...(change.acceptDeadlineAt ? { accept_deadline_at: change.acceptDeadlineAt } : {}),
         ...(change.acceptedAt ? { accepted_at: change.acceptedAt } : {}),
         ...(change.readyAt ? { ready_at: change.readyAt } : {}),
         ...(change.pickedUpAt ? { picked_up_at: change.pickedUpAt } : {}),

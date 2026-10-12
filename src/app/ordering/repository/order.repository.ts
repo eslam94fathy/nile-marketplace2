@@ -5,7 +5,7 @@ import { applyListQuery, type ParsedListQuery } from '../../../lib/http';
 import { Money, Rate } from '../../../lib/money';
 import { type PaymentMethod } from '../../payments';
 import { ORDERING_TABLES } from '../constants';
-import { type OrderStatus } from '../enums';
+import { OrderStatus } from '../enums';
 import { type Order, type ShippingSnapshot } from '../model/order.model';
 
 const T = ORDERING_TABLES.ORDERS;
@@ -182,6 +182,26 @@ export class OrderRepository {
     void (options.skipLocked ? qb.forUpdate().skipLocked() : qb.forUpdate());
     const row = await qb.first<OrderRow | undefined>();
     return row ? toModel(row) : null;
+  }
+
+  /** A Kashier order placed on payment (spec 09 §3.11), under the order lock the caller holds. */
+  async setPlacedAt(id: string, placedAt: Date, trx: DbTransaction): Promise<void> {
+    await trx<OrderTable>(T).update({ placed_at: placedAt, updated_at: trx.fn.now() }).where({ id });
+  }
+
+  /**
+   * Kashier orders whose payment window closed, oldest first, read without locks (OR-5):
+   * idx_orders_payment_expires_at WHERE status = 'pending_payment'.
+   */
+  async findIdsPastPaymentExpiry(now: Date, limit: number): Promise<string[]> {
+    const rows = await this.db
+      .knex<OrderTable>(T)
+      .select('id')
+      .where({ status: OrderStatus.PENDING_PAYMENT })
+      .where('payment_expires_at', '<', now)
+      .orderBy('payment_expires_at')
+      .limit(limit);
+    return rows.map((row) => row.id);
   }
 
   /** Writes the derived state computed under the order lock the caller holds (spec 09 §1.1, §3.9). */

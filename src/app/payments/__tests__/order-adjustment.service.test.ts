@@ -38,12 +38,15 @@ const envelope = (eventType: string, payload: Record<string, unknown>): EventEnv
   payload: { orderId: ORDER_ID, sellerOrderId: SELLER_ORDER_ID, ...payload },
 });
 
-function setup(current: Payment | null) {
+function setup(current: Payment | null, alreadyFlagged = '0.00') {
   const payments = {
     lockByOrderId: vi.fn(() => Promise.resolve(current)),
     updateAmounts: vi.fn(() => Promise.resolve()),
   };
-  const refunds = { insertPending: vi.fn(() => Promise.resolve()) };
+  const refunds = {
+    insertPending: vi.fn((_refund: { amount: Money; reason: string }) => Promise.resolve()),
+    sumForPayment: vi.fn(() => Promise.resolve(Money.of(alreadyFlagged))),
+  };
   const logger = {
     debug: vi.fn(),
     info: vi.fn(),
@@ -136,5 +139,28 @@ describe('OrderAdjustmentService (spec 10 UC-PA-3)', () => {
     await expect(
       service.handle(envelope('seller_order.cancelled', { amountCancelled: '1.00' }), TRX),
     ).rejects.toBeInstanceOf(PermanentEventError);
+  });
+
+  it('Kashier: refunds never exceed what was collected (PA-20)', async () => {
+    const paidPayment = payment({ method: 'kashier', status: 'paid', collectedAmount: Money.of('150.00') });
+    const capped = setup(paidPayment, '120.00');
+    await capped.service.handle(envelope('seller_order.cancelled', { amountCancelled: '100.00' }), TRX);
+    expect(capped.refunds.insertPending.mock.calls[0]?.[0].amount).toEqual(Money.of('30.00'));
+    expect(capped.logger.warn).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ event: 'REFUND_CAPPED' }),
+    );
+
+    // A late payment already flagged its whole amount (SD-5): the cancellation adds nothing.
+    const covered = setup(paidPayment, '150.00');
+    await covered.service.handle(
+      envelope('order.closed', {
+        deliveredItemsTotal: '0.00',
+        deliveryFee: '0.00',
+        originalDeliveryFee: '50.00',
+      }),
+      TRX,
+    );
+    expect(covered.refunds.insertPending).not.toHaveBeenCalled();
   });
 });

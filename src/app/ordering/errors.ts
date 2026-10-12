@@ -60,6 +60,10 @@ export const checkoutAddressNotFound = () =>
 /** Missing, or another customer's: never tell them apart. */
 export const orderNotFound = () => new AppError(C.ORDER_NOT_FOUND, 'Order not found', S.NOT_FOUND);
 
+/** Not a Kashier order still inside its payment window (spec 09 §4.1.2, OR-7). */
+export const orderNotAwaitingPayment = () =>
+  new AppError(C.ORDER_NOT_AWAITING_PAYMENT, 'This order is not awaiting an online payment', S.CONFLICT);
+
 export const sellerOrderNotFound = () =>
   new AppError(C.SELLER_ORDER_NOT_FOUND, 'Seller order not found', S.NOT_FOUND);
 

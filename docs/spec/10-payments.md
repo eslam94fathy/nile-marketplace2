@@ -1,6 +1,6 @@
 # Spec 10 — payments
 
-Status: **v1.2 APPROVED (2026-10-12).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: what Kashier's test environment showed (PA-11…PA-17: no abandon, one open session per order, status mapping, config). v1.2: the worker holds no Kashier secret (PA-18); the webhook answers in the standard envelope (PA-19). Changes from now on need explicit approval and a version bump.
+Status: **v1.3 APPROVED (2026-10-12).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: what Kashier's test environment showed (PA-11…PA-17: no abandon, one open session per order, status mapping, config). v1.2: the worker holds no Kashier secret (PA-18); the webhook answers in the standard envelope (PA-19). v1.3: flagged refunds never exceed what was collected (PA-20). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -55,7 +55,7 @@ Conditional update by current status:
 | `seller_order.delivered` | – | `collected_amount += codCollectedAmount`, `pending → partially_collected` |
 | `order.closed` | if `deliveryFee = 0` and `originalDeliveryFee > 0`: refund row `originalDeliveryFee`, `all_cancelled_fee` | Expected = `deliveredItemsTotal + deliveryFee`. `collected_amount = expected` → OK. `collected_amount = deliveredItemsTotal` (fee never collected, S-3) → `warn COD_DELIVERY_FEE_UNCOLLECTED`. Anything else → `error COD_AMOUNT_MISMATCH` (investigated manually). Then `amount = collected_amount`, status `collected` if `> 0`, else `cancelled` |
 
-A Kashier payment that never got paid (`initiated`, `expired`, `failed`) ignores all of these.
+A Kashier payment that never got paid (`initiated`, `expired`, `failed`) ignores all of these. Every refund row is capped so the refunds flagged on a payment (pending or recorded) never exceed its `collected_amount` (PA-20).
 
 ### UC-PA-4 Admin records a manual refund
 After refunding in the Kashier dashboard, the admin records it: refund `pending_manual → recorded`, `recorded_by_user_id`, `recorded_at`, `provider_refund_ref`. Payment: `refunded_amount += amount` (`CHECK refunded_amount <= collected_amount`), status `refunded_manually` if `refunded_amount = collected_amount`, else `partially_refunded_manually`. Outbox `payment.refund_recorded`. One transaction, payment row `FOR UPDATE`.
@@ -131,3 +131,4 @@ Consumed: `seller_order.items_cancelled`, `seller_order.cancelled`, `seller_orde
 | PA-17 | Kashier checks secret-key calls against an IP allow-list: the staging and production egress IPs must be allow-listed (or the list kept empty) before staging; open item for Phase 8 (K-7) | §1 |
 | PA-18 | Supersedes PA-9 for the worker: it only reads session statuses (PA-13, no credential), so its env has `PAYMENT_GATEWAY`, `KASHIER_API_KEY`, `KASHIER_HTTP_TIMEOUT_MS`, `KASHIER_BASE_URL` and `KASHIER_MODE` only: never the secret key, merchant id, redirect or webhook URL (Phase 5 step 10, v1.2) | §1 |
 | PA-19 | The webhook answers `200` in the standard success envelope (CLAUDE.md §7); Kashier only reads the status code (Phase 5 step 10, v1.2) | §4.1 |
+| PA-20 | Flagged refunds never exceed what was collected: each refund row of UC-PA-3 is capped at `collected_amount − Σ refunds already flagged` (pending or recorded); nothing left → skipped with `info REFUND_ALREADY_COVERED`, partly capped → `warn REFUND_CAPPED`. Found in Phase 5 step 11: a success webhook after expiry flags the full amount (SD-5), and the expiry's own `seller_order.cancelled` / `order.closed`, consumed afterwards, saw a `paid` payment and flagged it again (v1.3) | UC-PA-3 |

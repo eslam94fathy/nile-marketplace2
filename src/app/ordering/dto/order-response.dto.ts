@@ -215,6 +215,15 @@ export class OrderDetailDto {
   createdAt!: string;
 }
 
+/** `POST /orders/:orderId/payment/kashier-session` (spec 09 §4.1.2). */
+export class KashierSessionDto {
+  @IsString()
+  checkoutUrl!: string;
+
+  @IsDateString()
+  expiresAt!: string;
+}
+
 export class KashierCheckoutDto {
   @IsOptional()
   @IsString()
