@@ -1,6 +1,6 @@
 # Spec 09 — ordering
 
-Status: **v1.2 APPROVED (2026-10-12).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: `amountCancelled` when the last units are cancelled (OR-12); what the order totals count (OR-13). v1.2: shipment events that overtake their predecessor are retried (OR-14). Changes from now on need explicit approval and a version bump.
+Status: **v1.3 APPROVED (2026-10-12).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: `amountCancelled` when the last units are cancelled (OR-12); what the order totals count (OR-13). v1.2: shipment events that overtake their predecessor are retried (OR-14). v1.3: the expiry job abandons nothing and waits on a payment in flight (OR-6 as amended by spec 10 PA-11, PA-13). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -108,8 +108,8 @@ Both jobs (OR-5): each run reads up to `ORDER_JOBS_BATCH_SIZE` candidate order i
 - **kashier-payment-expiry:** orders `pending_payment` with `payment_expires_at < now()`, per order (OR-6):
   1. Local payment already `paid` (webhook applied, consumer not run yet) → skip without calling Kashier.
   2. Outside any transaction: `payments.fetchProviderStatus(orderId)` (asks Kashier, SD-5).
-  3. Provider says paid → `payments.markPaidFromProvider(...)`, skip (the normal `payment.paid` flow places the order).
-  4. Provider says unpaid or is unreachable → `payments.abandonKashierSession(orderId)` (outside any transaction, best effort, failure logged at `warn`), then one transaction in the §1.2 lock order: lock the order and its seller orders → all seller orders `cancelled` (`payment_expired`), `inventory.release`, order closed as `cancelled` (fee 0), then `payments.expire(orderId, trx)` (conditional `initiated → expired`). `false` = the webhook won: roll back and skip. Outbox: `seller_order.cancelled` ×n, `order.closed` (and `payment.expired` from payments).
+  3. Provider says paid → `payments.markPaidFromProvider(...)`, skip (the normal `payment.paid` flow places the order). Provider says `pending` (an attempt in flight) → skip; the next run asks again (spec 10 PA-13).
+  4. Provider says unpaid or is unreachable → one transaction in the §1.2 lock order: lock the order and its seller orders → all seller orders `cancelled` (`payment_expired`), `inventory.release`, order closed as `cancelled` (fee 0), then `payments.expire(orderId, trx)` (conditional `initiated → expired`). `false` = the webhook won: roll back and skip. Outbox: `seller_order.cancelled` ×n, `order.closed` (and `payment.expired` from payments).
   5. A payment that still succeeds after expiry is handled by SD-5 (spec 10 UC-PA-2).
 
 ### 3.11 Payment results (consumer `ordering.payment-updates`)
@@ -245,7 +245,7 @@ Consumed: `payment.paid`, `payment.failed` (`ordering.payment-updates`); `shipme
 | OR-3 | Lock order everywhere: `carts` (checkout only) → `orders` → `seller_orders` (by id) → `inventory_items` (by id) → `payments`. The payments webhook never locks `orders`, and the `ordering.payment-updates` consumer never locks `payments` (P5-Q3) | §1.2, §3.10 |
 | OR-4 | The schema additions this spec relies on are database D-8 (v1.8): `idx_orders_created_at_id` for the unfiltered admin list, every FK `ON DELETE RESTRICT`, `order_number_seq` created with `orders` (P5-Q4) | §4.3 |
 | OR-5 | Jobs read candidate ids without locks and handle one order per short transaction, `FOR UPDATE SKIP LOCKED` on the order row; batch size `ORDER_JOBS_BATCH_SIZE` (P5-Q5) | §3.10 |
-| OR-6 | Expiry: a locally `paid` payment is skipped without a provider call; otherwise the Kashier session is abandoned (best effort) before expiring, and sessions are created with `expireAt = payment_expires_at` (P5-Q6) | §3.10 |
+| OR-6 | Expiry: a locally `paid` payment is skipped without a provider call; sessions are created with `expireAt = payment_expires_at`, so Kashier stops taking payment when the window closes. v1.3: nothing is abandoned (Kashier allows one open session per payment, spec 10 PA-11, PA-12), and a payment in flight (`pending`) is left for the next run (PA-13) (P5-Q6, K-1, K-3) | §3.10 |
 | OR-7 | One Kashier session per payment: `kashier-session` returns the stored session while it is valid; a race is resolved in payments (spec 10 PA-3). No new session after `payment_expires_at` → `ORDER_NOT_AWAITING_PAYMENT` (P5-Q7) | §4.1.2 |
 | OR-8 | Env split (P1-Q1): api `KASHIER_PAYMENT_TTL_MINUTES`, `SELLER_ACCEPT_TIMEOUT_HOURS`; worker `SELLER_ACCEPT_TIMEOUT_HOURS` (the payment consumer sets the deadline), both job intervals, `ORDER_JOBS_BATCH_SIZE`. No defaults (P5-Q10) | §1 |
 | OR-9 | Read models: business names come live from `sellers.getSummaries`; `OrderSummaryDto.itemCount` = Σ open quantities (`quantity − cancelled_quantity`); detail views load seller orders, items and histories with one batched query each; `canCancel` is `false` while the order is `pending_payment` (P5-Q13) | §4 |

@@ -1,7 +1,7 @@
 # Implementation Plan (Release 1)
 
 Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09). P3 (§5) v1.0 APPROVED (2026-10-10). P4 (§6) v1.0 APPROVED (2026-10-11) and implemented (see the P4 status after §6.6). P5 (§7) v1.0 APPROVED (2026-10-12); PR (a) implemented (see the P5 status after §7.6).** Later phases are detailed when their specs are approved.
-Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.7, `docs/design/02-database.md` v1.9, `docs/spec/01-api-conventions.md` v1.3, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
+Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.8, `docs/design/02-database.md` v1.9, `docs/spec/01-api-conventions.md` v1.3, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
 
 ---
 
@@ -455,7 +455,7 @@ Needs approved: spec `09-ordering.md` and spec `10-payments.md` (both v1.0 now),
 |---|---|
 | Docs | Spec 09 → v1.0, spec 10 → v1.0 (P5-Q clarifications); spec 07 → v1.2; architecture → v1.7 (A-3, §6 job wording); database → v1.8 (D-8); overview §8.2 A-3 applied, D-8 added; CLAUDE.md §14 (P5-Q decisions) |
 | Migrations (FK order) | `orders` (+ `order_number_seq`), `seller_orders`, `order_items`, `order_item_cancellations`, `order_status_history`, `seller_order_status_history`, `inventory_reservations`, `payments`, `payment_refunds`, `payment_events` |
-| `pkg/payments` | `IPaymentGateway` (`createSession`, `getSession`, `abandonSession`, `verifyWebhookSignature`), Kashier adapter (`fetch` + timeout, secrets redacted from errors), fake adapter |
+| `pkg/payments` | `IPaymentGateway` (`createSession`, `getSession`, `verifyWebhookSignature`; no `abandonSession`, K-1), Kashier adapter (`fetch` + timeout, secrets redacted from errors), fake adapter |
 | `app/inventory` | `InventoryReservationRepository`; `reserve` / `release` / `commit` (UC-IN-1…3), movements, `stock_status_changed` on reserve / release |
 | `app/payments` | Module skeleton; repositories; `PaymentDirectory` (public API, spec 10 §2); webhook controller + service (UC-PA-1/2); `payments.order-adjustments` consumer (UC-PA-3); admin refunds (UC-PA-4); DTOs, errors, OpenAPI |
 | `app/ordering` | Module skeleton; repositories; `CheckoutService`, `OrderStatusService` (derive + close, agent fee share), customer / seller / admin services and views; consumers `ordering.payment-updates`, `ordering.shipment-updates`; jobs `seller-acceptance-timeout`, `kashier-payment-expiry`; DTOs, errors, OpenAPI |

@@ -1,6 +1,6 @@
 # Spec 10 — payments
 
-Status: **v1.0 APPROVED (2026-10-12).** Approved by the user with the Phase 5 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
+Status: **v1.1 APPROVED (2026-10-12).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: what Kashier's test environment showed (PA-11…PA-17: no abandon, one open session per order, status mapping, config). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -13,18 +13,17 @@ Enums:
 - `PaymentStatus` COD: `pending, partially_collected, collected, cancelled` (`cancelled` is new, S-12) · Kashier: `initiated, paid, failed, expired, partially_refunded_manually, refunded_manually`
 - `RefundReason`: `seller_order_cancelled, items_cancelled, delivery_failed, late_payment_after_expiry, all_cancelled_fee, amount_mismatch` (`amount_mismatch` is new, PA-6) · `RefundStatus`: `pending_manual, recorded`
 
-Config (PA-1, PA-5, PA-9): `PAYMENT_GATEWAY` (`kashier|fake`), `KASHIER_MERCHANT_ID`, `KASHIER_API_KEY` (the `api-key` header **and** the webhook HMAC key), `KASHIER_SECRET_KEY` (the `Authorization` header), `KASHIER_BASE_URL`, `KASHIER_MODE` (`test|live`), `KASHIER_REDIRECT_URL` (https app link, PA-8), `KASHIER_WEBHOOK_URL` (sent per session as `serverWebhook`), `KASHIER_HTTP_TIMEOUT_MS`.
+Config (PA-1, PA-5, PA-9, PA-14): `PAYMENT_GATEWAY` (`kashier|fake`), `KASHIER_MERCHANT_ID`, `KASHIER_API_KEY` (the `api-key` header **and** the webhook HMAC key), `KASHIER_SECRET_KEY` (the `Authorization` header; single-quoted in `.env`, it can contain `$`, PA-16), `KASHIER_BASE_URL`, `KASHIER_MODE` (`test|live`, a startup guard: `live` only with the live host), `KASHIER_REDIRECT_URL` (https app link, PA-8), `KASHIER_WEBHOOK_URL` (sent per session as `serverWebhook`), `KASHIER_HTTP_TIMEOUT_MS`. The session `paymentType` is the constant `credit` (PA-14).
 
-> Kashier integration (PA-1): v3 **payment sessions** (create with `expireAt`, amount, EGP, the order id = `merchantOrderId`, `serverWebhook`; the response carries `sessionUrl`), **get session** (status) and **abandon session**. Exact field names are verified against Kashier's documentation and test environment before the Kashier PR merges. This spec fixes **our** behaviour; the gateway adapter maps it to Kashier's API.
+> Kashier integration (PA-1): v3 **payment sessions** (create with `expireAt`, amount, EGP, the order id = `merchantOrderId`, `serverWebhook`; the response carries `_id` and `sessionUrl`) and **get session by id** (status). Kashier allows **one open or paid session per `order`**, also for parallel requests (PA-12). Field names were verified against Kashier's OpenAPI document and its test environment (2026-10-12). This spec fixes **our** behaviour; the gateway adapter maps it to Kashier's API.
 
 ## 2. Public API (`index.ts`)
 
 | Method | Caller | Behaviour |
 |---|---|---|
 | `createForOrder({ orderId, method, amount }, trx)` | ordering (checkout) | COD → `pending`, Kashier → `initiated`. `collected_amount = 0`, `refunded_amount = 0` |
-| `createKashierSession(orderId, expiresAt) → { checkoutUrl, expiresAt }` | ordering | **Outside a transaction.** Returns the stored session while `provider_session_expires_at > now()`. Otherwise calls Kashier with `merchantOrderId = payments.id`, amount, EGP, `expireAt = expiresAt`, and stores `provider_order_ref`, `provider_session_url`, `provider_session_expires_at` with a conditional update; the loser of a race abandons its own session and returns the winner's (PA-3). Throws `PAYMENT_PROVIDER_UNAVAILABLE` on timeout/5xx |
-| `fetchProviderStatus(orderId) → 'paid' \| 'unpaid' \| 'unknown'` | ordering (expiry job) | Outside a transaction. Kashier get session; no session yet → `unpaid`; timeout/5xx → `unknown` |
-| `abandonKashierSession(orderId)` | ordering (expiry job) | Outside a transaction, best effort: abandons the stored session so it can't be paid any more (PA-4). No session → no-op. Failures are logged at `warn`, never thrown |
+| `createKashierSession(orderId, expiresAt) → { checkoutUrl, expiresAt }` | ordering | **Outside a transaction.** Returns the stored session while `provider_session_expires_at > now()`. Otherwise calls Kashier with `merchantOrderId = payments.id`, amount, EGP, `expireAt = expiresAt`, and stores `provider_order_ref`, `provider_session_url`, `provider_session_expires_at` with a conditional update. Kashier refuses a second open session for the same payment, so the loser of a race reads back the stored session (PA-12). Throws `PAYMENT_PROVIDER_UNAVAILABLE` on timeout/5xx, and when Kashier holds an open session we never stored (`error` log `KASHIER_SESSION_LOST`, PA-12) |
+| `fetchProviderStatus(orderId) → 'paid' \| 'pending' \| 'unpaid' \| 'unknown'` | ordering (expiry job) | Outside a transaction. Kashier get session by id (no credential, PA-13); status mapping in PA-13; no session stored → `unpaid`; timeout/5xx → `unknown` |
 | `markPaidFromProvider(orderId, providerData)` | ordering (expiry job) | Same effect as a success webhook (UC-PA-2) |
 | `expire(orderId, trx) → boolean` | ordering (expiry job) | Conditional `initiated → expired`. `false` = it wasn't `initiated` any more (the webhook won). Outbox `payment.expired` |
 | `getSummaries(orderIds) → { orderId, method, status, amount, collectedAmount, refundedAmount }[]` | ordering (order views) | Batched |
@@ -33,7 +32,7 @@ Config (PA-1, PA-5, PA-9): `PAYMENT_GATEWAY` (`kashier|fake`), `KASHIER_MERCHANT
 
 ### UC-PA-1 Kashier webhook (architecture §7.2)
 1. Parse the **raw body** and verify `x-kashier-signature`: an HMAC-SHA256 keyed by `KASHIER_API_KEY` over the values of the alphabetically sorted `data.signatureKeys` (constant-time compare; `data.hash` is ignored) (PA-1). Invalid or missing → `401 INVALID_WEBHOOK_SIGNATURE`, `warn` log without the payload, nothing stored (PA-7).
-2. Insert `payment_events` (payload with card data stripped; `provider_event_id` = Kashier's own event/transaction id if the payload has one, else `<event>:<transactionId>:<status>`, PA-1). `uq_payment_events_provider_provider_event_id` duplicate → `200`, done.
+2. Insert `payment_events` (payload with card data stripped; `provider_event_id` = `<event>:<data.transactionId>`, stable across Kashier's retries, PA-15). `uq_payment_events_provider_provider_event_id` duplicate → `200`, done.
 3. Find the payment by `merchantOrderId` (= `payments.id`). Unknown → `error` log `KASHIER_UNKNOWN_ORDER`, `200` (so Kashier stops retrying).
 4. By event outcome (read from `data.status`, never from `event` alone, PA-1):
    - **Success:** amount ≠ `payments.amount` → `failed`, `collected_amount` = the paid amount, a `payment_refunds` row for it (`amount_mismatch`, `pending_manual`), `error` log `PAYMENT_AMOUNT_MISMATCH`, outbox `payment.failed (amount_mismatch)` (PA-6). Otherwise UC-PA-2.
@@ -123,3 +122,10 @@ Consumed: `seller_order.items_cancelled`, `seller_order.cancelled`, `seller_orde
 | PA-8 | `KASHIER_REDIRECT_URL` is an https app link agreed with the mobile team before staging (spec 09 OR-11) (P5-Q14) | §1 |
 | PA-9 | Env split (P1-Q1): api `PAYMENT_GATEWAY` + every `KASHIER_*`; worker `PAYMENT_GATEWAY` + `KASHIER_*` without `KASHIER_REDIRECT_URL` and `KASHIER_WEBHOOK_URL` (it only reads and abandons sessions). No defaults (P5-Q10) | §1 |
 | PA-10 | The `payments.order-adjustments` consumer, COD collection included, is built in Phase 5 and tested by publishing the contract events (P5-Q2) | UC-PA-3 |
+| PA-11 | No session abandon (K-1, supersedes the abandon parts of PA-3 and PA-4): Kashier's documented abandon call (`PATCH /v3/payment/sessions/{id}`, no credential) answered 404 in every form on the test environment, and it isn't needed: a session is created with `expireAt` = `payment_expires_at`, so Kashier stops accepting payment when our window closes, and PA-12 rules out a second session. A payment that still succeeds after expiry is SD-5 (UC-PA-2) | §2, PA-3, PA-4 |
+| PA-12 | Session `order` = `payments.id`. Kashier refuses a second session for an `order` that has an open or paid one ("another session is opened or paid"), verified for sequential and parallel calls. On that refusal `createKashierSession` returns the stored session; if none is stored (our first call timed out after Kashier created it) it throws `PAYMENT_PROVIDER_UNAVAILABLE` with an `error` log `KASHIER_SESSION_LOST`, and the order expires as usual. A payment on that session still arrives by webhook, keyed by `merchantOrderId` (K-2) | §2 |
+| PA-13 | Provider status = `GET /v3/payment/sessions/{id}` (no credential, so not behind Kashier's IP allow-list). `PAID`, `AUTHORIZED`, `REFUNDED`, `PARTIALLY_REFUNDED`, `REFUND_PENDING` → `paid`; `PENDING` (an attempt in flight) → `pending`: the expiry job leaves the order for its next run; every other status → `unpaid`; timeout / 5xx → `unknown` (expire anyway, SD-5) (K-3) | §2, spec 09 §3.10 |
+| PA-14 | No `KASHIER_PAYMENT_TYPE` or `KASHIER_FEP_BASE_URL` env keys: `paymentType` is the constant `credit`, and the payment page URL comes back whole in `sessionUrl`. `KASHIER_MODE` is a startup guard (`live` requires the live host, `test` the test host) (K-4) | §1 |
+| PA-15 | Webhook dedupe id `provider_event_id` = `<event>:<data.transactionId>` (K-5) | UC-PA-1 |
+| PA-16 | `KASHIER_SECRET_KEY` can contain `$`: it is single-quoted in `.env` so neither Node nor docker compose expands it; `.env.example` says so (K-6) | §1 |
+| PA-17 | Kashier checks secret-key calls against an IP allow-list: the staging and production egress IPs must be allow-listed (or the list kept empty) before staging; open item for Phase 8 (K-7) | §1 |
