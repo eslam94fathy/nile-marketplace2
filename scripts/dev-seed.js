@@ -4,9 +4,11 @@
 // 1. sample delivery fees, so checkout has deliverable governorates (the migration seeds every fee as
 //    NULL on purpose, spec 11 DE-2 / P2-Q4); real fees are set by an admin (PATCH /admin/governorates/:id);
 // 2. a sample catalog for the mobile team (P3-Q12 d): a small category tree with attributes and
-//    options, and an approved demo seller with a few active products, variants and stock.
-// Re-running is safe: fees are set again; the catalog is skipped once the demo seller exists.
-// The demo seller's password is random and never printed: use "forgot password" (Mailpit) to log in.
+//    options, and an approved demo seller with a few active products, variants and stock;
+// 3. a demo delivery agent in Cairo, active and on shift, so the demo seller's ready orders are
+//    assigned at once (spec 11 UC-DE-1).
+// Re-running is safe: fees are set again; the catalog and the agent are skipped once they exist.
+// The demo passwords are random and never printed: use "forgot password" (Mailpit) to log in.
 const { randomBytes, createHash } = require('node:crypto');
 const bcrypt = require('bcrypt');
 const { Decimal } = require('decimal.js');
@@ -25,6 +27,7 @@ const GOVERNORATES_CACHE_KEY = 'v1:delivery:governorates';
 const CATEGORY_TREE_CACHE_KEY = 'v1:catalog:category-tree';
 
 const DEMO_SELLER_EMAIL = 'demo-seller@nile.test';
+const DEMO_AGENT_EMAIL = 'demo-agent@nile.test';
 
 /**
  * Categories with their own attributes (inherited by children, max depth 3). Attribute codes are
@@ -312,6 +315,41 @@ async function seedCatalog(db) {
   );
 }
 
+async function seedDemoAgent(db) {
+  if (await db('users').where({ email: DEMO_AGENT_EMAIL }).first('id')) {
+    console.log('dev-seed: demo agent already present, skipped');
+    return;
+  }
+  const passwordHash = await bcrypt.hash(
+    randomBytes(24).toString('base64url'),
+    Number(requireEnv('BCRYPT_COST')),
+  );
+  await db.transaction(async (trx) => {
+    const [user] = await trx('users')
+      .insert({
+        email: DEMO_AGENT_EMAIL,
+        password_hash: passwordHash,
+        role: 'delivery_agent',
+        status: 'active',
+        email_verified_at: trx.fn.now(),
+      })
+      .returning('id');
+    const governorate = await trx('governorates').where({ code: 'EG-C' }).first('id');
+    await trx('delivery_agents').insert({
+      user_id: user.id,
+      full_name: 'Demo Agent',
+      phone: '+201101234567',
+      home_governorate_id: governorate.id,
+      status: 'active',
+      on_shift: true,
+      last_assigned_at: null,
+    });
+  });
+  console.log(
+    `dev-seed: demo agent ${DEMO_AGENT_EMAIL} created in Cairo, on shift; log in via forgot password`,
+  );
+}
+
 async function main() {
   if (requireEnv('NODE_ENV') !== 'development') {
     console.error('dev-seed: refusing to run outside NODE_ENV=development');
@@ -325,6 +363,7 @@ async function main() {
   try {
     await seedFees(db);
     await seedCatalog(db);
+    await seedDemoAgent(db);
     await redis.connect();
     await redis.del(GOVERNORATES_CACHE_KEY, CATEGORY_TREE_CACHE_KEY);
   } finally {

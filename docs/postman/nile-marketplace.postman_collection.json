@@ -1,8 +1,8 @@
 {
   "info": {
-    "name": "Nile Marketplace API (Phases 1–5)",
+    "name": "Nile Marketplace API (Phases 1–6)",
     "_postman_id": "c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01",
-    "description": "Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10) and delivery reference data (spec 11 §4.1, §4.3).\n\nVariables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.\n\nLocal first run (docker compose):\n1. `docker compose run --rm api node dist/seed-admin.js --email you@example.com`, then set the `email` variable to that address.\n2. Local helpers (Mailpit) → \"Latest email\" → \"Extract OTP / invite token\".\n3. Auth → \"Accept invite\" (sets your password and logs you in).\n4. Admin requests now work with the stored access token.\n\nCustomer / seller flow: set `email` to a fresh address → \"Register customer\" (or \"Register seller\") → Local helpers → \"Latest email\" → \"Extract OTP / invite token\" → Auth → \"Verify email\" (logs you in). \"Delivery\" → \"List governorates\" stores Cairo in `governorateId` first, because addresses and pickup addresses need one.\n\nSample delivery fees and a sample catalog for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees; the catalog has a category tree with attributes and an approved demo seller with active products).\n\nCatalog flow: \"Admin: catalog\" → Create category → Add attribute → Add option (stores `categoryId`, `attributeId`, `optionId`). Then log in as an approved seller → \"Seller: catalog\" → Create product → Add variant (put option ids in `optionIds`, or `[]` in a category without attributes) → Activate. \"Catalog\" (public) → List products / Product detail.\n\nCart flow: log in as a customer → \"Catalog\" → List products → Product detail (stores the first variant in `variantId`) → \"Cart\" → Add item (stores the line in `cartItemId`) → My cart → Change quantity / Remove item / Empty cart.\n\nOrder flow (COD): with items in the cart and an address (`addressId`) in a deliverable governorate → \"Checkout & orders\" → Checkout. The first send usually answers 409 ORDER_TOTAL_CHANGED and stores the current total in `expectedTotal`; send again. It stores `orderId`, `sellerOrderId` and `orderItemId`. Log in as that seller → \"Seller: orders\" → Accept → Ready (or Cancel item quantities / Cancel). Shipment steps arrive with delivery (Phase 6).\n\nKashier flow (local, PAYMENT_GATEWAY=fake): set `paymentMethod` to kashier → Checkout (the order awaits payment; the fake payment page URL is not a real page). Pay it with `npm run dev:kashier-webhook -- {{orderId}}` (or `... failed`, or an amount to try a mismatch); the worker then places the order. \"Kashier payment page\" asks again for the page while the window is open. Unpaid orders are cancelled by the worker after KASHIER_PAYMENT_TTL_MINUTES. \"Admin: payments\" shows the payment, its webhook events and the refund queue.\n\nTokens are per account: log in as the admin again (Auth → Login) before the \"Admin: …\" folders.\n\nErrors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.",
+    "description": "Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10) and delivery (spec 11): governorates and fees, agents, shipments and the work of delivery agents.\n\nVariables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.\n\nLocal first run (docker compose):\n1. `docker compose run --rm api node dist/seed-admin.js --email you@example.com`, then set the `email` variable to that address.\n2. Local helpers (Mailpit) → \"Latest email\" → \"Extract OTP / invite token\".\n3. Auth → \"Accept invite\" (sets your password and logs you in).\n4. Admin requests now work with the stored access token.\n\nCustomer / seller flow: set `email` to a fresh address → \"Register customer\" (or \"Register seller\") → Local helpers → \"Latest email\" → \"Extract OTP / invite token\" → Auth → \"Verify email\" (logs you in). \"Delivery\" → \"List governorates\" stores Cairo in `governorateId` first, because addresses and pickup addresses need one.\n\nSample delivery fees and a sample catalog for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees; the catalog has a category tree with attributes and an approved demo seller with active products).\n\nCatalog flow: \"Admin: catalog\" → Create category → Add attribute → Add option (stores `categoryId`, `attributeId`, `optionId`). Then log in as an approved seller → \"Seller: catalog\" → Create product → Add variant (put option ids in `optionIds`, or `[]` in a category without attributes) → Activate. \"Catalog\" (public) → List products / Product detail.\n\nCart flow: log in as a customer → \"Catalog\" → List products → Product detail (stores the first variant in `variantId`) → \"Cart\" → Add item (stores the line in `cartItemId`) → My cart → Change quantity / Remove item / Empty cart.\n\nOrder flow (COD): with items in the cart and an address (`addressId`) in a deliverable governorate → \"Checkout & orders\" → Checkout. The first send usually answers 409 ORDER_TOTAL_CHANGED and stores the current total in `expectedTotal`; send again. It stores `orderId`, `sellerOrderId` and `orderItemId`. Log in as that seller → \"Seller: orders\" → Accept → Ready (or Cancel item quantities / Cancel). Ready creates the shipment and assigns it to an on-shift agent of the pickup governorate (the worker must run).\n\nKashier flow (local, PAYMENT_GATEWAY=fake): set `paymentMethod` to kashier → Checkout (the order awaits payment; the fake payment page URL is not a real page). Pay it with `npm run dev:kashier-webhook -- {{orderId}}` (or `... failed`, or an amount to try a mismatch); the worker then places the order. \"Kashier payment page\" asks again for the page while the window is open. Unpaid orders are cancelled by the worker after KASHIER_PAYMENT_TTL_MINUTES. \"Admin: payments\" shows the payment, its webhook events and the refund queue.\n\nDelivery flow: as admin → \"Admin: delivery agents & shipments\" → Create agent (set `agentEmail` to a fresh address and `governorateId` to the seller's governorate). Set `email` to `agentEmail` → Local helpers → Latest email → Extract OTP / invite token → Auth → Accept invite (logs the agent in). \"Agent\" → Go on shift. After a seller marks an order ready: My shipments → Picked up → Out for delivery (stores `amountToCollect`) → Delivered, or Failed attempt. `npm run seed:dev` also creates a demo agent in Cairo.\n\nTokens are per account: log in as the admin again (Auth → Login) before the \"Admin: …\" folders.\n\nErrors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -152,6 +152,22 @@
     {
       "key": "orderItemId",
       "value": ""
+    },
+    {
+      "key": "agentEmail",
+      "value": "agent@example.com"
+    },
+    {
+      "key": "agentId",
+      "value": ""
+    },
+    {
+      "key": "shipmentId",
+      "value": ""
+    },
+    {
+      "key": "amountToCollect",
+      "value": "0.00"
     }
   ],
   "item": [
@@ -4878,6 +4894,1029 @@
               ]
             },
             "description": "After refunding in the Kashier dashboard. The payment becomes partially_refunded_manually or refunded_manually. REFUND_NOT_FOUND 404, REFUND_ALREADY_RECORDED 409."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin: delivery agents & shipments",
+      "description": "spec 11 §4.3 (agents, shipments). Admin role only.",
+      "item": [
+        {
+          "name": "Create agent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  const value = body.data && body.data.id;",
+                  "  if (value) pm.collectionVariables.set('agentId', value);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{agentEmail}}\",\n  \"fullName\": \"Karim Hassan\",\n  \"phone\": \"+201101234567\",\n  \"homeGovernorateId\": \"{{governorateId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/delivery-agents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "delivery-agents"
+              ]
+            },
+            "description": "An active agent, off shift, with an invited login: the invite is emailed (Mailpit locally). EMAIL_ALREADY_REGISTERED 409, GOVERNORATE_NOT_FOUND 422. Stores agentId."
+          }
+        },
+        {
+          "name": "List agents",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/delivery-agents?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "delivery-agents"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status[eq]",
+                  "value": "active",
+                  "disabled": true
+                },
+                {
+                  "key": "onShift[eq]",
+                  "value": "true",
+                  "disabled": true
+                },
+                {
+                  "key": "homeGovernorateId[eq]",
+                  "value": "{{governorateId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "fullName[like]",
+                  "value": "Karim",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "-createdAt",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Agent detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/delivery-agents/{{agentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "delivery-agents",
+                "{{agentId}}"
+              ]
+            },
+            "description": "AGENT_NOT_FOUND 404."
+          }
+        },
+        {
+          "name": "Update agent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Karim M. Hassan\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/delivery-agents/{{agentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "delivery-agents",
+                "{{agentId}}"
+              ]
+            },
+            "description": "Any of fullName, phone, homeGovernorateId. GOVERNORATE_NOT_FOUND 422."
+          }
+        },
+        {
+          "name": "Deactivate agent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/delivery-agents/{{agentId}}/deactivate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "delivery-agents",
+                "{{agentId}}",
+                "deactivate"
+              ]
+            },
+            "description": "Off shift, no new work, an active login suspended. AGENT_HAS_ACTIVE_SHIPMENTS 409 (reassign them first), AGENT_INVALID_STATUS_TRANSITION 409."
+          }
+        },
+        {
+          "name": "Activate agent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/delivery-agents/{{agentId}}/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "delivery-agents",
+                "{{agentId}}",
+                "activate"
+              ]
+            },
+            "description": "A suspended login is reactivated. AGENT_INVALID_STATUS_TRANSITION 409."
+          }
+        },
+        {
+          "name": "List shipments",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  const value = body.data[0] && body.data[0].id;",
+                  "  if (value) pm.collectionVariables.set('shipmentId', value);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/shipments?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "shipments"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status[in]",
+                  "value": "unassigned,assigned",
+                  "disabled": true
+                },
+                {
+                  "key": "agentId[eq]",
+                  "value": "{{agentId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "orderId[eq]",
+                  "value": "{{orderId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "-createdAt",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Stores the first shipment in shipmentId."
+          }
+        },
+        {
+          "name": "Shipment detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/shipments/{{shipmentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "shipments",
+                "{{shipmentId}}"
+              ]
+            },
+            "description": "With its attempts and status history. SHIPMENT_NOT_FOUND 404."
+          }
+        },
+        {
+          "name": "Assign shipment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agentId\": \"{{agentId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/shipments/{{shipmentId}}/assign",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "shipments",
+                "{{shipmentId}}",
+                "assign"
+              ]
+            },
+            "description": "Assign or reassign before pickup, to any active agent (shift and governorate may be overridden). AGENT_NOT_FOUND 422, AGENT_INACTIVE 409, SHIPMENT_NOT_ASSIGNABLE 409, SHIPMENT_ALREADY_ASSIGNED_TO_AGENT 409."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Agent",
+      "description": "spec 11 §4.2. Log in as the agent first (accept the invite from Mailpit). Every request but \"My agent profile\" needs an active agent (403 AGENT_INACTIVE).",
+      "item": [
+        {
+          "name": "My agent profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agent",
+                "profile"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Go on shift",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"onShift\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/availability",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agent",
+                "availability"
+              ]
+            },
+            "description": "On shift, new shipments picked up in your home governorate are assigned to you. Going off shift keeps current ones."
+          }
+        },
+        {
+          "name": "My shipments",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  const value = body.data[0] && body.data[0].id;",
+                  "  if (value) pm.collectionVariables.set('shipmentId', value);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/shipments?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agent",
+                "shipments"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status[in]",
+                  "value": "delivered,returned_to_seller,cancelled",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "createdAt",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Without a status filter the active ones, oldest first; enable status[in] for the history. Stores the first one in shipmentId."
+          }
+        },
+        {
+          "name": "Shipment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/shipments/{{shipmentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agent",
+                "shipments",
+                "{{shipmentId}}"
+              ]
+            },
+            "description": "SHIPMENT_NOT_FOUND 404, also for a shipment of another agent."
+          }
+        },
+        {
+          "name": "Picked up",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/shipments/{{shipmentId}}/picked-up",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agent",
+                "shipments",
+                "{{shipmentId}}",
+                "picked-up"
+              ]
+            },
+            "description": "assigned → picked_up. SHIPMENT_INVALID_STATUS_TRANSITION 409."
+          }
+        },
+        {
+          "name": "Out for delivery",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.collectionVariables.set('amountToCollect', pm.response.json().data.amountToCollect);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/shipments/{{shipmentId}}/out-for-delivery",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agent",
+                "shipments",
+                "{{shipmentId}}",
+                "out-for-delivery"
+              ]
+            },
+            "description": "picked_up or delivery_failed → out_for_delivery. The first COD parcel of a checkout to go out carries the delivery fee: amountToCollect = items + fee. Stores it in amountToCollect."
+          }
+        },
+        {
+          "name": "Delivered",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codCollectedAmount\": \"{{amountToCollect}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/shipments/{{shipmentId}}/delivered",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agent",
+                "shipments",
+                "{{shipmentId}}",
+                "delivered"
+              ]
+            },
+            "description": "COD: codCollectedAmount must equal amountToCollect (COD_AMOUNT_MISMATCH / COD_AMOUNT_REQUIRED 422). Kashier: send no body (COD_AMOUNT_NOT_ALLOWED 422)."
+          }
+        },
+        {
+          "name": "Failed attempt",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"customer_unreachable\",\n  \"note\": \"No answer at the door\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/shipments/{{shipmentId}}/failed-attempt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agent",
+                "shipments",
+                "{{shipmentId}}",
+                "failed-attempt"
+              ]
+            },
+            "description": "reason: customer_unreachable | customer_refused | wrong_address | customer_rescheduled. Refused or the 3rd attempt → returning_to_seller (the seller confirms the return in \"Seller: orders\"); otherwise delivery_failed, and the fee moves to the next parcel going out."
+          }
+        },
+        {
+          "name": "Returned (cancelled after pickup)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/shipments/{{shipmentId}}/returned",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agent",
+                "shipments",
+                "{{shipmentId}}",
+                "returned"
+              ]
+            },
+            "description": "Only for a parcel whose seller order was cancelled after you picked it up: you handed it back to the seller. SHIPMENT_INVALID_STATUS_TRANSITION 409 otherwise."
+          }
+        },
+        {
+          "name": "Go off shift",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"onShift\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/availability",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agent",
+                "availability"
+              ]
+            }
           }
         }
       ]
