@@ -1,7 +1,7 @@
 # Implementation Plan (Release 1)
 
-Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09). P3 (§5) v1.0 APPROVED (2026-10-10). P4 (§6) v1.0 APPROVED (2026-10-11) and implemented (see the P4 status after §6.6). P5 (§7) v1.0 APPROVED (2026-10-12); PR (a) and PR (b) implemented (see the P5 status after §7.6).** Later phases are detailed when their specs are approved.
-Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.8, `docs/design/02-database.md` v1.9, `docs/spec/01-api-conventions.md` v1.3, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
+Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09). P3 (§5) v1.0 APPROVED (2026-10-10). P4 (§6) v1.0 APPROVED (2026-10-11) and implemented (see the P4 status after §6.6). P5 (§7) v1.0 APPROVED (2026-10-12); PR (a) and PR (b) implemented (see the P5 status after §7.6). P6 (§8) v1.0 APPROVED (2026-10-12).** Later phases are detailed when their specs are approved.
+Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.8, `docs/design/02-database.md` v1.10, `docs/spec/01-api-conventions.md` v1.3, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
 
 ---
 
@@ -21,7 +21,7 @@ Each phase ends green in CI (lint, type-check, unit, integration, build, Docker 
 | P7 | finance | Spec 12 |
 | P8 | Hardening: load test against the targets, security review, Terraform (`infra/terraform`), staging deploy | SD-3d (region) |
 
-P0–P5 are detailed below (§2–§7). P6–P8 get their own section when their specs are approved.
+P0–P6 are detailed below (§2–§8). P7–P8 get their own section when their specs are approved.
 
 ---
 
@@ -511,3 +511,65 @@ PR (b):
 - The fake gateway lives in each process: locally the worker's fake doesn't know the api's sessions and reports them unpaid, so local payments go through `dev:kashier-webhook`. Tests share one fake between the api and the worker.
 - Env keys: api `PAYMENT_GATEWAY`, `KASHIER_*` (api-only: merchant id, secret key, redirect and webhook URLs), `KASHIER_PAYMENT_TTL_MINUTES`; worker `PAYMENT_GATEWAY`, `KASHIER_API_KEY`, `KASHIER_HTTP_TIMEOUT_MS`, `KASHIER_BASE_URL`, `KASHIER_MODE`, `SELLER_ACCEPT_TIMEOUT_HOURS`, `JOB_KASHIER_PAYMENT_EXPIRY_INTERVAL_MS`. Existing local `.env` files need `npm run dev:env`.
 - Tooling: `npm run dev:kashier-webhook -- <orderId> [paid|failed] [amount]` (development only; signs with the compiled `pkg/payments`, so it needs `npm run build`); Postman collection regenerated (94 requests: `paymentMethod` variable for Checkout, "Kashier payment page", new "Admin: payments" folder).
+
+
+---
+
+## 8. Phase 6: delivery (agents, shipments, assignment)
+
+Status: **v1.0 APPROVED (2026-10-12).** All P6-Q recommendations accepted; the branch `p6-delivery` is stacked on `p5-ordering-payments`.
+Needs approved: spec `11-delivery.md` (v1.1 now), D-2, D-3 and D-10 (database v1.10), plus the P6-Q decisions below. It builds on P5: the `seller_order.*` events delivery consumes and the `shipment.*` contracts ordering already consumes (spec 09 OR-14) exist.
+
+### 8.1 What P6 delivers, and what it can't yet
+- **delivery:** agents created by admins (invited through identity), the availability toggle, shipments created from `seller_order.ready_for_pickup`, automatic assignment and its retry job, admin assignment / reassignment, the agent's work (picked up, out for delivery with the COD fee carrier, delivered with the cash check, failed attempts, returns), the `delivery.seller-order-updates` consumer, the agent / admin endpoints of spec 11 §4.2–§4.3, and the public API finance will call (`getAgentByUserId`, `getAgentSummaries`).
+- **End to end:** with P5, an order now goes all the way: checkout → seller ready → shipment assigned → picked up → delivered → `seller_order.delivered` (fee share) → payments (COD collected) → close.
+- **Not yet:** finance (P7) consumes `seller_order.delivered` / `order.closed` but books nothing until then.
+
+### 8.2 Decisions to approve (P6-Q)
+
+| # | Topic | Options / recommendation |
+|---|---|---|
+| P6-Q1 | Approvals and branch | **Rec:** approve the rest of spec 11 → v1.1 with the clarifications in P6-Q2…Q12 written into it; D-2 and D-3 plus D-10 (database v1.10). One branch `p6-delivery` stacked on `p5-ordering-payments`, one PR (the module is about the size of P4 + P3's projections) · or two PRs (agents + assignment, then the agent's work) |
+| P6-Q2 | **D-2**: what the shipment snapshots | Delivery can't call ordering (architecture §2), so the shipment keeps what the agent's screen and the fee rules need, from the `seller_order.ready_for_pickup` payload: `order_number VARCHAR(20)`, `payment_method VARCHAR(20)` (CHECK), `order_delivery_fee money` (COD fee of the checkout, `0.00` for Kashier), `pickup_business_name VARCHAR(150)`, the full pickup and drop-off snapshots (incl. `dropoff_governorate_name`), and `cod_items_amount`. `agent_fee_share` is **dropped**: ordering computes it and the ledger records it (P5). **Rec:** approve D-2 as written in overview §8.2 |
+| P6-Q3 | **D-3 / D-10**: indexes `02-database.md` §10 lacks | (a) **D-3** `idx_shipments_status_created_at_id (status, created_at DESC, id DESC)`: `GET /admin/shipments?status[…]`; (b) `idx_shipments_created_at_id (created_at DESC, id DESC)`: the unfiltered admin list (as D-8 a for orders); (c) `idx_shipments_agent_id_created_at_id (agent_id, created_at, id) WHERE agent_id IS NOT NULL`: the agent's list (default sort `createdAt` ascending), also with a delivered history of thousands; `idx_shipments_agent_id_status` stays for the active count; (d) `idx_shipments_status_created_at` replaces the `WHERE status = 'unassigned'` index with `(created_at, id)` for the retry job's keyset; (e) `idx_delivery_agents_created_at_id (created_at DESC, id DESC)` for `GET /admin/delivery-agents`; (f) FKs `ON DELETE RESTRICT`, no index on `shipments.seller_order_id`'s FK beyond its unique, none on `shipment_attempts.agent_id` (audit pointer). **Rec:** all of (a)–(f) |
+| P6-Q4 | Deactivating an agent who never accepted the invite | Spec 11 UC-DE-6 calls `identity.setUserStatus(suspended)`, but identity only allows `active ⇄ suspended` (spec 03 I-6), so a still-`invited` agent can't be deactivated, and could accept the invite later and log in. **Rec:** (a) every agent endpoint except `GET /agent/profile` requires an **active** agent (`403 AGENT_INACTIVE`), so an inactive agent can do nothing whatever the login state; (b) deactivate suspends the login only when the user is `active` (S-10), and leaves an `invited` user alone; activate reactivates the login only when it is `suspended`. No change to identity · or amend spec 03 I-6 to allow `invited → suspended` for agents (a spec 03 change and a "resend invite after reactivation" flow) |
+| P6-Q5 | A parcel picked up after its seller order was cancelled never finishes | UC-DE-5: such a shipment goes `returning_to_seller`, but ordering ignores the seller order (it is `cancelled`), so `seller_order.returned` never comes and the shipment stays open forever, counting against the agent. **Rec:** a column `seller_order_cancelled_at TIMESTAMPTZ NULL`; for those shipments the **agent** confirms the handover: `POST /agent/shipments/:id/returned` (only `returning_to_seller` with `seller_order_cancelled_at` set) → `returned_to_seller`. Normal returns still close on `seller_order.returned` (the seller confirms, Q-33) · or an admin endpoint closes them |
+| P6-Q6 | Lock order inside delivery | **Rec:** shipments of one checkout by id → the shipment's agent → other agents. Assignment locks the shipment, then picks the agent with `FOR UPDATE SKIP LOCKED`; admin assign locks the shipment, then the target agent `FOR UPDATE`; deactivate / availability lock the agent and count its active shipments; the fee carrier locks every shipment of the checkout (`WHERE order_id = ? ORDER BY id FOR UPDATE`). Delivery never locks ordering's or payments' rows, and their consumers never lock shipments, so there is no cycle |
+| P6-Q7 | COD fee carrier details (SD-2, DB-Q1) | **Rec:** (a) only COD shipments take part (Kashier shipments have `order_delivery_fee = 0.00` and `amountToCollect` `0.00`); (b) the carrier is chosen at `out-for-delivery` under the checkout's shipment locks, and released on a failed attempt or a late cancellation; (c) `shipment.delivered` carries `deliveryFeeCollected = carries_delivery_fee`, `deliveryFeeAmount = cod_fee_amount`, `codCollectedAmount = items + fee`; (d) `uq_shipments_order_id_fee_carrier` backs it, and a unique violation (two parallel outs of one checkout without the lock) can't happen under (b); the S-3 gap stays accepted |
+| P6-Q8 | Event order for the delivery consumer | Same as OR-14: **Rec:** `seller_order.cancelled` / `items_cancelled` / `returned` for a seller order whose shipment doesn't exist yet but whose `previousStatus` (or state) says it should → retried (spec 11 UC-DE-5 already says so for `cancelled`); otherwise a stale event is a `warn` no-op. `seller_order.ready_for_pickup` is replay-safe (`ON CONFLICT (seller_order_id) DO NOTHING`) |
+| P6-Q9 | The retry job | **Rec:** `shipment-assignment-retry` handles `unassigned` shipments oldest first, one short transaction per shipment (`FOR UPDATE SKIP LOCKED` on the shipment), same candidate rule as UC-DE-1; env `JOB_SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_MS` (60 000) and `SHIPMENT_JOBS_BATCH_SIZE` (100), replacing spec 11's `SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_SECONDS` to match the other job keys (`JOB_*_INTERVAL_MS`, P5-Q10) |
+| P6-Q10 | Agent's list default | **Rec:** without a `status` filter, `GET /agent/shipments` returns the **active** statuses (spec 11 §4.2); `status[in]=delivered,returned_to_seller,cancelled` shows the history. Oldest first by `createdAt` (the order the agent works in) |
+| P6-Q11 | Finance's public API | **Rec:** build `getAgentByUserId` and `getAgentSummaries` now and test them through the public API, so delivery is finished in one go (as P2-Q8) |
+| P6-Q12 | Process split | **Rec:** api: agent and admin endpoints, the public API. Worker: the `delivery.seller-order-updates` consumer (creation + auto-assignment, cancellations, returns) and the retry job. Both use one `ShipmentAssignmentService` (the candidate query + assign) |
+
+### 8.3 Scope
+
+| Area | Content |
+|---|---|
+| Docs | Spec 11 → v1.1 (P6-Q clarifications); database → v1.10 (D-2, D-3, D-10); overview §8.2 D-2, D-3 applied, D-10 added; CLAUDE.md §14 (P6-Q decisions) |
+| Migrations | `delivery_agents`, `shipments`, `shipment_attempts`, `shipment_status_history` (raw SQL, `02-database.md` §10 with D-2, D-3, D-10, P6-Q5's column) |
+| `app/delivery` | Agent and shipment repositories; `AgentService` (admin create / update / activate / deactivate, availability, profile); `ShipmentAssignmentService` (candidate + assign, auto and admin); `ShipmentWorkService` (picked up, out for delivery + fee carrier, delivered + cash check, failed attempt, agent-confirmed return of a cancelled order); `SellerOrderUpdateService` (consumer); `AssignmentRetryJob`; views; DTOs, errors (spec 11 §6), OpenAPI; public API additions |
+| Composition roots | api: agent + admin routers; worker: the consumer, the retry job |
+| Tooling | Postman "Agent" and "Admin: delivery agents & shipments" folders; `.env.example`; `seed:dev` gains a demo agent in Cairo |
+
+### 8.4 Tests
+- **Unit:** the shipment state machine, the fee-carrier rules (first out takes it, released on failure / cancellation, Kashier never), the COD cash check, attempt counting (refused → return; 3rd attempt → return), candidate ordering.
+- **Integration, per endpoint** (CLAUDE.md §12): happy path, validation, authz (other roles; another agent's shipment → `404`), not-found. Plus:
+  - creation from `seller_order.ready_for_pickup` (replayed → one shipment) and auto-assignment: fewest active shipments, then longest idle; off-shift / inactive / other-governorate agents skipped; no candidate → `unassigned`, then the retry job assigns once an agent goes on shift
+  - concurrency: N shipments created at once with M agents → no agent over-assigned beyond the fair order; two parallel outs of one checkout → exactly one fee carrier
+  - the agent's work end to end with ordering's consumer: picked up → out → delivered (COD amount checked; Kashier with no amount) → seller order `delivered`, order closed, COD payment collected; failed attempts → return → seller confirms → `returned_to_seller` both sides; the fee moves to the next shipment after a failure
+  - cancellations: before pickup → shipment `cancelled`; after pickup → `returning_to_seller` and the agent's confirmed return (P6-Q5); out-of-order cancel before creation → retried, then applied
+  - admin: create agent (invite email), update, deactivate with / without active shipments, activate; an inactive (or never-activated) agent gets `403 AGENT_INACTIVE` on the work endpoints (P6-Q4); assign / reassign rules (S-18, Q-41)
+
+### 8.5 Order of work (one commit each)
+1. Docs: approvals applied (spec 11, database, overview, CLAUDE.md).
+2. Migrations, with schema tests.
+3. Agents: repositories, admin endpoints, availability, profile, public API, tests.
+4. Shipments: creation consumer, assignment service, retry job, admin assign, tests.
+5. Agent's work: picked up / out (fee carrier) / delivered / failed / return, tests (with ordering's consumer, end to end).
+6. Cancellations and returns from the seller-order events, tests.
+7. Postman, `.env.example`, `seed:dev` demo agent, plan status.
+
+### 8.6 Done when
+- CI green; every P6 endpoint is in the OpenAPI document with its DTOs.
+- Locally (docker-compose): admin creates an agent in Cairo (invite from Mailpit) → the agent goes on shift → a customer checks out (COD) from a Cairo seller → the seller accepts and marks ready → the shipment is auto-assigned to the agent → picked up → out for delivery (amount to collect = items + fee) → delivered with that amount → the seller order is `delivered`, the order `completed`, the COD payment `collected`. A second order: one failed attempt, then refused → returning → the seller confirms the return → stock released, order closed without a fee.

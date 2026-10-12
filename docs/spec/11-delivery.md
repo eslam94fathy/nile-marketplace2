@@ -1,6 +1,6 @@
 # Spec 11 — delivery
 
-Status: **v1.0 APPROVED (2026-10-09) for the reference-data part** (§1 governorates + `delivery_settings`, §2 `getGovernorateFees` / `getAgentFeeShareRate`, UC-DE-7, §4.1, and the admin governorate/settings endpoints in §4.3), with the clarifications in §7.1. **The rest (agents, shipments, assignment) is still DRAFT v0.1** [PROPOSED] unless it restates overview §4.6 / §4.7, SD-2, DB-Q1; it is approved with Phase 6.
+Status: **v1.1 APPROVED (2026-10-12).** v1.0 (2026-10-09): the reference-data part, with the clarifications in §7.1. v1.1: the whole spec (agents, shipments, assignment) approved with the Phase 6 clarifications in §7.2. Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -15,7 +15,7 @@ Enums:
 - `AttemptFailureReason`: `customer_unreachable, customer_refused, wrong_address, customer_rescheduled`
 - **Active** shipment statuses (for the agent's load and lists): `assigned, picked_up, out_for_delivery, delivery_failed, returning_to_seller`.
 
-Config: `SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_SECONDS` (architecture §6).
+Config: `JOB_SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_MS`, `SHIPMENT_JOBS_BATCH_SIZE` (worker, DE-9; architecture §6).
 
 ### 1.1 Shipment state machine
 | From | To | Trigger |
@@ -28,7 +28,7 @@ Config: `SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_SECONDS` (architecture §6).
 | `out_for_delivery` | `delivered` | agent |
 | `out_for_delivery` | `delivery_failed` | agent, attempt < 3 and reason ≠ `customer_refused` |
 | `out_for_delivery` | `returning_to_seller` | agent, reason = `customer_refused` or attempt = 3 |
-| `returning_to_seller` | `returned_to_seller` | `seller_order.returned` (seller confirmed) |
+| `returning_to_seller` | `returned_to_seller` | `seller_order.returned` (seller confirmed), or the agent confirms the handover when the seller order was cancelled after pickup (DE-6) |
 | `unassigned`, `assigned` | `cancelled` | `seller_order.cancelled` |
 | `picked_up`, `out_for_delivery`, `delivery_failed` | `returning_to_seller` | `seller_order.cancelled` arriving late (race, §3.5) |
 
@@ -40,7 +40,7 @@ Each transition: conditional update + `shipment_status_history` row (+ outbox wh
 |---|---|---|
 | `getGovernorateFees(ids) → { id, name, deliveryFee: string \| null }[]` | ordering | From cache |
 | `getAgentFeeShareRate() → string` | ordering | |
-| `getAgentByUserId(userId) → { agentId, status } \| null` | finance | Profile resolution for `/agent/finance/*` |
+| `getAgentByUserId(userId) → { agentId, status } \| null` | finance | Profile resolution for `/agent/finance/*` (built in Phase 6, DE-11) |
 | `getAgentSummaries(ids) → { agentId, fullName, phone }[]` | finance | Admin finance views |
 
 ## 3. Use cases
@@ -51,7 +51,7 @@ Each transition: conditional update + `shipment_status_history` row (+ outbox wh
 3. Found → `assigned`, `agent_id`, `assigned_at`, agent `last_assigned_at = now()`, outbox `shipment.assigned (auto)`. Not found → stays `unassigned`; the retry job runs step 2–3 for every `unassigned` shipment (oldest first).
 
 ### UC-DE-2 Agent availability
-`on_shift` toggle. Going off shift keeps current shipments (they must still be finished); it only stops new auto-assignments. An `inactive` agent can't go on shift.
+Every agent endpoint except `GET /agent/profile` requires an `active` agent, else `403 AGENT_INACTIVE` (DE-5). `on_shift` toggle. Going off shift keeps current shipments (they must still be finished); it only stops new auto-assignments. An `inactive` agent can't go on shift.
 
 ### UC-DE-3 Agent works a shipment
 Ownership: `shipments.agent_id = my agent id`, else `404 SHIPMENT_NOT_FOUND`.
@@ -69,14 +69,14 @@ Assign or reassign in `unassigned` / `assigned` only (Q-41). After `picked_up` t
 - `seller_order.items_cancelled`: shipment in `unassigned`/`assigned` and COD → `cod_items_amount = newSubtotal`. Picked up already → `warn` (can't happen under Q-31, except in a race).
 - `seller_order.cancelled`:
   - Shipment `unassigned`/`assigned` → `cancelled`.
-  - Shipment `picked_up`/`out_for_delivery`/`delivery_failed` (the agent picked it up while the seller was cancelling) → `returning_to_seller` + `warn` `SHIPMENT_CANCELLED_AFTER_PICKUP`. Stock was already released by the cancellation, so the seller just takes the parcel back. Ordering ignores later shipment events for a cancelled seller order.
+  - Shipment `picked_up`/`out_for_delivery`/`delivery_failed` (the agent picked it up while the seller was cancelling) → `returning_to_seller`, `seller_order_cancelled_at = now()`, fee carrier released + `warn` `SHIPMENT_CANCELLED_AFTER_PICKUP`. Stock was already released by the cancellation, so the seller just takes the parcel back, and the **agent** confirms the handover (`POST /agent/shipments/:id/returned`, DE-6): ordering ignores later shipment events for a cancelled seller order, so `seller_order.returned` never comes.
   - No shipment yet and `previousStatus = ready_for_pickup` → the `ready_for_pickup` event hasn't been applied yet (out of order): **reject for retry** so it's re-delivered after the shipment exists. Any other `previousStatus` → no shipment is expected; ack.
 - `seller_order.returned`: `returning_to_seller → returned_to_seller`, `returned_at`.
 
 ### UC-DE-6 Admin manages agents
 - Create: `identity.createInvitedUser(role = delivery_agent)` + `delivery_agents` (`status = active`, `on_shift = false`) in one transaction. The agent gets an invite email.
-- Deactivate: only with **no active shipments** → `AGENT_HAS_ACTIVE_SHIPMENTS` (the admin reassigns first). Sets `inactive`, `on_shift = false`, and `identity.setUserStatus(suspended)` so the agent can't log in (S-10).
-- Activate: `active` + `identity.setUserStatus(active)`.
+- Deactivate: only with **no active shipments** → `AGENT_HAS_ACTIVE_SHIPMENTS` (the admin reassigns first). Sets `inactive`, `on_shift = false`, and, when the user is `active`, `identity.setUserStatus(suspended)` so the agent can't log in (S-10). A still-`invited` user is left as is (identity allows only `active ⇄ suspended`, spec 03 I-6); the inactive agent can do nothing anyway (DE-5).
+- Activate: `active`, and `identity.setUserStatus(active)` when the user is `suspended` (DE-5).
 
 ### UC-DE-7 Admin manages fees
 - Governorate fee: `money` or `null` (= not deliverable, Q-26). Affects new checkouts only (snapshot). Invalidates the governorates cache.
@@ -119,6 +119,9 @@ interface AgentShipmentDto {
 | `POST /agent/shipments/:shipmentId/out-for-delivery` | – | – | `200 AgentShipmentDto` | same |
 | `POST /agent/shipments/:shipmentId/delivered` | required | `codCollectedAmount opt money` (required for COD, forbidden for Kashier) | `200 AgentShipmentDto` | same + `COD_AMOUNT_MISMATCH` 422, `COD_AMOUNT_REQUIRED` 422, `COD_AMOUNT_NOT_ALLOWED` 422 |
 | `POST /agent/shipments/:shipmentId/failed-attempt` | required | `reason enum(AttemptFailureReason)` · `note opt str(1..500)` | `200 AgentShipmentDto` | `SHIPMENT_NOT_FOUND`, `SHIPMENT_INVALID_STATUS_TRANSITION` |
+| `POST /agent/shipments/:shipmentId/returned` | required | – | `200 AgentShipmentDto` | `SHIPMENT_NOT_FOUND`, `SHIPMENT_INVALID_STATUS_TRANSITION` (only a `returning_to_seller` shipment whose seller order was cancelled, DE-6) |
+
+Every endpoint above except `GET /agent/profile` answers `403 AGENT_INACTIVE` for an inactive agent (DE-5).
 
 `picked-up` and `out-for-delivery` have no money/stock effect and are guarded by the state machine, so they don't need an idempotency key.
 
@@ -150,7 +153,7 @@ interface AdminShipmentDto extends AgentShipmentDto {
 | `GET /admin/shipments/:shipmentId` | – | `200 AdminShipmentDto` | `SHIPMENT_NOT_FOUND` |
 | `POST /admin/shipments/:shipmentId/assign` | `agentId uuid` | `200 AdminShipmentDto` | `SHIPMENT_NOT_FOUND`, `AGENT_NOT_FOUND` 422, `AGENT_INACTIVE` 409, `SHIPMENT_NOT_ASSIGNABLE` 409, `SHIPMENT_ALREADY_ASSIGNED_TO_AGENT` 409 |
 
-Index note: `GET /admin/shipments` filtered by `status` only, or unfiltered and sorted by `created_at`, has no matching index in `02-database.md`. Proposed: `idx_shipments_status_created_at_id (status, created_at DESC, id DESC)` (D-3).
+Indexes for these lists: D-3 and D-10 (database v1.10, DE-14).
 
 ## 5. Events
 Published: `shipment.assigned`, `shipment.picked_up`, `shipment.out_for_delivery`, `shipment.attempt_failed`, `shipment.delivered`.
@@ -162,7 +165,7 @@ Consumed: `seller_order.ready_for_pickup`, `seller_order.items_cancelled`, `sell
 |---|---|---|
 | `GOVERNORATE_NOT_FOUND` | 404 / 422 | Path / body reference |
 | `AGENT_NOT_FOUND` | 404 / 422 | |
-| `AGENT_INACTIVE` | 409 | Inactive agent goes on shift, or is chosen for assignment |
+| `AGENT_INACTIVE` | 409 / 403 | 409: an inactive agent goes on shift, or is chosen for assignment. 403: an inactive agent calls an agent endpoint other than the profile (DE-5) |
 | `AGENT_HAS_ACTIVE_SHIPMENTS` | 409 | Deactivate with active shipments |
 | `AGENT_INVALID_STATUS_TRANSITION` | 409 | |
 | `SHIPMENT_NOT_FOUND` | 404 | Missing or another agent's |
@@ -186,3 +189,18 @@ Consumed: `seller_order.ready_for_pickup`, `seller_order.items_cancelled`, `sell
 | DE-2 | The migration seeds all 27 governorates with `delivery_fee = NULL`: nothing is deliverable until an admin sets fees. A dev-only seed script sets sample fees locally (P2-Q4) | UC-DE-7 |
 | DE-3 | Governorates cache: Redis key `v1:delivery:governorates`, TTL `GOVERNORATES_CACHE_TTL_SECONDS` (env, value 3600, no default), deleted after commit on a fee change. `delivery_settings` is not cached (P2-Q5) | §2, §4.1, UC-DE-7 |
 | DE-4 | `GOVERNORATE_NOT_FOUND` is the common code from `lib/error` (P2-Q7) | §6 |
+
+### 7.2 Clarifications for agents, shipments and assignment (v1.1, Phase 6 plan, 2026-10-12)
+
+| # | Clarification | Where |
+|---|---|---|
+| DE-5 | Every agent endpoint except `GET /agent/profile` requires an `active` agent (`403 AGENT_INACTIVE`). Deactivate suspends the login only when it is `active`; activate reactivates it only when it is `suspended`; an `invited` user is left as is (P6-Q4) | UC-DE-2, UC-DE-6, §4.2 |
+| DE-6 | A shipment cancelled after pickup gets `seller_order_cancelled_at`; the agent confirms its handover with `POST /agent/shipments/:id/returned` → `returned_to_seller` (normal returns still close on `seller_order.returned`) (P6-Q5) | §1.1, UC-DE-3, UC-DE-5 |
+| DE-7 | Lock order: shipments of one checkout by id → the shipment's agent → other agents. Delivery never locks ordering's or payments' rows; their consumers never lock shipments (P6-Q6) | §3 |
+| DE-8 | Fee carrier: COD shipments only (Kashier: `order_delivery_fee` and `amountToCollect` `0.00`); chosen at `out-for-delivery` under the checkout's shipment locks; released on a failed attempt or a cancellation after pickup; `shipment.delivered` reports `deliveryFeeCollected = carries_delivery_fee`, `deliveryFeeAmount = cod_fee_amount`, `codCollectedAmount = items + fee` (P6-Q7) | UC-DE-3 |
+| DE-9 | Retry job `shipment-assignment-retry`: `unassigned` shipments oldest first, one short transaction per shipment (`FOR UPDATE SKIP LOCKED`), env `JOB_SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_MS` (60 000) and `SHIPMENT_JOBS_BATCH_SIZE` (100), worker only (P6-Q9) | §1, UC-DE-1 |
+| DE-10 | Event order (as spec 09 OR-14): a seller-order event whose shipment doesn't exist yet but should (`previousStatus` / the seller order's state says so) is retried; a stale one is a `warn` no-op; `seller_order.ready_for_pickup` is replay-safe (P6-Q8) | UC-DE-5 |
+| DE-11 | `getAgentByUserId` and `getAgentSummaries` are built in Phase 6 for finance (P6-Q11) | §2 |
+| DE-12 | Without a `status` filter, `GET /agent/shipments` returns the active statuses, oldest `createdAt` first; history through `status[in]=…` (P6-Q10) | §4.2 |
+| DE-13 | Process split: api serves the agent / admin endpoints and the public API; the worker runs `delivery.seller-order-updates` and the retry job; both share one assignment service (P6-Q12) | §3 |
+| DE-14 | Shipments snapshot from `seller_order.ready_for_pickup` everything the agent's screen and the fee rules need: `order_number`, `payment_method`, `order_delivery_fee` (`0.00` for Kashier), `pickup_business_name`, the full pickup and drop-off snapshots, `cod_items_amount`; no `agent_fee_share` (ordering computes it) (D-2, P6-Q2). Indexes D-3, D-10 (P6-Q3) | §1, UC-DE-1 |

@@ -1,6 +1,6 @@
 # System Design 02 — Database Schema (Release 1)
 
-Status: **v1.9 APPROVED (2026-10-12).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). v1.5: public product listings sort on `published_at` (D-5); `id` tie-break on the stock-history index (D-6). v1.6: `idx_products_category_id` for category usage checks (D-7). v1.7: cart FK `ON DELETE` behaviour and why `cart_items.variant_id` has no index (§7, P4-Q11). v1.8: ordering/payments indexes, Kashier session columns, refund reason `amount_mismatch`, FK behaviour and unindexed FKs (§6, §8, §9, D-8, Phase 5). v1.9: `inventory_reservations.quantity` is what is still reserved, `>= 0`, and 0 exactly when `released` (§6, D-9). Changes from now on need explicit approval and a version bump. Decisions: §13.
+Status: **v1.10 APPROVED (2026-10-12).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). v1.5: public product listings sort on `published_at` (D-5); `id` tie-break on the stock-history index (D-6). v1.6: `idx_products_category_id` for category usage checks (D-7). v1.7: cart FK `ON DELETE` behaviour and why `cart_items.variant_id` has no index (§7, P4-Q11). v1.8: ordering/payments indexes, Kashier session columns, refund reason `amount_mismatch`, FK behaviour and unindexed FKs (§6, §8, §9, D-8, Phase 5). v1.9: `inventory_reservations.quantity` is what is still reserved, `>= 0`, and 0 exactly when `released` (§6, D-9). v1.10: shipment snapshots, the cancelled-after-pickup marker and the delivery list indexes (§10, D-2, D-3, D-10, Phase 6). Changes from now on need explicit approval and a version bump. Decisions: §13.
 Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §6. Business rules: `docs/spec/00-overview.md` v1.0.
 
 ---
@@ -433,6 +433,7 @@ std columns · `user_id` fk → users (`uq_delivery_agents_user_id`) · `full_na
 Indexes:
 - `uq_delivery_agents_user_id`: resolve the agent from the JWT.
 - `idx_delivery_agents_home_governorate_id_last_assigned_at (home_governorate_id, last_assigned_at NULLS FIRST) WHERE status = 'active' AND on_shift`: candidate selection for auto-assignment.
+- `idx_delivery_agents_created_at_id (created_at DESC, id DESC)`: `GET /admin/delivery-agents` [v1.10, D-10].
 
 ### shipments
 | column | type | rules |
@@ -442,25 +443,34 @@ Indexes:
 | order_id | UUID | fk → orders (shipments of one checkout: fee split and fee carrier) |
 | agent_id | UUID null | fk → delivery_agents |
 | status | VARCHAR(30) | `unassigned, assigned, picked_up, out_for_delivery, delivery_failed, returning_to_seller, returned_to_seller, delivered, cancelled` |
-| pickup_* / dropoff_* | | address snapshots copied from the event payload (same columns as on orders / seller_orders) |
+| order_number | VARCHAR(20) | snapshot for the agent's screen [v1.10, D-2] |
+| payment_method | VARCHAR(20) | `cod, kashier` (CHECK) [v1.10, D-2] |
+| order_delivery_fee | money | the checkout's COD fee, used by the fee carrier; `0.00` for Kashier [v1.10, D-2] |
+| pickup_business_name | VARCHAR(150) | snapshot [v1.10, D-2] |
+| pickup_* / dropoff_* | | address snapshots copied from the event payload (same columns as on orders / seller_orders, plus `dropoff_governorate_name`) |
 | cod_items_amount | money | COD: seller order subtotal to collect. Kashier: 0 |
 | carries_delivery_fee | BOOLEAN | `true` on the one shipment that collects the COD fee: the first of the checkout to go `out_for_delivery`. Moves to the next shipment going out if this one fails or returns [SD-2, DB-Q1 approved] |
 | cod_fee_amount | money | the fee if `carries_delivery_fee`, else 0 |
 | cod_collected_amount | NUMERIC(12,2) null | set on delivered |
-| agent_fee_share | NUMERIC(12,2) null | set on delivered (equal split, Q-27) |
 | attempt_count | SMALLINT | app inserts 0. `CHECK (attempt_count BETWEEN 0 AND 3)` |
 | assigned_at, picked_up_at, delivered_at, returned_at | TIMESTAMPTZ null | |
+| seller_order_cancelled_at | TIMESTAMPTZ null | set when the seller order is cancelled after pickup: the agent then confirms the return himself (spec 11 DE-6) [v1.10, D-10] |
+
+No `agent_fee_share` column: ordering computes the share and the ledger records it [v1.10, D-2]. Every FK is `ON DELETE RESTRICT` [v1.10, D-10].
 
 Indexes:
 - `uq_shipments_seller_order_id`.
 - `idx_shipments_agent_id_status (agent_id, status) WHERE agent_id IS NOT NULL`: the agent's active list, and the "active shipment count" used for assignment.
-- `idx_shipments_created_at (created_at) WHERE status = 'unassigned'`: the assignment retry job.
+- `idx_shipments_created_at_id (created_at, id) WHERE status = 'unassigned'`: the assignment retry job, oldest first with a keyset tie-break [v1.10, D-10].
+- `idx_shipments_status_created_at_id (status, created_at DESC, id DESC)`: `GET /admin/shipments?status[…]` [v1.10, D-3].
+- `idx_shipments_created_at_desc_id (created_at DESC, id DESC)`: the unfiltered admin list [v1.10, D-10].
+- `idx_shipments_agent_id_created_at_id (agent_id, created_at, id) WHERE agent_id IS NOT NULL`: the agent's list, oldest first, also over a long delivered history [v1.10, D-10].
 - `idx_shipments_order_id (order_id)`: shipments of one checkout.
 - `uq_shipments_order_id_fee_carrier (order_id) WHERE carries_delivery_fee`: **at most one** fee-carrying shipment per checkout.
 
 ### shipment_attempts (append-only)
 `shipment_id` fk · `attempt_number SMALLINT CHECK (BETWEEN 1 AND 3)` · `reason VARCHAR(30)` (`customer_unreachable, customer_refused, wrong_address, customer_rescheduled`) · `note VARCHAR(500) null` · `agent_id` fk.
-`uq_shipment_attempts_shipment_id_attempt_number`: no duplicate attempt numbers, and serves "attempts of a shipment".
+`uq_shipment_attempts_shipment_id_attempt_number`: no duplicate attempt numbers, and serves "attempts of a shipment". No index on `agent_id` (audit pointer) [v1.10, D-10].
 
 ### shipment_status_history (append-only)
 Same shape as the order histories. Index `(shipment_id, created_at)`.
@@ -534,5 +544,6 @@ Index: `idx_processed_events_processed_at`: the cleanup job.
 | D-7 | `idx_products_category_id (category_id)`: the category usage checks run outside VIS and would otherwise scan `products` (Phase 3 implementation, 2026-10-10) |
 | D-8 | Phase 5 (P5-Q4, 2026-10-12): `idx_orders_created_at_id`; `idx_payment_events_payment_id`; refund queue index with `id`; `payments.provider_session_url` + `provider_session_expires_at`; `RefundReason` `amount_mismatch`; every ordering/payments/reservation FK `ON DELETE RESTRICT`; no indexes on `order_items.variant_id` / `product_id`, `inventory_reservations.inventory_item_id`, `payment_refunds.seller_order_id`; `order_number_seq` created with `orders` |
 | D-9 | `inventory_reservations.quantity >= 0` with `chk_inventory_reservations_released` (released ⇔ 0), so a full release can lower it to 0 as spec 07 UC-IN-2 says; the earlier `> 0` contradicted it (Phase 5 migrations, 2026-10-12) |
+| D-10 | Phase 6 (P6-Q3, P6-Q5, 2026-10-12): D-2 (shipment snapshots, no `agent_fee_share`) and D-3 (`idx_shipments_status_created_at_id`) applied; plus `idx_shipments_created_at_desc_id`, `idx_shipments_agent_id_created_at_id`, the retry index with `id`, `idx_delivery_agents_created_at_id`, `shipments.seller_order_cancelled_at`, every delivery FK `ON DELETE RESTRICT`, no index on `shipment_attempts.agent_id` |
 
 No open schema questions.
