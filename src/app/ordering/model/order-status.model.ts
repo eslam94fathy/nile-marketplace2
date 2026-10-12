@@ -7,6 +7,13 @@ export const TERMINAL_SELLER_ORDER_STATUSES: readonly SellerOrderStatus[] = [
   SellerOrderStatus.RETURNED_TO_SELLER,
 ];
 
+/**
+ * Seller orders whose units the customer still pays for: not cancelled and not returned. The
+ * order's items total (OR-13) and the summary item count (OR-9) both count only these.
+ */
+export const isBilled = (status: SellerOrderStatus): boolean =>
+  status !== SellerOrderStatus.CANCELLED && status !== SellerOrderStatus.RETURNED_TO_SELLER;
+
 export const isTerminal = (status: SellerOrderStatus): boolean =>
   TERMINAL_SELLER_ORDER_STATUSES.includes(status);
 

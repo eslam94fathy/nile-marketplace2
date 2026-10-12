@@ -4,6 +4,7 @@ import { type PageMeta, type ParsedListQuery, toPage } from '../../../lib/http';
 import { type IPaymentDirectory } from '../../payments';
 import { type ISellerDirectory } from '../../sellers';
 import { orderNotFound, sellerOrderNotFound } from '../errors';
+import { isBilled } from '../model/order-status.model';
 import { type OrderDetail, type SellerOrderView } from '../model/order-view.model';
 import {
   type Order,
@@ -96,7 +97,11 @@ export class OrderViewService {
     };
   }
 
-  /** Counts for the summaries: open units (OR-9) and seller orders, from two batched reads. */
+  /**
+   * Counts for the summaries, from two batched reads: seller orders, and units still on order (OR-9):
+   * open quantities of the seller orders still billed. A whole cancelled or returned seller order keeps
+   * its lines' quantities (only item cancellations set cancelled_quantity), so it is left out by status.
+   */
   private async listEntries(
     rows: Order[],
     query: ParsedListQuery,
@@ -104,14 +109,16 @@ export class OrderViewService {
     const page = toPage(rows, query, (order) => order.createdAt);
     const sellerOrders = await this.sellerOrders.findByOrderIds(page.items.map((o) => o.id));
     const items = await this.items.findBySellerOrderIds(sellerOrders.map((s) => s.id));
-    const orderOf = new Map(sellerOrders.map((s) => [s.id, s.orderId]));
+    const billedOrderOf = new Map(
+      sellerOrders.filter((s) => isBilled(s.status)).map((s) => [s.id, s.orderId]),
+    );
     return {
       meta: page.meta,
       items: page.items.map((order) => ({
         order,
         sellerOrderCount: sellerOrders.filter((s) => s.orderId === order.id).length,
         itemCount: items
-          .filter((item) => orderOf.get(item.sellerOrderId) === order.id)
+          .filter((item) => billedOrderOf.get(item.sellerOrderId) === order.id)
           .reduce((sum, item) => sum + openQuantity(item), 0),
       })),
     };

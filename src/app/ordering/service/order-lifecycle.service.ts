@@ -6,7 +6,7 @@ import { type IOutbox, OrderClosed, SellerOrderCancelled } from '../../../lib/ev
 import { Money } from '../../../lib/money';
 import { type IInventoryService } from '../../inventory';
 import { type ActorRole, OrderStatus, type SellerOrderCancelReason, SellerOrderStatus } from '../enums';
-import { deriveOrderStatus, isClosed } from '../model/order-status.model';
+import { deriveOrderStatus, isBilled, isClosed } from '../model/order-status.model';
 import { type Order, type OrderItem, openQuantity, type SellerOrder } from '../model/order.model';
 import { type OrderItemRepository } from '../repository/order-item.repository';
 import { type OrderRepository } from '../repository/order.repository';
@@ -27,12 +27,6 @@ export interface LockedOrder {
   order: Order;
   sellerOrders: SellerOrder[];
 }
-
-/** Seller orders whose units won't be paid for: left out of the order's items total (OR-13). */
-const NOT_BILLED: readonly SellerOrderStatus[] = [
-  SellerOrderStatus.CANCELLED,
-  SellerOrderStatus.RETURNED_TO_SELLER,
-];
 
 /**
  * The shared write path of every seller-order change after checkout (spec 09 §1.1–§1.2, §3.9):
@@ -161,9 +155,7 @@ export class OrderLifecycleService {
   async settle(locked: LockedOrder, actor: Actor, trx: DbTransaction): Promise<Order> {
     const { order, sellerOrders } = locked;
     const status = deriveOrderStatus(sellerOrders.map((s) => s.status));
-    const itemsTotal = Money.sum(
-      sellerOrders.filter((s) => !NOT_BILLED.includes(s.status)).map((s) => s.subtotal),
-    );
+    const itemsTotal = Money.sum(sellerOrders.filter((s) => isBilled(s.status)).map((s) => s.subtotal));
     const closing = isClosed(status) && !isClosed(order.status);
     const delivered = sellerOrders.filter((s) => s.status === SellerOrderStatus.DELIVERED);
     // Q-28: nothing delivered → no delivery fee.

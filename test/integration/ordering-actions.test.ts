@@ -3,6 +3,7 @@ import { createOrderingJobs } from '../../src/app/ordering';
 import {
   type CheckoutResultDto,
   type OrderDetailDto,
+  type OrderSummaryDto,
   type SellerOrderDto,
 } from '../../src/app/ordering/dto/order-response.dto';
 import { errorBody, successBody } from '../helpers/http';
@@ -90,6 +91,13 @@ describe('ordering: cancellations, seller actions and the acceptance timeout', (
         total: '350.00',
       });
       expect(await api.stockOf(b.variantId)).toEqual({ on_hand: 10, reserved: 0 });
+      // Regression (walkthrough 2026-10-12): units of a whole cancelled seller order no longer count.
+      const summaries = successBody<OrderSummaryDto[]>(await api.as(buyer.token).get('/orders')).data;
+      expect(must(summaries.find((o) => o.id === result.order.id))).toMatchObject({
+        itemCount: 3,
+        sellerOrderCount: 2,
+        total: '350.00',
+      });
       expect(await api.eventsOf('seller_order.cancelled', soB.id)).toEqual([
         expect.objectContaining({
           orderId: result.order.id,

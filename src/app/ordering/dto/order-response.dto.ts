@@ -151,7 +151,7 @@ export class OrderSummaryDto {
   @IsMoney()
   total!: string;
 
-  /** Units still to deliver (OR-9). */
+  /** Units still on order: not cancelled, not returned (OR-9). */
   @IsInt()
   itemCount!: number;
 
