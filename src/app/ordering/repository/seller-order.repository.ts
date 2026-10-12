@@ -116,6 +116,8 @@ export interface SellerOrderTransition {
   status: SellerOrderStatus;
   acceptedAt?: Date;
   readyAt?: Date;
+  pickedUpAt?: Date;
+  deliveredAt?: Date;
   returnedAt?: Date;
   cancel?: { reason: SellerOrderCancelReason; byUserId: string | null; at: Date };
 }
@@ -197,6 +199,8 @@ export class SellerOrderRepository {
         status: change.status,
         ...(change.acceptedAt ? { accepted_at: change.acceptedAt } : {}),
         ...(change.readyAt ? { ready_at: change.readyAt } : {}),
+        ...(change.pickedUpAt ? { picked_up_at: change.pickedUpAt } : {}),
+        ...(change.deliveredAt ? { delivered_at: change.deliveredAt } : {}),
         ...(change.returnedAt ? { returned_at: change.returnedAt } : {}),
         ...(change.cancel
           ? {

@@ -119,6 +119,7 @@ export const TOKENS = {
   OrderLifecycleService: Symbol.for('OrderLifecycleService'),
   OrderActionService: Symbol.for('OrderActionService'),
   AcceptanceTimeoutJob: Symbol.for('AcceptanceTimeoutJob'),
+  ShipmentUpdateService: Symbol.for('ShipmentUpdateService'),
   CheckoutService: Symbol.for('CheckoutService'),
   OrderViewService: Symbol.for('OrderViewService'),
   OrderController: Symbol.for('OrderController'),

@@ -1,6 +1,7 @@
 import { type DependencyContainer } from 'tsyringe';
 import { createCatalogHandlers } from './app/catalog';
 import { createNotificationHandlers } from './app/notifications';
+import { createOrderingHandlers } from './app/ordering';
 import { createPaymentsHandlers } from './app/payments';
 import { type EventHandlerDefinition } from './lib/events';
 
@@ -13,5 +14,6 @@ export function createEventHandlers(container: DependencyContainer): EventHandle
     ...createNotificationHandlers(container),
     ...createCatalogHandlers(container),
     ...createPaymentsHandlers(container),
+    ...createOrderingHandlers(container),
   ];
 }

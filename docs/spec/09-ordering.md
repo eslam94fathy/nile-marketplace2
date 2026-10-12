@@ -1,6 +1,6 @@
 # Spec 09 — ordering
 
-Status: **v1.1 APPROVED (2026-10-12).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: `amountCancelled` when the last units are cancelled (OR-12); what the order totals count (OR-13). Changes from now on need explicit approval and a version bump.
+Status: **v1.2 APPROVED (2026-10-12).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: `amountCancelled` when the last units are cancelled (OR-12); what the order totals count (OR-13). v1.2: shipment events that overtake their predecessor are retried (OR-14). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -253,3 +253,4 @@ Consumed: `payment.paid`, `payment.failed` (`ordering.payment-updates`); `shipme
 | OR-11 | `KASHIER_REDIRECT_URL` is an https app link agreed with the mobile team before staging; the app never trusts the redirect and reads `GET /orders/:id` (P5-Q14) | §4.1.2 |
 | OR-12 | When an item cancellation leaves no open unit, the seller order becomes `cancelled` and only `seller_order.cancelled` is published; its `amountCancelled` is the seller order's subtotal **before** that item cancellation, so the refund (Kashier) or COD reduction covers the last units too (Phase 5 step 4, v1.1) | §3.5 |
 | OR-13 | A cancelled or returned seller order keeps its own `subtotal` (the record of what was cancelled). The order's `items_total` sums only the seller orders that are neither `cancelled` nor `returned_to_seller`, recomputed under the order lock after every change, and `total = items_total + delivery_fee`, so the order total is always what the customer still owes (it matches the COD payment amount). The close step then zeroes the fee if nothing was delivered (Phase 5 step 6, v1.1) | §1.1, §3.2–§3.9 |
+| OR-14 | The `ordering.shipment-updates` consumer tells a **stale** event from an **early** one. Each shipment event has the statuses it applies from and the statuses that mean an earlier event of the same shipment isn't applied yet (`picked_up` early while placed / accepted; `out_for_delivery` while ready_for_pickup / out_for_delivery; `attempt_failed` and `delivered` while ready_for_pickup / picked_up / delivery_failed). An early event throws and is retried by the broker with backoff (DLQ + `error` log if it never applies); a stale one (seller order cancelled, or already past it) is a no-op with a `warn` log `SHIPMENT_EVENT_IGNORED` (Phase 5 step 7, v1.2) | §3.6, architecture §3.2 |

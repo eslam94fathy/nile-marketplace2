@@ -7,6 +7,9 @@ export const ORDERING_TABLES = {
   SELLER_ORDER_STATUS_HISTORY: 'seller_order_status_history',
 } as const;
 
+/** Queue of the shipment consumer (docs/spec/02-events.md §2). */
+export const SHIPMENT_UPDATES_QUEUE = 'ordering.shipment-updates';
+
 /** Paths under /api/v1 (spec 09 §4). */
 export const ORDERING_PATHS = {
   CHECKOUT: '/checkout',

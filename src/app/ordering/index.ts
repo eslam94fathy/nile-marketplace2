@@ -11,6 +11,13 @@ import { type DependencyContainer } from 'tsyringe';
 import { type JwtVerifier } from '../../lib/auth';
 import { type ApiEnv, type Env } from '../../lib/config';
 import { TOKENS } from '../../lib/di';
+import {
+  type EventHandlerDefinition,
+  ShipmentAttemptFailed,
+  ShipmentDelivered,
+  ShipmentOutForDelivery,
+  ShipmentPickedUp,
+} from '../../lib/events';
 import { type OpenApiRegistry } from '../../lib/http';
 import { type JobDefinition } from '../../lib/jobs';
 import { type ILogger } from '../../lib/logger';
@@ -24,12 +31,14 @@ import { OrderItemRepository } from './repository/order-item.repository';
 import { OrderRepository } from './repository/order.repository';
 import { SellerOrderRepository } from './repository/seller-order.repository';
 import { StatusHistoryRepository } from './repository/status-history.repository';
+import { SHIPMENT_UPDATES_QUEUE } from './constants';
 import { orderingRoutes } from './routes';
 import { AcceptanceTimeoutJob } from './service/acceptance-timeout.job';
 import { CheckoutService } from './service/checkout.service';
 import { OrderActionService } from './service/order-action.service';
 import { OrderLifecycleService } from './service/order-lifecycle.service';
 import { OrderViewService } from './service/order-view.service';
+import { ShipmentUpdateService } from './service/shipment-update.service';
 
 export { OrderingErrorCode } from './errors';
 export { OrderStatus, SellerOrderStatus } from './enums';
@@ -55,12 +64,29 @@ export function registerOrderingModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.AdminOrderController, AdminOrderController);
 }
 
-/** worker process: the order jobs (spec 09 §3.10). Needs inventory registered first. */
+/** worker process: what the consumers and jobs need. Needs inventory registered first. */
+export function registerOrderingWorker(container: DependencyContainer): void {
+  registerOrderingCore(container);
+  container.registerSingleton(TOKENS.ShipmentUpdateService, ShipmentUpdateService);
+}
+
+/** Consumer `ordering.shipment-updates` (spec 09 UC-OR-6, UC-OR-8, spec 02 §2). */
+export function createOrderingHandlers(container: DependencyContainer): EventHandlerDefinition[] {
+  const shipments = container.resolve<ShipmentUpdateService>(TOKENS.ShipmentUpdateService);
+  return [
+    {
+      name: SHIPMENT_UPDATES_QUEUE,
+      events: [ShipmentPickedUp, ShipmentOutForDelivery, ShipmentAttemptFailed, ShipmentDelivered],
+      handle: (envelope, trx) => shipments.handle(envelope, trx),
+    },
+  ];
+}
+
+/** The order jobs (spec 09 §3.10), on a container with the ordering core registered. */
 export function createOrderingJobs(
   container: DependencyContainer,
   env: Pick<Env, 'JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS' | 'ORDER_JOBS_BATCH_SIZE'>,
 ): JobDefinition[] {
-  registerOrderingCore(container);
   container.registerSingleton(TOKENS.AcceptanceTimeoutJob, AcceptanceTimeoutJob);
   const timeout = container.resolve<AcceptanceTimeoutJob>(TOKENS.AcceptanceTimeoutJob);
   return [

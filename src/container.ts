@@ -8,7 +8,7 @@ import { registerHealthModule } from './app/health';
 import { registerIdentityModule } from './app/identity';
 import { registerInventoryModule } from './app/inventory';
 import { registerNotificationsModule } from './app/notifications';
-import { registerOrderingModule } from './app/ordering';
+import { registerOrderingModule, registerOrderingWorker } from './app/ordering';
 import { registerPaymentsModule } from './app/payments';
 import { TOKENS } from './lib/di';
 import { Outbox } from './lib/events';
@@ -65,5 +65,7 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   registerInventoryModule(container);
   registerCatalogProjections(container);
   registerPaymentsModule(container);
+  // ordering.shipment-updates and the order jobs (spec 09 §3.6–§3.10).
+  registerOrderingWorker(container);
   return container;
 }
