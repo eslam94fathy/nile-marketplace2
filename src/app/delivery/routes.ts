@@ -4,6 +4,8 @@ import { type OpenApiRegistry } from '../../lib/http';
 import { authenticate, requireRole } from '../../lib/middleware';
 import { AGENT_PATHS as AG, DELIVERY_ADMIN_PATHS as A, DELIVERY_PATHS as P } from './constants';
 import { type AgentAdminController, type AgentSelfController } from './controller/delivery-agent.controller';
+import { type ShipmentAdminController } from './controller/shipment-admin.controller';
+import { AdminShipmentDto, AssignShipmentDto } from './dto/shipment.dto';
 import { type DeliverySettingsController } from './controller/delivery-settings.controller';
 import { type GovernorateController } from './controller/governorate.controller';
 import { UpdateDeliverySettingsDto, UpdateGovernorateDto } from './dto/delivery-request.dto';
@@ -24,6 +26,7 @@ export interface DeliveryRouteDeps {
   settings: DeliverySettingsController;
   agentSelf: AgentSelfController;
   agentAdmin: AgentAdminController;
+  shipmentAdmin: ShipmentAdminController;
   jwtVerifier: JwtVerifier;
   docs: OpenApiRegistry;
   /** Where the router is mounted (`/api/v1`), for the documented paths. */
@@ -52,6 +55,11 @@ export function deliveryRoutes(deps: DeliveryRouteDeps): Router {
   router.post(A.AGENT_DEACTIVATE, ...adminOnly, deps.agentAdmin.deactivate);
   router.post(A.AGENT_ACTIVATE, ...adminOnly, deps.agentAdmin.activate);
   documentAgentRoutes(docs, basePath);
+
+  router.get(A.SHIPMENTS, ...adminOnly, deps.shipmentAdmin.list);
+  router.get(A.SHIPMENT, ...adminOnly, deps.shipmentAdmin.get);
+  router.post(A.SHIPMENT_ASSIGN, ...adminOnly, deps.shipmentAdmin.assign);
+  documentShipmentAdminRoutes(docs, basePath);
 
   const governorateList = {
     200: { description: 'All 27 governorates, ordered by name', body: GovernorateDto, isArray: true },
@@ -183,5 +191,52 @@ function documentAgentRoutes(docs: OpenApiRegistry, basePath: string): void {
     summary:
       'Activate again; a suspended login is reactivated (AGENT_NOT_FOUND, AGENT_INVALID_STATUS_TRANSITION 409)',
     responses: { 200: { description: 'The agent', body: AdminAgentDto } },
+  });
+}
+
+/** OpenAPI for the shipment part of spec 11 §4.3. */
+function documentShipmentAdminRoutes(docs: OpenApiRegistry, basePath: string): void {
+  const admin = { tags: ['admin: shipments'], auth: true } as const;
+  docs.add({
+    ...admin,
+    method: 'get',
+    path: `${basePath}${A.SHIPMENTS}`,
+    summary:
+      'Shipments. Filters: status[eq|in], agentId[eq], orderId[eq], createdAt[gte|lte]. Sort: createdAt (default -createdAt)',
+    query: [
+      { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1 } },
+      { name: 'cursor', in: 'query', schema: { type: 'string' } },
+      { name: 'sort', in: 'query', schema: { enum: ['createdAt', '-createdAt'] } },
+      { name: 'status[eq]', in: 'query', schema: { type: 'string' } },
+      { name: 'status[in]', in: 'query', schema: { type: 'string' }, description: 'comma-separated' },
+      { name: 'agentId[eq]', in: 'query', schema: { type: 'string', format: 'uuid' } },
+      { name: 'orderId[eq]', in: 'query', schema: { type: 'string', format: 'uuid' } },
+      { name: 'createdAt[gte]', in: 'query', schema: { type: 'string', format: 'date-time' } },
+      { name: 'createdAt[lte]', in: 'query', schema: { type: 'string', format: 'date-time' } },
+    ],
+    responses: {
+      200: {
+        description: 'One page of shipments (no history)',
+        body: AdminShipmentDto,
+        isArray: true,
+        paginated: true,
+      },
+    },
+  });
+  docs.add({
+    ...admin,
+    method: 'get',
+    path: `${basePath}${A.SHIPMENT}`,
+    summary: 'A shipment with its attempts and status history (SHIPMENT_NOT_FOUND)',
+    responses: { 200: { description: 'The shipment', body: AdminShipmentDto } },
+  });
+  docs.add({
+    ...admin,
+    method: 'post',
+    path: `${basePath}${A.SHIPMENT_ASSIGN}`,
+    summary:
+      'Assign or reassign before pickup, to any active agent (SHIPMENT_NOT_FOUND 404, AGENT_NOT_FOUND 422, AGENT_INACTIVE 409, SHIPMENT_NOT_ASSIGNABLE 409, SHIPMENT_ALREADY_ASSIGNED_TO_AGENT 409)',
+    requestBody: AssignShipmentDto,
+    responses: { 200: { description: 'The shipment', body: AdminShipmentDto } },
   });
 }

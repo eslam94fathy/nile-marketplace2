@@ -26,7 +26,13 @@ export const DELIVERY_ADMIN_PATHS = {
   AGENT: '/admin/delivery-agents/:agentId',
   AGENT_DEACTIVATE: '/admin/delivery-agents/:agentId/deactivate',
   AGENT_ACTIVATE: '/admin/delivery-agents/:agentId/activate',
+  SHIPMENTS: '/admin/shipments',
+  SHIPMENT: '/admin/shipments/:shipmentId',
+  SHIPMENT_ASSIGN: '/admin/shipments/:shipmentId/assign',
 } as const;
+
+/** Queue of the seller-order consumer (docs/spec/02-events.md §2). */
+export const SELLER_ORDER_UPDATES_QUEUE = 'delivery.seller-order-updates';
 
 /** The whole governorate list, cache-aside (architecture §8, spec 11 DE-3). */
 export const GOVERNORATES_CACHE_KEY = 'v1:delivery:governorates';

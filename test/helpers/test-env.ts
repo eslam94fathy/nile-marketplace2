@@ -95,6 +95,8 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     JOB_KASHIER_PAYMENT_EXPIRY_INTERVAL_MS: '30000',
     KASHIER_PAYMENT_TTL_MINUTES: '15',
     ORDER_JOBS_BATCH_SIZE: '100',
+    JOB_SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_MS: '60000',
+    SHIPMENT_JOBS_BATCH_SIZE: '100',
     // payments: the fake gateway, signing webhooks with TEST_KASHIER_API_KEY
     PAYMENT_GATEWAY: 'fake',
     KASHIER_API_KEY: TEST_KASHIER_API_KEY,

@@ -146,6 +146,32 @@ export class DeliveryAgentRepository {
     return new Map(rows.map((row) => [row.agent_id, Number(row.count)]));
   }
 
+  /**
+   * Auto-assignment candidate (spec 11 UC-DE-1, overview §4.6): an active, on-shift agent of the
+   * governorate with the fewest active shipments, then the longest idle; the row comes back locked,
+   * and agents another assignment holds are skipped, so two shipments never take the same slot.
+   * Over idx_delivery_agents_home_governorate_id_last_assigned_at and idx_shipments_agent_id_status.
+   */
+  async lockCandidate(governorateId: string, trx: DbTransaction): Promise<DeliveryAgent | null> {
+    const { rows } = await trx.raw<{ rows: AgentRow[] }>(
+      `SELECT ${COLUMNS.map((c) => `a.${c}`).join(', ')}
+         FROM ${T} a
+        WHERE a.home_governorate_id = ? AND a.status = 'active' AND a.on_shift
+        ORDER BY (SELECT count(*) FROM ${DELIVERY_TABLES.SHIPMENTS} s
+                   WHERE s.agent_id = a.id AND s.status = ANY(?::text[])),
+                 a.last_assigned_at NULLS FIRST, a.id
+        LIMIT 1
+        FOR UPDATE OF a SKIP LOCKED`,
+      [governorateId, [...ACTIVE_SHIPMENT_STATUSES]],
+    );
+    const row = rows[0];
+    return row ? toModel(row) : null;
+  }
+
+  async setLastAssignedAt(id: string, at: Date, trx: DbTransaction): Promise<void> {
+    await trx<DeliveryAgentTable>(T).update({ last_assigned_at: at, updated_at: trx.fn.now() }).where({ id });
+  }
+
   /** Admin list, keyset page (`limit + 1` rows) over idx_delivery_agents_created_at_id (D-10). */
   async list(query: ParsedListQuery, trx?: DbTransaction): Promise<DeliveryAgent[]> {
     const qb = this.exec(trx)<DeliveryAgentTable>(T).select(...COLUMNS);

@@ -243,6 +243,12 @@ const kashierSessionShape = {
   KASHIER_WEBHOOK_URL: z.url().optional(),
 };
 
+/** delivery jobs (spec 11 DE-9), worker only. */
+const deliveryJobsShape = {
+  JOB_SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_MS: positiveInt(3_600_000),
+  SHIPMENT_JOBS_BATCH_SIZE: positiveInt(1_000),
+};
+
 /** Invites are also created by the seed-admin CLI. */
 const inviteShape = {
   INVITE_TTL_HOURS: positiveInt(24 * 30),
@@ -394,6 +400,7 @@ export const workerEnvSchema = z
     ...messagingShape,
     ...jobsShape,
     ...orderJobsShape,
+    ...deliveryJobsShape,
     // The payment consumer sets the acceptance deadline when a Kashier order is placed (OR-8).
     ...orderingShape,
     ...paymentGatewayShape,

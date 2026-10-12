@@ -12,11 +12,22 @@ import { type DependencyContainer } from 'tsyringe';
 import { type JwtVerifier } from '../../lib/auth';
 import { TOKENS } from '../../lib/di';
 import { type OpenApiRegistry } from '../../lib/http';
+import { type Env } from '../../lib/config';
 import { type PgErrorMapper } from '../../lib/error';
+import { type EventHandlerDefinition, SellerOrderReadyForPickup } from '../../lib/events';
+import { type JobDefinition } from '../../lib/jobs';
+import { SELLER_ORDER_UPDATES_QUEUE } from './constants';
 import { AgentAdminController, AgentSelfController } from './controller/delivery-agent.controller';
 import { DeliverySettingsController } from './controller/delivery-settings.controller';
 import { registerDeliveryConstraintErrors } from './errors';
+import { ShipmentAdminController } from './controller/shipment-admin.controller';
 import { DeliveryAgentRepository } from './repository/delivery-agent.repository';
+import { ShipmentHistoryRepository } from './repository/shipment-history.repository';
+import { ShipmentRepository } from './repository/shipment.repository';
+import { AssignmentRetryJob } from './service/assignment-retry.job';
+import { SellerOrderUpdateService } from './service/seller-order-update.service';
+import { ShipmentAssignmentService } from './service/shipment-assignment.service';
+import { ShipmentViewService } from './service/shipment-view.service';
 import { DeliveryAgentDirectory } from './service/delivery-agent-directory.service';
 import { DeliveryAgentService } from './service/delivery-agent.service';
 import { GovernorateController } from './controller/governorate.controller';
@@ -34,10 +45,54 @@ export type { IDeliveryAgentDirectory } from './service/delivery-agent-directory
 export { AgentStatus, ShipmentStatus } from './enums';
 export { DeliveryErrorCode } from './errors';
 
+/** What both processes need: the agent and shipment repositories and the assignment service. */
+function registerDeliveryCore(container: DependencyContainer): void {
+  container.registerSingleton(TOKENS.DeliveryAgentRepository, DeliveryAgentRepository);
+  container.registerSingleton(TOKENS.ShipmentRepository, ShipmentRepository);
+  container.registerSingleton(TOKENS.ShipmentHistoryRepository, ShipmentHistoryRepository);
+  container.registerSingleton(TOKENS.ShipmentAssignmentService, ShipmentAssignmentService);
+}
+
+/** worker process: the seller-order consumer and the assignment retry job (DE-13). No identity. */
+export function registerDeliveryWorker(container: DependencyContainer): void {
+  registerDeliveryCore(container);
+  container.registerSingleton(TOKENS.SellerOrderUpdateService, SellerOrderUpdateService);
+  container.registerSingleton(TOKENS.AssignmentRetryJob, AssignmentRetryJob);
+}
+
+/** Consumer `delivery.seller-order-updates` (spec 11 UC-DE-1, UC-DE-5, spec 02 §2). */
+export function createDeliveryHandlers(container: DependencyContainer): EventHandlerDefinition[] {
+  const updates = container.resolve<SellerOrderUpdateService>(TOKENS.SellerOrderUpdateService);
+  return [
+    {
+      name: SELLER_ORDER_UPDATES_QUEUE,
+      events: [SellerOrderReadyForPickup],
+      handle: (envelope, trx) => updates.handle(envelope, trx),
+    },
+  ];
+}
+
+/** The delivery jobs (DE-9), on a container with the delivery worker registered. */
+export function createDeliveryJobs(
+  container: DependencyContainer,
+  env: Pick<Env, 'JOB_SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_MS' | 'SHIPMENT_JOBS_BATCH_SIZE'>,
+): JobDefinition[] {
+  const retry = container.resolve<AssignmentRetryJob>(TOKENS.AssignmentRetryJob);
+  return [
+    {
+      name: 'shipment-assignment-retry',
+      intervalMs: env.JOB_SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_MS,
+      run: () => retry.run(env.SHIPMENT_JOBS_BATCH_SIZE),
+    },
+  ];
+}
+
 /** api process. Needs Database, Cache, Env, Logger and identity's AccountService. */
 export function registerDeliveryModule(container: DependencyContainer): void {
   registerDeliveryConstraintErrors(container.resolve<PgErrorMapper>(TOKENS.PgErrorMapper));
-  container.registerSingleton(TOKENS.DeliveryAgentRepository, DeliveryAgentRepository);
+  registerDeliveryCore(container);
+  container.registerSingleton(TOKENS.ShipmentViewService, ShipmentViewService);
+  container.registerSingleton(TOKENS.ShipmentAdminController, ShipmentAdminController);
   container.registerSingleton(TOKENS.DeliveryAgentService, DeliveryAgentService);
   container.registerSingleton(TOKENS.DeliveryAgentDirectory, DeliveryAgentDirectory);
   container.registerSingleton(TOKENS.AgentSelfController, AgentSelfController);
@@ -58,6 +113,7 @@ export function createDeliveryRouter(container: DependencyContainer, basePath: s
     settings: container.resolve<DeliverySettingsController>(TOKENS.DeliverySettingsController),
     agentSelf: container.resolve<AgentSelfController>(TOKENS.AgentSelfController),
     agentAdmin: container.resolve<AgentAdminController>(TOKENS.AgentAdminController),
+    shipmentAdmin: container.resolve<ShipmentAdminController>(TOKENS.ShipmentAdminController),
     jwtVerifier: container.resolve<JwtVerifier>(TOKENS.JwtVerifier),
     docs: container.resolve<OpenApiRegistry>(TOKENS.OpenApiRegistry),
     basePath,

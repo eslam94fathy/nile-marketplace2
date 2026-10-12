@@ -73,6 +73,13 @@ export const TOKENS = {
   DeliveryAgentDirectory: Symbol.for('DeliveryAgentDirectory'),
   AgentSelfController: Symbol.for('AgentSelfController'),
   AgentAdminController: Symbol.for('AgentAdminController'),
+  ShipmentRepository: Symbol.for('ShipmentRepository'),
+  ShipmentHistoryRepository: Symbol.for('ShipmentHistoryRepository'),
+  ShipmentAssignmentService: Symbol.for('ShipmentAssignmentService'),
+  ShipmentViewService: Symbol.for('ShipmentViewService'),
+  SellerOrderUpdateService: Symbol.for('SellerOrderUpdateService'),
+  AssignmentRetryJob: Symbol.for('AssignmentRetryJob'),
+  ShipmentAdminController: Symbol.for('ShipmentAdminController'),
 
   // catalog module
   CategoryRepository: Symbol.for('CategoryRepository'),

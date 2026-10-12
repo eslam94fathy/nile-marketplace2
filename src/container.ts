@@ -2,7 +2,7 @@ import { container as rootContainer, type DependencyContainer } from 'tsyringe';
 import { registerCartModule } from './app/cart';
 import { registerCatalogModule, registerCatalogProjections } from './app/catalog';
 import { registerCustomersModule } from './app/customers';
-import { registerDeliveryModule } from './app/delivery';
+import { registerDeliveryModule, registerDeliveryWorker } from './app/delivery';
 import { registerSellersModule } from './app/sellers';
 import { registerHealthModule } from './app/health';
 import { registerIdentityModule } from './app/identity';
@@ -70,5 +70,7 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   registerPaymentsModule(container);
   // ordering.shipment-updates and the order jobs (spec 09 §3.6–§3.10).
   registerOrderingWorker(container);
+  // delivery.seller-order-updates and the assignment retry job (spec 11 DE-13).
+  registerDeliveryWorker(container);
   return container;
 }

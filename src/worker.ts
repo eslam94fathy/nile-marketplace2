@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { createDeliveryJobs } from './app/delivery';
 import { createIdentityJobs } from './app/identity';
 import { createOrderingJobs } from './app/ordering';
 import { createWorkerContainer } from './container';
@@ -43,6 +44,7 @@ async function main(): Promise<void> {
   for (const job of createCleanupJobs(knex, infra.clock, env)) jobs.register(job);
   for (const job of createIdentityJobs(container, env)) jobs.register(job);
   for (const job of createOrderingJobs(container, env)) jobs.register(job);
+  for (const job of createDeliveryJobs(container, env)) jobs.register(job);
   jobs.start();
 
   logger.info('worker started');
