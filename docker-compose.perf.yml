@@ -1,0 +1,13 @@
+# Load-test baseline only (plan §10 step 6, test/load/README.md):
+#   docker compose -f docker-compose.yml -f docker-compose.perf.yml up -d --build
+# - Postgres records per-statement timings (pg_stat_statements) so the slowest queries can be found.
+# - k6 runs from one machine, so one IP: the general per-IP limit is lifted for the run. The strict
+#   auth and checkout limits stay as configured (the scenarios rotate 2,000 customers).
+services:
+  postgres:
+    command:
+      ['postgres', '-c', 'shared_preload_libraries=pg_stat_statements', '-c', 'pg_stat_statements.track=top']
+
+  api:
+    environment:
+      RATE_LIMIT_GENERAL_POINTS: '100000000'

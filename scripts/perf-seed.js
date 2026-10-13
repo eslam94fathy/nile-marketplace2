@@ -33,40 +33,14 @@ const CATEGORY_TREE_CACHE_KEY = 'v1:catalog:category-tree';
 // 60 characters like a real hash (users.password_hash is VARCHAR(60)); bcrypt matches nothing with it.
 const NO_LOGIN_HASH = '$2b$12$' + 'perfseed'.repeat(7).slice(0, 53);
 
-// Words for product names, so search and typos behave like a real catalog.
-const ADJECTIVES = [
-  'Smart',
-  'Classic',
-  'Ultra',
-  'Compact',
-  'Premium',
-  'Wireless',
-  'Organic',
-  'Vintage',
-  'Rugged',
-  'Slim',
-  'Deluxe',
-  'Portable',
-];
-const NOUNS = [
-  'Phone',
-  'Headphones',
-  'Kettle',
-  'Backpack',
-  'Sneakers',
-  'Jacket',
-  'Blender',
-  'Lamp',
-  'Watch',
-  'Speaker',
-  'Mug',
-  'Tent',
-  'Keyboard',
-  'Camera',
-  'Bottle',
-  'Scarf',
-];
-const BRANDS = ['Nilex', 'Cairotech', 'Pharaon', 'Deltaworks', 'Sphinx', 'Luxora', 'Aswani', 'Memphis'];
+// Words for product names (test/load/vocabulary.json): varied enough that a word matches ~0.5 % of
+// the catalog, so search and typos behave like a real marketplace.
+const VOCABULARY = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'test', 'load', 'vocabulary.json'), 'utf8'),
+);
+const ADJECTIVES = VOCABULARY.adjectives;
+const NOUNS = VOCABULARY.nouns;
+const BRANDS = VOCABULARY.brands;
 
 function requireEnv(key) {
   const value = process.env[key];
@@ -394,19 +368,7 @@ async function writeData(db, adminUserId) {
     productSlugs: products.rows.map((p) => p.slug),
     leafCategoryIds: leafOptions.rows.map((l) => l.leaf_id),
     // Search words with and without typos (spec 06 CA-14).
-    searchTerms: [
-      ...NOUNS,
-      ...BRANDS,
-      'hedphones',
-      'kettel',
-      'sneekers',
-      'jaket',
-      'keybord',
-      'nilx',
-      'cairotek',
-      'smrt phone',
-      'wireles speaker',
-    ],
+    searchTerms: VOCABULARY.searchTerms,
   };
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
   fs.writeFileSync(DATA_FILE, JSON.stringify(data));
