@@ -25,9 +25,11 @@ data "aws_caller_identity" "current" {}
 
 locals {
   state_bucket = "nile-marketplace-tfstate-${var.environment}-${data.aws_caller_identity.current.account_id}"
+  # The GitHub environment deploy.yml uses for this account (prod runs as `production`).
+  github_environment = var.environment == "prod" ? "production" : "staging"
   # Only this repository, and for deploys only the main branch / the protected environment.
   github_sub_any    = "repo:${var.github_repository}:*"
-  github_sub_deploy = ["repo:${var.github_repository}:ref:refs/heads/main", "repo:${var.github_repository}:environment:${var.environment}"]
+  github_sub_deploy = ["repo:${var.github_repository}:ref:refs/heads/main", "repo:${var.github_repository}:environment:${local.github_environment}"]
 }
 
 # --- Terraform state: versioned, encrypted, private; native S3 locking (`use_lockfile`) ---
