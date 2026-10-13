@@ -1,8 +1,8 @@
 {
   "info": {
-    "name": "Nile Marketplace API (Phases 1–6)",
+    "name": "Nile Marketplace API (Phases 1–7)",
     "_postman_id": "c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01",
-    "description": "Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10) and delivery (spec 11): governorates and fees, agents, shipments and the work of delivery agents.\n\nVariables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.\n\nLocal first run (docker compose):\n1. `docker compose run --rm api node dist/seed-admin.js --email you@example.com`, then set the `email` variable to that address.\n2. Local helpers (Mailpit) → \"Latest email\" → \"Extract OTP / invite token\".\n3. Auth → \"Accept invite\" (sets your password and logs you in).\n4. Admin requests now work with the stored access token.\n\nCustomer / seller flow: set `email` to a fresh address → \"Register customer\" (or \"Register seller\") → Local helpers → \"Latest email\" → \"Extract OTP / invite token\" → Auth → \"Verify email\" (logs you in). \"Delivery\" → \"List governorates\" stores Cairo in `governorateId` first, because addresses and pickup addresses need one.\n\nSample delivery fees and a sample catalog for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees; the catalog has a category tree with attributes and an approved demo seller with active products).\n\nCatalog flow: \"Admin: catalog\" → Create category → Add attribute → Add option (stores `categoryId`, `attributeId`, `optionId`). Then log in as an approved seller → \"Seller: catalog\" → Create product → Add variant (put option ids in `optionIds`, or `[]` in a category without attributes) → Activate. \"Catalog\" (public) → List products / Product detail.\n\nCart flow: log in as a customer → \"Catalog\" → List products → Product detail (stores the first variant in `variantId`) → \"Cart\" → Add item (stores the line in `cartItemId`) → My cart → Change quantity / Remove item / Empty cart.\n\nOrder flow (COD): with items in the cart and an address (`addressId`) in a deliverable governorate → \"Checkout & orders\" → Checkout. The first send usually answers 409 ORDER_TOTAL_CHANGED and stores the current total in `expectedTotal`; send again. It stores `orderId`, `sellerOrderId` and `orderItemId`. Log in as that seller → \"Seller: orders\" → Accept → Ready (or Cancel item quantities / Cancel). Ready creates the shipment and assigns it to an on-shift agent of the pickup governorate (the worker must run).\n\nKashier flow (local, PAYMENT_GATEWAY=fake): set `paymentMethod` to kashier → Checkout (the order awaits payment; the fake payment page URL is not a real page). Pay it with `npm run dev:kashier-webhook -- {{orderId}}` (or `... failed`, or an amount to try a mismatch); the worker then places the order. \"Kashier payment page\" asks again for the page while the window is open. Unpaid orders are cancelled by the worker after KASHIER_PAYMENT_TTL_MINUTES. \"Admin: payments\" shows the payment, its webhook events and the refund queue.\n\nDelivery flow: as admin → \"Admin: delivery agents & shipments\" → Create agent (set `agentEmail` to a fresh address and `governorateId` to the seller's governorate). Set `email` to `agentEmail` → Local helpers → Latest email → Extract OTP / invite token → Auth → Accept invite (logs the agent in). \"Agent\" → Go on shift. After a seller marks an order ready: My shipments → Picked up → Out for delivery (stores `amountToCollect`) → Delivered, or Failed attempt. `npm run seed:dev` also creates a demo agent in Cairo.\n\nTokens are per account: log in as the admin again (Auth → Login) before the \"Admin: …\" folders.\n\nErrors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.",
+    "description": "Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10), delivery (spec 11): governorates and fees, agents, shipments and the work of delivery agents, and finance (spec 12): balances, statements, COD remittances and payouts.\n\nVariables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.\n\nLocal first run (docker compose):\n1. `docker compose run --rm api node dist/seed-admin.js --email you@example.com`, then set the `email` variable to that address.\n2. Local helpers (Mailpit) → \"Latest email\" → \"Extract OTP / invite token\".\n3. Auth → \"Accept invite\" (sets your password and logs you in).\n4. Admin requests now work with the stored access token.\n\nCustomer / seller flow: set `email` to a fresh address → \"Register customer\" (or \"Register seller\") → Local helpers → \"Latest email\" → \"Extract OTP / invite token\" → Auth → \"Verify email\" (logs you in). \"Delivery\" → \"List governorates\" stores Cairo in `governorateId` first, because addresses and pickup addresses need one.\n\nSample delivery fees and a sample catalog for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees; the catalog has a category tree with attributes and an approved demo seller with active products).\n\nCatalog flow: \"Admin: catalog\" → Create category → Add attribute → Add option (stores `categoryId`, `attributeId`, `optionId`). Then log in as an approved seller → \"Seller: catalog\" → Create product → Add variant (put option ids in `optionIds`, or `[]` in a category without attributes) → Activate. \"Catalog\" (public) → List products / Product detail.\n\nCart flow: log in as a customer → \"Catalog\" → List products → Product detail (stores the first variant in `variantId`) → \"Cart\" → Add item (stores the line in `cartItemId`) → My cart → Change quantity / Remove item / Empty cart.\n\nOrder flow (COD): with items in the cart and an address (`addressId`) in a deliverable governorate → \"Checkout & orders\" → Checkout. The first send usually answers 409 ORDER_TOTAL_CHANGED and stores the current total in `expectedTotal`; send again. It stores `orderId`, `sellerOrderId` and `orderItemId`. Log in as that seller → \"Seller: orders\" → Accept → Ready (or Cancel item quantities / Cancel). Ready creates the shipment and assigns it to an on-shift agent of the pickup governorate (the worker must run).\n\nKashier flow (local, PAYMENT_GATEWAY=fake): set `paymentMethod` to kashier → Checkout (the order awaits payment; the fake payment page URL is not a real page). Pay it with `npm run dev:kashier-webhook -- {{orderId}}` (or `... failed`, or an amount to try a mismatch); the worker then places the order. \"Kashier payment page\" asks again for the page while the window is open. Unpaid orders are cancelled by the worker after KASHIER_PAYMENT_TTL_MINUTES. \"Admin: payments\" shows the payment, its webhook events and the refund queue.\n\nDelivery flow: as admin → \"Admin: delivery agents & shipments\" → Create agent (set `agentEmail` to a fresh address and `governorateId` to the seller's governorate). Set `email` to `agentEmail` → Local helpers → Latest email → Extract OTP / invite token → Auth → Accept invite (logs the agent in). \"Agent\" → Go on shift. After a seller marks an order ready: My shipments → Picked up → Out for delivery (stores `amountToCollect`) → Delivered, or Failed attempt. `npm run seed:dev` also creates a demo agent in Cairo.\n\nFinance flow: once an order is delivered (the worker books it in the ledger) → \"Admin: finance\" → List accounts (stores the first in `accountId`) → Account statement; \"Entries of a seller order\" uses `sellerOrderId`. \"Confirm COD remittance\" takes cash from `agentId`; \"Record payout\" pays `sellerId` (set it to the seller's id) with a fresh `payoutReference`. Log in as the seller → \"Seller: finance\", or as the agent → \"Agent: finance\", to see the same money from their side.\n\nTokens are per account: log in as the admin again (Auth → Login) before the \"Admin: …\" folders.\n\nErrors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -168,6 +168,18 @@
     {
       "key": "amountToCollect",
       "value": "0.00"
+    },
+    {
+      "key": "accountId",
+      "value": ""
+    },
+    {
+      "key": "payoutReference",
+      "value": "BANK-TRANSFER-001"
+    },
+    {
+      "key": "paidAt",
+      "value": "2026-10-13T09:00:00Z"
     }
   ],
   "item": [
@@ -5915,6 +5927,808 @@
                 "v1",
                 "agent",
                 "availability"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin: finance",
+      "description": "spec 12 §4.1. Admin role. Balances and statements come from the ledger, booked by the worker when a seller order is delivered and when an order closes. Remittances and payouts need an Idempotency-Key.",
+      "item": [
+        {
+          "name": "List accounts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  const value = body.data[0] && body.data[0].id;",
+                  "  if (value) pm.collectionVariables.set('accountId', value);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/finance/accounts?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "finance",
+                "accounts"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "accountType[in]",
+                  "value": "seller_payable,agent_cod_cash",
+                  "disabled": true
+                },
+                {
+                  "key": "ownerId[eq]",
+                  "value": "{{sellerId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "balance[gt]",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "-balance",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "With the owner's name (seller business name / agent name; null for the platform accounts). Default sort -balance; platform_delivery_revenue may be negative. Stores the first in accountId."
+          }
+        },
+        {
+          "name": "Account detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/finance/accounts/{{accountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "finance",
+                "accounts",
+                "{{accountId}}"
+              ]
+            },
+            "description": "ACCOUNT_NOT_FOUND 404."
+          }
+        },
+        {
+          "name": "Account statement",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/finance/accounts/{{accountId}}/entries?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "finance",
+                "accounts",
+                "{{accountId}}",
+                "entries"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "entryType[in]",
+                  "value": "seller_net_earned,seller_payout",
+                  "disabled": true
+                },
+                {
+                  "key": "createdAt[gte]",
+                  "value": "2026-10-01T00:00:00Z",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "-createdAt",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Every entry with its balanceAfter, newest first. ACCOUNT_NOT_FOUND 404."
+          }
+        },
+        {
+          "name": "Entries of a seller order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/finance/entries?referenceType=seller_order&referenceId={{sellerOrderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "finance",
+                "entries"
+              ],
+              "query": [
+                {
+                  "key": "referenceType",
+                  "value": "seller_order"
+                },
+                {
+                  "key": "referenceId",
+                  "value": "{{sellerOrderId}}"
+                }
+              ]
+            },
+            "description": "Every money movement of one reference (seller_order, order, cod_remittance, payout), with its accountId. Both parameters required (INVALID_QUERY 400); not paginated."
+          }
+        },
+        {
+          "name": "Confirm COD remittance",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agentId\": \"{{agentId}}\",\n  \"amount\": \"100.00\",\n  \"note\": \"Handed in at the hub\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/finance/cod-remittances",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "finance",
+                "cod-remittances"
+              ]
+            },
+            "description": "Cash the agent handed in; debits their COD cash. AGENT_NOT_FOUND 422, REMITTANCE_EXCEEDS_BALANCE 422 (also when the agent holds no cash yet)."
+          }
+        },
+        {
+          "name": "List COD remittances",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/finance/cod-remittances?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "finance",
+                "cod-remittances"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "agentId[eq]",
+                  "value": "{{agentId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Record payout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payeeType\": \"seller\",\n  \"payeeId\": \"{{sellerId}}\",\n  \"amount\": \"50.00\",\n  \"externalReference\": \"{{payoutReference}}\",\n  \"paidAt\": \"{{paidAt}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/finance/payouts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "finance",
+                "payouts"
+              ]
+            },
+            "description": "A transfer made outside the system (payeeType seller or agent; an agent is paid their fee shares). paidAt needs a time zone and may not be in the future. PAYEE_NOT_FOUND 422, PAYOUT_EXCEEDS_BALANCE 422, PAID_AT_IN_FUTURE 422, PAYOUT_ALREADY_RECORDED 409 (same externalReference for this payee: change payoutReference)."
+          }
+        },
+        {
+          "name": "List payouts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/finance/payouts?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "finance",
+                "payouts"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "payeeType[eq]",
+                  "value": "seller",
+                  "disabled": true
+                },
+                {
+                  "key": "payeeId[eq]",
+                  "value": "{{sellerId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Seller: finance",
+      "description": "spec 12 §4.2. Log in as the seller first. Read-only; works in any seller status.",
+      "item": [
+        {
+          "name": "My balance",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/seller/finance/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "finance",
+                "balance"
+              ]
+            },
+            "description": "What the platform owes you; \"0.00\" and updatedAt null before your first delivery."
+          }
+        },
+        {
+          "name": "My statement",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/seller/finance/entries?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "finance",
+                "entries"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "entryType[eq]",
+                  "value": "seller_payout",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "My payouts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/seller/finance/payouts?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "finance",
+                "payouts"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Agent: finance",
+      "description": "spec 12 §4.3. Log in as the agent first. Read-only; works for an inactive agent too.",
+      "item": [
+        {
+          "name": "My balances",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/finance/balances",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agent",
+                "finance",
+                "balances"
+              ]
+            },
+            "description": "feePayable: fee shares the platform owes you. codCashHeld: platform cash you still hold."
+          }
+        },
+        {
+          "name": "My statement (fee or cod)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/finance/entries?account=cod&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agent",
+                "finance",
+                "entries"
+              ],
+              "query": [
+                {
+                  "key": "account",
+                  "value": "cod"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "account is required: fee (your fee shares) or cod (cash collected and handed in). INVALID_QUERY 400."
+          }
+        },
+        {
+          "name": "My remittances",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/agent/finance/remittances?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "agent",
+                "finance",
+                "remittances"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
               ]
             }
           }

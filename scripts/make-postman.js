@@ -60,10 +60,10 @@ const idempotencyKey = { key: 'Idempotency-Key', value: '{{$guid}}' };
 const API = '/api/v1';
 const collection = {
   info: {
-    name: 'Nile Marketplace API (Phases 1–6)',
+    name: 'Nile Marketplace API (Phases 1–7)',
     _postman_id: 'c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01',
     description: [
-      'Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10) and delivery (spec 11): governorates and fees, agents, shipments and the work of delivery agents.',
+      'Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10), delivery (spec 11): governorates and fees, agents, shipments and the work of delivery agents, and finance (spec 12): balances, statements, COD remittances and payouts.',
       '',
       'Variables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.',
       '',
@@ -86,6 +86,8 @@ const collection = {
       'Kashier flow (local, PAYMENT_GATEWAY=fake): set `paymentMethod` to kashier → Checkout (the order awaits payment; the fake payment page URL is not a real page). Pay it with `npm run dev:kashier-webhook -- {{orderId}}` (or `... failed`, or an amount to try a mismatch); the worker then places the order. "Kashier payment page" asks again for the page while the window is open. Unpaid orders are cancelled by the worker after KASHIER_PAYMENT_TTL_MINUTES. "Admin: payments" shows the payment, its webhook events and the refund queue.',
       '',
       'Delivery flow: as admin → "Admin: delivery agents & shipments" → Create agent (set `agentEmail` to a fresh address and `governorateId` to the seller\'s governorate). Set `email` to `agentEmail` → Local helpers → Latest email → Extract OTP / invite token → Auth → Accept invite (logs the agent in). "Agent" → Go on shift. After a seller marks an order ready: My shipments → Picked up → Out for delivery (stores `amountToCollect`) → Delivered, or Failed attempt. `npm run seed:dev` also creates a demo agent in Cairo.',
+      '',
+      'Finance flow: once an order is delivered (the worker books it in the ledger) → "Admin: finance" → List accounts (stores the first in `accountId`) → Account statement; "Entries of a seller order" uses `sellerOrderId`. "Confirm COD remittance" takes cash from `agentId`; "Record payout" pays `sellerId` (set it to the seller\'s id) with a fresh `payoutReference`. Log in as the seller → "Seller: finance", or as the agent → "Agent: finance", to see the same money from their side.',
       '',
       'Tokens are per account: log in as the admin again (Auth → Login) before the "Admin: …" folders.',
       '',
@@ -144,6 +146,9 @@ const collection = {
     { key: 'agentId', value: '' },
     { key: 'shipmentId', value: '' },
     { key: 'amountToCollect', value: '0.00' },
+    { key: 'accountId', value: '' },
+    { key: 'payoutReference', value: 'BANK-TRANSFER-001' },
+    { key: 'paidAt', value: '2026-10-13T09:00:00Z' },
   ],
   item: [
     {
@@ -1420,6 +1425,196 @@ if (pm.response.code === 201) {
           path: `${API}/agent/availability`,
           auth: true,
           body: { onShift: false },
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: finance',
+      description:
+        'spec 12 §4.1. Admin role. Balances and statements come from the ledger, booked by the worker when a seller order is delivered and when an order closes. Remittances and payouts need an Idempotency-Key.',
+      item: [
+        req({
+          name: 'List accounts',
+          method: 'GET',
+          path: `${API}/admin/finance/accounts`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'accountType[in]', value: 'seller_payable,agent_cod_cash', disabled: true },
+            { key: 'ownerId[eq]', value: '{{sellerId}}', disabled: true },
+            { key: 'balance[gt]', value: '0', disabled: true },
+            { key: 'sort', value: '-balance', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description:
+            "With the owner's name (seller business name / agent name; null for the platform accounts). Default sort -balance; platform_delivery_revenue may be negative. Stores the first in accountId.",
+          tests: saveId('accountId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Account detail',
+          method: 'GET',
+          path: `${API}/admin/finance/accounts/{{accountId}}`,
+          auth: true,
+          description: 'ACCOUNT_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Account statement',
+          method: 'GET',
+          path: `${API}/admin/finance/accounts/{{accountId}}/entries`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'entryType[in]', value: 'seller_net_earned,seller_payout', disabled: true },
+            { key: 'createdAt[gte]', value: '2026-10-01T00:00:00Z', disabled: true },
+            { key: 'sort', value: '-createdAt', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description: 'Every entry with its balanceAfter, newest first. ACCOUNT_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Entries of a seller order',
+          method: 'GET',
+          path: `${API}/admin/finance/entries`,
+          auth: true,
+          query: [
+            { key: 'referenceType', value: 'seller_order' },
+            { key: 'referenceId', value: '{{sellerOrderId}}' },
+          ],
+          description:
+            'Every money movement of one reference (seller_order, order, cod_remittance, payout), with its accountId. Both parameters required (INVALID_QUERY 400); not paginated.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Confirm COD remittance',
+          method: 'POST',
+          path: `${API}/admin/finance/cod-remittances`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { agentId: '{{agentId}}', amount: '100.00', note: 'Handed in at the hub' },
+          description:
+            'Cash the agent handed in; debits their COD cash. AGENT_NOT_FOUND 422, REMITTANCE_EXCEEDS_BALANCE 422 (also when the agent holds no cash yet).',
+          tests: expect(201),
+        }),
+        req({
+          name: 'List COD remittances',
+          method: 'GET',
+          path: `${API}/admin/finance/cod-remittances`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'agentId[eq]', value: '{{agentId}}', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          tests: expect(200),
+        }),
+        req({
+          name: 'Record payout',
+          method: 'POST',
+          path: `${API}/admin/finance/payouts`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: {
+            payeeType: 'seller',
+            payeeId: '{{sellerId}}',
+            amount: '50.00',
+            externalReference: '{{payoutReference}}',
+            paidAt: '{{paidAt}}',
+          },
+          description:
+            'A transfer made outside the system (payeeType seller or agent; an agent is paid their fee shares). paidAt needs a time zone and may not be in the future. PAYEE_NOT_FOUND 422, PAYOUT_EXCEEDS_BALANCE 422, PAID_AT_IN_FUTURE 422, PAYOUT_ALREADY_RECORDED 409 (same externalReference for this payee: change payoutReference).',
+          tests: expect(201),
+        }),
+        req({
+          name: 'List payouts',
+          method: 'GET',
+          path: `${API}/admin/finance/payouts`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'payeeType[eq]', value: 'seller', disabled: true },
+            { key: 'payeeId[eq]', value: '{{sellerId}}', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Seller: finance',
+      description: 'spec 12 §4.2. Log in as the seller first. Read-only; works in any seller status.',
+      item: [
+        req({
+          name: 'My balance',
+          method: 'GET',
+          path: `${API}/seller/finance/balance`,
+          auth: true,
+          description: 'What the platform owes you; "0.00" and updatedAt null before your first delivery.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'My statement',
+          method: 'GET',
+          path: `${API}/seller/finance/entries`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'entryType[eq]', value: 'seller_payout', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          tests: expect(200),
+        }),
+        req({
+          name: 'My payouts',
+          method: 'GET',
+          path: `${API}/seller/finance/payouts`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Agent: finance',
+      description: 'spec 12 §4.3. Log in as the agent first. Read-only; works for an inactive agent too.',
+      item: [
+        req({
+          name: 'My balances',
+          method: 'GET',
+          path: `${API}/agent/finance/balances`,
+          auth: true,
+          description:
+            'feePayable: fee shares the platform owes you. codCashHeld: platform cash you still hold.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'My statement (fee or cod)',
+          method: 'GET',
+          path: `${API}/agent/finance/entries`,
+          auth: true,
+          query: [
+            { key: 'account', value: 'cod' },
+            { key: 'limit', value: '20' },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description:
+            'account is required: fee (your fee shares) or cod (cash collected and handed in). INVALID_QUERY 400.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'My remittances',
+          method: 'GET',
+          path: `${API}/agent/finance/remittances`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
           tests: expect(200),
         }),
       ],
