@@ -6,4 +6,5 @@ export {
   type DbTransaction,
   type DbExecutor,
 } from './database';
+export { afterCommit } from './after-commit';
 export { ListMigrationSource, type MigrationModule, type NamedMigration } from './migration-source';

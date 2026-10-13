@@ -1,6 +1,6 @@
 import { inject, injectable } from 'tsyringe';
-import { UserRole } from '../../../lib/auth';
-import { type DbTransaction, type ITransactionRunner } from '../../../lib/db';
+import { type ISuspendedUsers, UserRole } from '../../../lib/auth';
+import { afterCommit, type DbTransaction, type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import { type PageMeta, type ParsedListQuery, toPage } from '../../../lib/http';
 import { type ILogger } from '../../../lib/logger';
@@ -41,6 +41,7 @@ export class UserAdminService {
     @inject(TOKENS.TokenService) private readonly tokens: TokenService,
     @inject(TOKENS.TransactionRunner) private readonly transactions: ITransactionRunner,
     @inject(TOKENS.Logger) private readonly logger: ILogger,
+    @inject(TOKENS.SuspendedUsers) private readonly suspendedUsers: ISuspendedUsers,
   ) {}
 
   /** §4.10. EMAIL_ALREADY_REGISTERED comes from the `uq_users_email` mapping. */
@@ -61,9 +62,34 @@ export class UserAdminService {
     return this.transactions.run((trx) => this.invitations.resendInvite(userId, trx));
   }
 
-  /** §4.13 (admin endpoints): in its own transaction. */
-  setStatus(userId: string, to: TargetStatus, change: StatusChange): Promise<User> {
-    return this.transactions.run((trx) => this.changeStatus(userId, to, change, trx));
+  /** §4.13 (admin endpoints): in its own transaction; the deny entry is in place before it answers. */
+  async setStatus(userId: string, to: TargetStatus, change: StatusChange): Promise<User> {
+    const user = await this.transactions.run((trx) => this.changeStatus(userId, to, change, trx));
+    await this.syncDenyEntry(user.id, to);
+    return user;
+  }
+
+  /** For a change made in the caller's transaction (`setUserStatus`): the deny entry follows its commit. */
+  syncDenyEntryAfterCommit(trx: DbTransaction, userId: string, to: TargetStatus): void {
+    afterCommit(trx, () => this.syncDenyEntry(userId, to));
+  }
+
+  /**
+   * Spec 03 I-11: a suspension blocks the access tokens already issued; reactivation lifts it. If Redis
+   * fails the change still stands and the tokens expire within their TTL.
+   */
+  private async syncDenyEntry(userId: string, to: TargetStatus): Promise<void> {
+    try {
+      if (to === UserStatus.SUSPENDED) await this.suspendedUsers.block(userId);
+      else await this.suspendedUsers.unblock(userId);
+    } catch (error) {
+      this.logger.warn('suspended-user deny entry not updated', {
+        event: 'SUSPENSION_DENY_ENTRY_FAILED',
+        userId,
+        status: to,
+        error,
+      });
+    }
   }
 
   /** Suspending revokes every session (spec 03 §2). Conditional update: no read-then-write race. */

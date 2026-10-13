@@ -165,11 +165,17 @@ describe('identity admin endpoints', () => {
   describe('POST /admin/users/:userId/suspend and /reactivate', () => {
     it('suspend revokes every session and blocks login; reactivate restores login', async () => {
       const { userId, email, session } = await fx.createActive();
+      // Any authenticated route: the status tells whether the access token itself was accepted.
+      const withOldToken = async () =>
+        (await request(t.app).get(`${API}/me`).set('Authorization', `Bearer ${session.accessToken}`)).status;
+      expect(await withOldToken()).not.toBe(401);
       const res = await asAdmin().post(`/admin/users/${userId}/suspend`, { reason: '  fraud report  ' });
       expect(res.status).toBe(200);
       expect(successBody(res).data).toEqual({ id: userId, email, role: 'customer', status: 'suspended' });
       expect((await refresh(session.refreshToken)).status).toBe(401);
       expect(errorBody(await login(email)).error.code).toBe('ACCOUNT_SUSPENDED');
+      // Spec 03 I-11 (security review F-4): the access token issued before stops working at once.
+      expect(await withOldToken()).toBe(401);
       expect(t.logs.entries().some((e) => e.event === 'USER_SUSPENDED' && e.reason === 'fraud report')).toBe(
         true,
       );
@@ -180,6 +186,7 @@ describe('identity admin endpoints', () => {
       const back = await asAdmin().post(`/admin/users/${userId}/reactivate`);
       expect([back.status, successBody<{ status: string }>(back).data.status]).toEqual([200, 'active']);
       expect((await login(email)).status).toBe(200);
+      expect(await withOldToken()).not.toBe(401);
       const twice = await asAdmin().post(`/admin/users/${userId}/reactivate`);
       expect(errorBody(twice).error.code).toBe('USER_INVALID_STATUS_TRANSITION');
     });

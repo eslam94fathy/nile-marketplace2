@@ -115,5 +115,6 @@ export class AccountService implements IAccountService {
     trx: DbTransaction,
   ): Promise<void> {
     await this.userAdmin.changeStatus(userId, status, { actorUserId }, trx);
+    this.userAdmin.syncDenyEntryAfterCommit(trx, userId, status);
   }
 }

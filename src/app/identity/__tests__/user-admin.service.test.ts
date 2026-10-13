@@ -8,9 +8,15 @@ function setup() {
   const fakes = createFakes();
   const tokens = { revokeAllSessions: vi.fn(() => Promise.resolve(2)) };
   const invitations = { invite: vi.fn(), resendInvite: vi.fn() };
+  const suspendedUsers = {
+    block: vi.fn(() => Promise.resolve()),
+    unblock: vi.fn(() => Promise.resolve()),
+    isBlocked: vi.fn(() => Promise.resolve(false)),
+  };
   fakes.container.register(TOKENS.TokenService, { useValue: tokens });
   fakes.container.register(TOKENS.InvitationService, { useValue: invitations });
-  return { ...fakes, tokens, service: fakes.container.resolve(UserAdminService) };
+  fakes.container.register(TOKENS.SuspendedUsers, { useValue: suspendedUsers });
+  return { ...fakes, tokens, suspendedUsers, service: fakes.container.resolve(UserAdminService) };
 }
 
 const errorCode = (promise: Promise<unknown>) =>
@@ -87,5 +93,33 @@ describe('identity UserAdminService.changeStatus', () => {
     );
     const updated = await service.changeStatus('u', UserStatus.SUSPENDED, actor, FAKE_TRX);
     expect(updated.status).toBe(UserStatus.SUSPENDED);
+  });
+
+  // Spec 03 I-11 (security review F-4): the admin endpoint blocks the tokens before it answers.
+  it('setStatus writes the deny entry after the commit; a Redis failure is logged, not fatal', async () => {
+    const { service, users, suspendedUsers } = setup();
+    const user = makeUser();
+    users.findById.mockResolvedValue(user);
+    users.transitionStatus.mockResolvedValue(makeUser({ id: user.id, status: UserStatus.SUSPENDED }));
+    await service.setStatus(user.id, UserStatus.SUSPENDED, actor);
+    expect(suspendedUsers.block).toHaveBeenCalledWith(user.id);
+
+    users.findById.mockResolvedValue(makeUser({ id: user.id, status: UserStatus.SUSPENDED }));
+    users.transitionStatus.mockResolvedValue(makeUser({ id: user.id }));
+    suspendedUsers.unblock.mockRejectedValueOnce(new Error('redis down'));
+    await expect(service.setStatus(user.id, UserStatus.ACTIVE, actor)).resolves.toMatchObject({
+      id: user.id,
+    });
+    expect(suspendedUsers.unblock).toHaveBeenCalledWith(user.id);
+  });
+
+  it('a failed status change writes no deny entry', async () => {
+    const { service, users, suspendedUsers } = setup();
+    users.findById.mockResolvedValue(makeUser());
+    users.transitionStatus.mockResolvedValue(undefined);
+    expect(await errorCode(service.setStatus('u', UserStatus.SUSPENDED, actor))).toBe(
+      'USER_INVALID_STATUS_TRANSITION',
+    );
+    expect(suspendedUsers.block).not.toHaveBeenCalled();
   });
 });

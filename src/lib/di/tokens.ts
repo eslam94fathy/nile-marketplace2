@@ -11,6 +11,8 @@ export const TOKENS = {
   PgErrorMapper: Symbol.for('PgErrorMapper'),
   Cache: Symbol.for('Cache'),
   Redis: Symbol.for('Redis'),
+  /** lib/auth ISuspendedUsers (api), infrastructure. */
+  SuspendedUsers: Symbol.for('SuspendedUsers'),
   MessageBroker: Symbol.for('MessageBroker'),
   Outbox: Symbol.for('Outbox'),
   SecretBox: Symbol.for('SecretBox'),

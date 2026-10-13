@@ -8,6 +8,7 @@ import { deliveryFixtures } from '../helpers/delivery-fixtures';
 import { errorBody, successBody } from '../helpers/http';
 import { API } from '../helpers/identity';
 import { signTestAccessToken } from '../helpers/jwt';
+import { waitFor } from '../helpers/amqp-probe';
 import { startTestApp, type TestApp } from '../helpers/test-app';
 
 const UNKNOWN_V7_ID = '0192f5e0-0000-7000-8000-000000000000';
@@ -141,6 +142,12 @@ describe('delivery: agents', () => {
 
     it('deactivation needs no active shipments, suspends an active login, and activation restores it', async () => {
       const { agentId, userId } = await activeAgent();
+      // Spec 03 I-11: deactivation suspends the login, so the agent's current token stops working.
+      const agentToken = await signTestAccessToken({ sub: userId, role: 'delivery_agent' });
+      const profileStatus = async () =>
+        (await request(t.app).get(`${API}/agent/profile`).set('Authorization', `Bearer ${agentToken}`))
+          .status;
+      expect(await profileStatus()).toBe(200);
       const { shipmentId } = await fx.insertShipmentChain();
       await knex()('shipments')
         .where({ id: shipmentId })
@@ -155,6 +162,8 @@ describe('delivery: agents', () => {
       ).data;
       expect(off).toMatchObject({ status: 'inactive', onShift: false, userStatus: 'suspended' });
       expect(await userStatus(userId)).toBe('suspended');
+      // The deny entry follows the commit of the caller's transaction (setUserStatus).
+      await waitFor(async () => (await profileStatus()) === 401);
       const twice = await as(adminToken).post(`/admin/delivery-agents/${agentId}/deactivate`);
       expect([twice.status, errorBody(twice).error.code]).toEqual([409, 'AGENT_INVALID_STATUS_TRANSITION']);
 
@@ -162,6 +171,7 @@ describe('delivery: agents', () => {
         await as(adminToken).post(`/admin/delivery-agents/${agentId}/activate`),
       ).data;
       expect(on).toMatchObject({ status: 'active', onShift: false, userStatus: 'active' });
+      await waitFor(async () => (await profileStatus()) === 200);
       expect((await as(adminToken).post(`/admin/delivery-agents/${agentId}/activate`)).status).toBe(409);
     });
 

@@ -1,5 +1,5 @@
 import { type Redis } from 'ioredis';
-import { JwtSigner, JwtVerifier } from './lib/auth';
+import { type ISuspendedUsers, JwtSigner, JwtVerifier, SuspendedUsers } from './lib/auth';
 import { type IClock, SystemClock } from './lib/clock';
 import { type ApiEnv, EmailProvider, PaymentGatewayName, type WorkerEnv } from './lib/config';
 import { createKnex, Database } from './lib/db';
@@ -35,6 +35,8 @@ export interface ApiInfrastructure extends CoreInfrastructure<ApiEnv> {
   redis: Redis;
   cache: ICache;
   jwtVerifier: JwtVerifier;
+  /** Deny entries of suspended users, checked by `jwtVerifier` (spec 03 I-11). */
+  suspendedUsers: ISuspendedUsers;
   jwtSigner: JwtSigner;
   passwordHasher: IPasswordHasher;
   rateLimiters: RateLimiters;
@@ -109,11 +111,21 @@ export async function createApiInfrastructure(
     createCore(env, logger),
     connectOrLog(logger, 'redis', () => redis.connect()),
   ]);
+  const cache = new RedisCache(redis);
+  const suspendedUsers = new SuspendedUsers(cache, toSeconds(env.ACCESS_TOKEN_TTL_MINUTES, TimeUnit.MINUTE));
   return {
     ...core,
     redis,
-    cache: new RedisCache(redis),
-    jwtVerifier: await JwtVerifier.create(env),
+    cache,
+    suspendedUsers,
+    jwtVerifier: await JwtVerifier.create(env, {
+      isBlocked: (userId) => suspendedUsers.isBlocked(userId),
+      onBlockCheckError: (error) =>
+        logger.warn('suspended-user check unavailable, request allowed', {
+          event: 'SUSPENSION_CHECK_UNAVAILABLE',
+          error,
+        }),
+    }),
     jwtSigner: await JwtSigner.create(env, core.clock),
     passwordHasher: new BcryptPasswordHasher(env.BCRYPT_COST),
     rateLimiters: new RateLimiters(redis, env, logger),

@@ -38,6 +38,7 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
   container.register(TOKENS.Redis, { useValue: infra.redis });
   container.register(TOKENS.Cache, { useValue: infra.cache });
   container.register(TOKENS.JwtVerifier, { useValue: infra.jwtVerifier });
+  container.register(TOKENS.SuspendedUsers, { useValue: infra.suspendedUsers });
   container.register(TOKENS.JwtSigner, { useValue: infra.jwtSigner });
   container.register(TOKENS.PasswordHasher, { useValue: infra.passwordHasher });
   container.register(TOKENS.RateLimiters, { useValue: infra.rateLimiters });
