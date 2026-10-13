@@ -96,6 +96,30 @@ describe('lib/http validateDto', () => {
     );
   });
 
+  // P8 security review F-5: prototype keys were silently dropped by class-transformer.
+  it('rejects __proto__, constructor and prototype keys at any depth, as JSON.parse produces them', async () => {
+    const body: unknown = JSON.parse(
+      JSON.stringify(valid).replace(
+        /^\{/,
+        '{"__proto__":{"isAdmin":true},"constructor":{"prototype":{"x":1}},',
+      ),
+    );
+    const details = await detailsOf(validateDto(CreateDto, body));
+    expect(details).toEqual([
+      expect.objectContaining({ field: '__proto__', constraint: 'forbiddenKey' }),
+      expect.objectContaining({ field: 'constructor', constraint: 'forbiddenKey' }),
+    ]);
+    const nested: unknown = JSON.parse(
+      JSON.stringify({ ...valid, lines: [{ price: '1.00', quantity: 1 }] }).replace(
+        '"quantity":1',
+        '"quantity":1,"__proto__":{}',
+      ),
+    );
+    expect(await detailsOf(validateDto(CreateDto, nested))).toEqual([
+      expect.objectContaining({ field: 'lines[0].__proto__', constraint: 'forbiddenKey' }),
+    ]);
+  });
+
   it('reports nested fields with their path', async () => {
     const details = await detailsOf(
       validateDto(CreateDto, { ...valid, lines: [{ price: '1.234', quantity: 0, extra: 1 }] }),

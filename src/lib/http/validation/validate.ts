@@ -34,6 +34,25 @@ export function toErrorDetails(errors: readonly ValidationError[], parentPath = 
 }
 
 /**
+ * Keys that address an object's prototype. class-transformer drops them silently; they are rejected
+ * like any unknown key (CLAUDE.md §7, P8 security review F-5).
+ */
+const PROTOTYPE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+function prototypeKeyPaths(value: unknown, path: string, found: string[]): string[] {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => prototypeKeyPaths(item, childPath(path, String(index)), found));
+  } else if (typeof value === 'object' && value !== null) {
+    for (const key of Object.keys(value)) {
+      const field = childPath(path, key);
+      if (PROTOTYPE_KEYS.has(key)) found.push(field);
+      else prototypeKeyPaths((value as Record<string, unknown>)[key], field, found);
+    }
+  }
+  return found;
+}
+
+/**
  * Turns untrusted input into a validated DTO instance, or throws VALIDATION_FAILED.
  * No implicit type conversion: DTOs declare `@Type` explicitly (CLAUDE.md §7).
  */
@@ -43,6 +62,12 @@ export async function validateDto<T extends object>(
 ): Promise<T> {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) {
     throw validationFailed([{ field: '(body)', constraint: 'isObject', message: 'must be a JSON object' }]);
+  }
+  const forbidden = prototypeKeyPaths(input, '', []);
+  if (forbidden.length > 0) {
+    throw validationFailed(
+      forbidden.map((field) => ({ field, constraint: 'forbiddenKey', message: 'this key is not allowed' })),
+    );
   }
   const instance = plainToInstance(dtoClass, input, {
     enableImplicitConversion: false,
