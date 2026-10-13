@@ -18,3 +18,17 @@ export const PLATFORM_ACCOUNT_TYPES: readonly AccountType[] = [
   AccountType.PLATFORM_COMMISSION_REVENUE,
   AccountType.PLATFORM_DELIVERY_REVENUE,
 ];
+
+/** Admin paths under /api/v1 (spec 12 §4.1). */
+export const FINANCE_ADMIN_PATHS = {
+  ACCOUNTS: '/admin/finance/accounts',
+  ACCOUNT: '/admin/finance/accounts/:accountId',
+  ACCOUNT_ENTRIES: '/admin/finance/accounts/:accountId/entries',
+  ENTRIES: '/admin/finance/entries',
+  COD_REMITTANCES: '/admin/finance/cod-remittances',
+  PAYOUTS: '/admin/finance/payouts',
+} as const;
+
+/** Lengths of the admin request fields, matching the columns (database §11). */
+export const REMITTANCE_NOTE_MAX_LENGTH = 500;
+export const EXTERNAL_REFERENCE_MAX_LENGTH = 200;

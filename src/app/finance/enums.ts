@@ -36,3 +36,10 @@ export const ReferenceType = {
   PAYOUT: 'payout',
 } as const;
 export type ReferenceType = (typeof ReferenceType)[keyof typeof ReferenceType];
+
+/** Values match `chk_payouts_payee_type` (spec 12 §1.3). */
+export const PayeeType = {
+  SELLER: 'seller',
+  AGENT: 'agent',
+} as const;
+export type PayeeType = (typeof PayeeType)[keyof typeof PayeeType];

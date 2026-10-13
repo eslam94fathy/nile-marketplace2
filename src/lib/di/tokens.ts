@@ -164,6 +164,12 @@ export const TOKENS = {
   /** The only writer of balances (spec 12 §1.1). */
   LedgerService: Symbol.for('LedgerService'),
   LedgerBookingService: Symbol.for('LedgerBookingService'),
+  CodRemittanceRepository: Symbol.for('CodRemittanceRepository'),
+  PayoutRepository: Symbol.for('PayoutRepository'),
+  FinanceViewService: Symbol.for('FinanceViewService'),
+  CodRemittanceService: Symbol.for('CodRemittanceService'),
+  PayoutService: Symbol.for('PayoutService'),
+  FinanceAdminController: Symbol.for('FinanceAdminController'),
 
   // notifications module
   NotificationLogRepository: Symbol.for('NotificationLogRepository'),

@@ -1,6 +1,7 @@
 import { inject, injectable } from 'tsyringe';
 import { type DbExecutor, type DbTransaction, type IDatabase } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
+import { applyListQuery, type ParsedListQuery } from '../../../lib/http';
 import { Money } from '../../../lib/money';
 import { FINANCE_TABLES } from '../constants';
 import { type EntryDirection, type EntryType, type ReferenceType } from '../enums';
@@ -75,6 +76,19 @@ export class LedgerEntryRepository {
         })),
       )
       .returning<LedgerEntryRow[]>(COLUMNS);
+    return rows.map(toModel);
+  }
+
+  /** One account's statement, keyset page over idx_ledger_entries_account_id_created_at_id. */
+  async listForAccount(
+    accountId: string,
+    query: ParsedListQuery,
+    trx?: DbTransaction,
+  ): Promise<LedgerEntry[]> {
+    const qb = this.exec(trx)<LedgerEntryTable>(T)
+      .select(...COLUMNS)
+      .where({ account_id: accountId });
+    const rows = (await applyListQuery(qb, query, 'id')) as LedgerEntryRow[];
     return rows.map(toModel);
   }
 

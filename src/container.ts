@@ -3,7 +3,7 @@ import { registerCartModule } from './app/cart';
 import { registerCatalogModule, registerCatalogProjections } from './app/catalog';
 import { registerCustomersModule } from './app/customers';
 import { registerDeliveryModule, registerDeliveryWorker } from './app/delivery';
-import { registerFinanceWorker } from './app/finance';
+import { registerFinanceModule, registerFinanceWorker } from './app/finance';
 import { registerSellersModule } from './app/sellers';
 import { registerHealthModule } from './app/health';
 import { registerIdentityModule } from './app/identity';
@@ -55,6 +55,8 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
   registerPaymentsModule(container);
   registerPaymentsHttp(container);
   registerOrderingModule(container);
+  // After sellers and delivery: finance resolves owners through their public APIs (FI-11).
+  registerFinanceModule(container);
   return container;
 }
 

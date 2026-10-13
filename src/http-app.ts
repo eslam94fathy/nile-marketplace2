@@ -7,6 +7,7 @@ import { createCartRouter } from './app/cart';
 import { createCatalogRouter } from './app/catalog';
 import { createCustomersRouter } from './app/customers';
 import { createDeliveryRouter } from './app/delivery';
+import { createFinanceRouter } from './app/finance';
 import { createIdentityRouter } from './app/identity';
 import { createOrderingRouter } from './app/ordering';
 import { createPaymentsRouter, createPaymentsWebhookRouter, PAYMENTS_PATHS } from './app/payments';
@@ -75,6 +76,7 @@ export function createApp(
   app.use(API_BASE_PATH, recordMountPath(), createCartRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createOrderingRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createPaymentsRouter(container, API_BASE_PATH));
+  app.use(API_BASE_PATH, recordMountPath(), createFinanceRouter(container, API_BASE_PATH));
   for (const { path, router } of options.extraRouters ?? []) app.use(path, recordMountPath(), router);
 
   // 8. 404, then the global error handler.

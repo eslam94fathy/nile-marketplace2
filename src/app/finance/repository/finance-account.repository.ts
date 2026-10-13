@@ -2,6 +2,7 @@ import { type Knex } from 'knex';
 import { inject, injectable } from 'tsyringe';
 import { type DbExecutor, type DbTransaction, type IDatabase } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
+import { applyListQuery, type ParsedListQuery } from '../../../lib/http';
 import { Money } from '../../../lib/money';
 import { FINANCE_TABLES } from '../constants';
 import { type AccountType } from '../enums';
@@ -95,6 +96,13 @@ export class FinanceAccountRepository {
       .select(...COLUMNS)
       .where(matchingKeys(keys));
     return (rows as FinanceAccountRow[]).map(toModel);
+  }
+
+  /** Admin list, keyset page (`limit + 1` rows) over idx_finance_accounts_balance_id / _updated_at_id (D-12). */
+  async list(query: ParsedListQuery, trx?: DbTransaction): Promise<FinanceAccount[]> {
+    const qb = this.exec(trx)<FinanceAccountTable>(T).select(...COLUMNS);
+    const rows = (await applyListQuery(qb, query, 'id')) as FinanceAccountRow[];
+    return rows.map(toModel);
   }
 
   async updateBalance(id: string, balance: Money, trx: DbTransaction): Promise<void> {
