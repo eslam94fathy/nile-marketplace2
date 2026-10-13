@@ -1,3 +1,4 @@
+import { sha256Hex } from '../../pkg/crypto';
 import { type Request, type RequestHandler } from 'express';
 import { type Redis } from 'ioredis';
 import { RateLimiterRedis, RateLimiterRes } from 'rate-limiter-flexible';
@@ -42,8 +43,11 @@ export type RateLimitKeys = (req: Request) => readonly string[] | Promise<readon
 
 export const byIp = (req: Request): readonly string[] => [`ip:${req.ip ?? 'unknown'}`];
 
-/** The per-account counter, shared by every strict-auth route that names the same email. */
-export const emailRateKey = (email: string): string => `email:${email.trim().toLowerCase()}`;
+/**
+ * The per-account counter, shared by every strict-auth route that names the same email. Hashed, so the
+ * key has a fixed size whatever the client sends and no email sits in Redis (P8 security review F-6).
+ */
+export const emailRateKey = (email: string): string => `email:${sha256Hex(email.trim().toLowerCase())}`;
 
 /** IP and the normalised `email` from the body: two independent counters (strict-auth). */
 export const byIpAndEmail = (req: Request): readonly string[] => {
