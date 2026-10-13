@@ -10,3 +10,13 @@ output "service_name" {
 output "log_group_name" {
   value = aws_cloudwatch_log_group.this.name
 }
+
+output "environment" {
+  description = "The non-secret env the container gets (tests, review)."
+  value       = var.environment
+}
+
+output "secret_keys" {
+  description = "Names of the env keys that come from Secrets Manager."
+  value       = sort(keys(var.secrets))
+}

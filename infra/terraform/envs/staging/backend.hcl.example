@@ -1,0 +1,4 @@
+# Copy to backend.hcl (P9) with the bootstrap outputs, then: terraform init -backend-config=backend.hcl
+bucket     = "nile-marketplace-tfstate-staging-<account id>"
+kms_key_id = "<state_kms_key_arn>"
+region     = "eu-central-1"
