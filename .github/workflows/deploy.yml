@@ -1,0 +1,74 @@
+# Deploy (architecture §13.1, P8-Q12). Written in Phase 8 and OFF until P9: every job needs the
+# repository variable DEPLOY_ENABLED = true, set once staging exists (plan §10); the production job
+# also needs PRODUCTION_ENABLED = true, set at the go-live step (P8-Q3).
+#
+# CI green on main → build the image once → staging → production (GitHub environment with required
+# reviewers), each through deploy-environment.yml with the same image. AWS access through OIDC only
+# (the `deploy` role of infra/terraform/bootstrap).
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: >-
+      vars.DEPLOY_ENABLED == 'true' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - id: sha
+        run: echo "sha=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.sha.outputs.sha }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      # One image for every environment: staging and production run the same bytes.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: nile-marketplace:${{ steps.sha.outputs.sha }}
+          outputs: type=docker,dest=/tmp/image.tar
+          cache-from: type=gha
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image
+          path: /tmp/image.tar
+          retention-days: 7
+
+  staging:
+    needs: build
+    uses: ./.github/workflows/deploy-environment.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      environment: staging
+      sha: ${{ needs.build.outputs.sha }}
+
+  # Required reviewers on the `production` GitHub environment: nobody reaches it without an approval.
+  production:
+    needs: [build, staging]
+    if: vars.PRODUCTION_ENABLED == 'true'
+    uses: ./.github/workflows/deploy-environment.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      environment: production
+      sha: ${{ needs.build.outputs.sha }}

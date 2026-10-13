@@ -1,0 +1,67 @@
+# One environment's deploy, called by deploy.yml (staging, then production): push the image built
+# once to this environment's ECR, migrate, roll the services, check readiness (P8-Q12). Values come
+# from the GitHub environment's variables (`terraform output deploy`); AWS access through OIDC only.
+name: Deploy environment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      sha:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.sha }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: image
+          path: /tmp
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Push the image to this environment's ECR
+        env:
+          SHA: ${{ inputs.sha }}
+          ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
+        run: |
+          docker load --input /tmp/image.tar
+          aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR_REPOSITORY_URL%%/*}"
+          docker tag "nile-marketplace:$SHA" "$ECR_REPOSITORY_URL:$SHA"
+          docker push "$ECR_REPOSITORY_URL:$SHA"
+
+      - name: Migrate, roll the services, check readiness
+        env:
+          IMAGE: ${{ vars.ECR_REPOSITORY_URL }}:${{ inputs.sha }}
+          ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+          ECS_API_SERVICE: ${{ vars.ECS_API_SERVICE }}
+          ECS_WORKER_SERVICE: ${{ vars.ECS_WORKER_SERVICE }}
+          ECS_API_FAMILY: ${{ vars.ECS_API_FAMILY }}
+          ECS_WORKER_FAMILY: ${{ vars.ECS_WORKER_FAMILY }}
+          ECS_MIGRATE_FAMILY: ${{ vars.ECS_MIGRATE_FAMILY }}
+          ECS_SUBNET_IDS: ${{ vars.ECS_SUBNET_IDS }}
+          ECS_SECURITY_GROUP_ID: ${{ vars.ECS_SECURITY_GROUP_ID }}
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: bash scripts/deploy/ecs-deploy.sh
