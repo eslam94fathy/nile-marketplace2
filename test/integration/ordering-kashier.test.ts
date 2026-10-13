@@ -203,6 +203,31 @@ describe('ordering: Kashier checkout, payment and expiry', () => {
     ]);
   });
 
+  // OR-16 (security review F-2): one unpaid Kashier order per customer, so stock can't be hoarded.
+  it('a second Kashier checkout waits for the open payment; COD still goes through; paying frees it', async () => {
+    const { buyer, result } = await kashierOrder();
+    const fillCart = async () => {
+      const variant = await api.listedVariant({ price: '100.00' });
+      await api.fillCart(buyer.customerId, [{ variantId: variant.variantId, quantity: 1 }]);
+    };
+    const checkout = (paymentMethod: 'kashier' | 'cod') =>
+      api.as(buyer.token).checkout({ addressId: buyer.addressId, paymentMethod, expectedTotal: '150.00' });
+
+    await fillCart();
+    const second = await checkout('kashier');
+    expect([second.status, errorBody(second).error.code]).toEqual([409, 'ORDER_PAYMENT_PENDING']);
+    expect(errorBody(second).error.details?.[0]).toMatchObject({ field: 'orderId', value: result.order.id });
+    // Nothing was placed: the cart still holds the line, and COD can check it out.
+    expect((await knex()('orders').where({ customer_id: buyer.customerId })).length).toBe(1);
+    expect((await checkout('cod')).status).toBe(201);
+
+    const payment = must(await paymentOf(result.order.id));
+    expect((await webhook(payment.id)).status).toBe(200);
+    await deliverPaymentEvent(result.order.id, 'payment.paid');
+    await fillCart();
+    expect((await checkout('kashier')).status).toBe(201);
+  });
+
   it('a paid webhook places the order through payment.paid: seller orders placed with a deadline, order.placed', async () => {
     const { buyer, variant, result } = await kashierOrder();
     const payment = must(await paymentOf(result.order.id));

@@ -8,6 +8,7 @@ export const OrderingErrorCode = {
   CART_HAS_ISSUES: 'CART_HAS_ISSUES',
   GOVERNORATE_NOT_DELIVERABLE: 'GOVERNORATE_NOT_DELIVERABLE',
   ORDER_TOTAL_CHANGED: 'ORDER_TOTAL_CHANGED',
+  ORDER_PAYMENT_PENDING: 'ORDER_PAYMENT_PENDING',
   ORDER_NOT_FOUND: 'ORDER_NOT_FOUND',
   ORDER_NOT_AWAITING_PAYMENT: 'ORDER_NOT_AWAITING_PAYMENT',
   SELLER_ORDER_NOT_FOUND: 'SELLER_ORDER_NOT_FOUND',
@@ -41,6 +42,19 @@ export const governorateNotDeliverable = () =>
   );
 
 /** S-8: the client shows the new total and asks again. */
+/** OR-16: one open Kashier payment per customer; the detail carries that order's id. */
+export const orderPaymentPending = (orderId: string) =>
+  new AppError(
+    C.ORDER_PAYMENT_PENDING,
+    'You have an order waiting for payment; pay it or let it expire first',
+    S.CONFLICT,
+    {
+      details: [
+        { field: 'orderId', value: orderId, constraint: 'pending_payment', message: 'awaiting payment' },
+      ],
+    },
+  );
+
 export const orderTotalChanged = (currentTotal: string) =>
   new AppError(C.ORDER_TOTAL_CHANGED, 'The order total has changed', S.CONFLICT, {
     details: [

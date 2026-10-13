@@ -204,6 +204,18 @@ export class OrderRepository {
     return rows.map((row) => row.id);
   }
 
+  /**
+   * The customer's order still waiting for its Kashier payment, if any (spec 09 OR-16), over
+   * idx_orders_customer_id_created_at_id. Checkout calls it under the cart lock.
+   */
+  async findPendingPaymentIdOfCustomer(customerId: string, trx: DbTransaction): Promise<string | null> {
+    const row = await trx<OrderTable>(T)
+      .select('id')
+      .where({ customer_id: customerId, status: OrderStatus.PENDING_PAYMENT })
+      .first<Pick<OrderTable, 'id'> | undefined>();
+    return row?.id ?? null;
+  }
+
   /** Writes the derived state computed under the order lock the caller holds (spec 09 §1.1, §3.9). */
   async updateState(id: string, state: OrderStateUpdate, trx: DbTransaction): Promise<void> {
     await trx<OrderTable>(T)

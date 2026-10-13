@@ -23,6 +23,7 @@ import {
   governorateNotDeliverable,
   orderNotAwaitingPayment,
   orderNotFound,
+  orderPaymentPending,
   orderTotalChanged,
 } from '../errors';
 import { type CheckoutMoney, computeCheckoutMoney, type PricedLine } from '../model/checkout-money.model';
@@ -209,6 +210,11 @@ export class CheckoutService {
   ): Promise<Order> {
     const cartLines = await this.cart.getLinesForCheckout(customerId, trx); // locks the cart
     if (cartLines.length === 0) throw cartEmpty();
+    if (input.paymentMethod === PaymentMethod.KASHIER) {
+      // OR-16: no second unpaid Kashier order (it would hold more stock); the cart lock serialises this.
+      const pending = await this.orders.findPendingPaymentIdOfCustomer(customerId, trx);
+      if (pending) throw orderPaymentPending(pending);
+    }
     const { lines, commissionRates, pickups } = await this.priceLines(cartLines, trx);
     const money = computeCheckoutMoney(lines, commissionRates, context.deliveryFee);
     if (!Money.of(input.expectedTotal).equals(money.total)) throw orderTotalChanged(money.total.toString());

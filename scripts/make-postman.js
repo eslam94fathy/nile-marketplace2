@@ -1003,7 +1003,7 @@ if (pm.response.code === 201) {
             expectedTotal: '{{expectedTotal}}',
           },
           description:
-            'Places the cart as one order split per seller, reserves stock and empties the cart (201). COD: placed. Kashier: pending_payment, with data.kashier.checkoutUrl (null if Kashier failed: use "Kashier payment page"). CART_EMPTY 422, CART_HAS_ISSUES 409 (details: variant ids), ADDRESS_NOT_FOUND 422, GOVERNORATE_NOT_DELIVERABLE 422, ORDER_TOTAL_CHANGED 409 (details[0].value = current total; stored in expectedTotal), INSUFFICIENT_STOCK 409. A repeat with the same Idempotency-Key replays the first answer.',
+            'Places the cart as one order split per seller, reserves stock and empties the cart (201). COD: placed. Kashier: pending_payment, with data.kashier.checkoutUrl (null if Kashier failed: use "Kashier payment page"). CART_EMPTY 422, CART_HAS_ISSUES 409 (details: variant ids), ADDRESS_NOT_FOUND 422, GOVERNORATE_NOT_DELIVERABLE 422, ORDER_TOTAL_CHANGED 409 (details[0].value = current total; stored in expectedTotal), ORDER_PAYMENT_PENDING 409 (Kashier while you have an unpaid order; details[0].value = its id), INSUFFICIENT_STOCK 409. A repeat with the same Idempotency-Key replays the first answer.',
           tests: `
 if (pm.response.code === 409 && pm.response.json().error.code === 'ORDER_TOTAL_CHANGED') {
   pm.collectionVariables.set('expectedTotal', pm.response.json().error.details[0].value);
