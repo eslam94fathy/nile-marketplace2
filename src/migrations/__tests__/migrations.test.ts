@@ -52,6 +52,10 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261012130003_create_shipment_attempts',
       '20261012130004_create_shipment_status_history',
       '20261012140001_cursor_timestamps_millisecond_precision',
+      '20261013120001_create_finance_accounts',
+      '20261013120002_create_ledger_entries',
+      '20261013120003_create_cod_remittances',
+      '20261013120004_create_payouts',
     ]);
   });
 

@@ -1098,4 +1098,230 @@ describe('migrations on a real Postgres 18', () => {
       }
     });
   });
+
+  describe('finance accounts, ledger, remittances and payouts (P7)', () => {
+    const fx = () => deliveryFixtures(db);
+    const account = (row: Record<string, unknown>) =>
+      db('finance_accounts')
+        .insert({ balance: '0.00', ...row })
+        .returning<{ id: string }[]>('id');
+    /** Platform accounts are singletons: clear the type first so each test can insert its own. */
+    const platformAccount = async (accountType: string, balance: string) => {
+      await db('finance_accounts').where({ account_type: accountType }).delete();
+      return account({ account_type: accountType, owner_id: null, balance });
+    };
+
+    it('finance_accounts: one per type and owner (platform ones too), whitelisted types', async () => {
+      const ownerId = randomUUID();
+      await account({ account_type: 'seller_payable', owner_id: ownerId });
+      expect(
+        (await pgFailure(() => account({ account_type: 'seller_payable', owner_id: ownerId }))).constraint,
+      ).toBe('uq_finance_accounts_account_type_owner_id');
+      await account({ account_type: 'agent_fee_payable', owner_id: ownerId });
+      // NULLS NOT DISTINCT: a second platform account of one type is a duplicate.
+      await platformAccount('platform_commission_revenue', '0.00');
+      expect(
+        (await pgFailure(() => account({ account_type: 'platform_commission_revenue', owner_id: null })))
+          .constraint,
+      ).toBe('uq_finance_accounts_account_type_owner_id');
+      expect(
+        (await pgFailure(() => account({ account_type: 'customer_wallet', owner_id: randomUUID() })))
+          .constraint,
+      ).toBe('chk_finance_accounts_account_type');
+      expect(
+        (
+          await pgFailure(() =>
+            db('finance_accounts').insert({ account_type: 'agent_cod_cash', owner_id: randomUUID() }),
+          )
+        ).code,
+      ).toBe('23502');
+    });
+
+    it('only platform delivery revenue may go negative (FI-1, D-12)', async () => {
+      for (const accountType of ['seller_payable', 'agent_fee_payable', 'agent_cod_cash']) {
+        expect(
+          (
+            await pgFailure(() =>
+              account({ account_type: accountType, owner_id: randomUUID(), balance: '-0.01' }),
+            )
+          ).constraint,
+          accountType,
+        ).toBe('chk_finance_accounts_balance_non_negative');
+      }
+      expect(
+        (await pgFailure(() => platformAccount('platform_commission_revenue', '-0.01'))).constraint,
+      ).toBe('chk_finance_accounts_balance_non_negative');
+      await platformAccount('platform_delivery_revenue', '-14.00');
+    });
+
+    it('ledger_entries: positive amounts, whitelisted types, accounts restrict deletes', async () => {
+      const [row] = await account({ account_type: 'seller_payable', owner_id: randomUUID() });
+      const accountId = row?.id ?? '';
+      const entry = (overrides: Record<string, unknown>) =>
+        db('ledger_entries').insert({
+          account_id: accountId,
+          direction: 'credit',
+          amount: '90.00',
+          balance_after: '90.00',
+          entry_type: 'seller_net_earned',
+          reference_type: 'seller_order',
+          reference_id: randomUUID(),
+          source_event_id: randomUUID(),
+          ...overrides,
+        });
+      await entry({});
+      // Admin actions have no event.
+      await entry({
+        direction: 'debit',
+        balance_after: '0.00',
+        entry_type: 'seller_payout',
+        reference_type: 'payout',
+        source_event_id: null,
+      });
+      expect((await pgFailure(() => entry({ amount: '0.00' }))).constraint).toBe('chk_ledger_entries_amount');
+      expect((await pgFailure(() => entry({ direction: 'refund' }))).constraint).toBe(
+        'chk_ledger_entries_direction',
+      );
+      expect((await pgFailure(() => entry({ entry_type: 'bonus' }))).constraint).toBe(
+        'chk_ledger_entries_entry_type',
+      );
+      expect((await pgFailure(() => entry({ reference_type: 'shipment' }))).constraint).toBe(
+        'chk_ledger_entries_reference_type',
+      );
+      expect((await pgFailure(() => entry({ account_id: randomUUID() }))).constraint).toBe(
+        'fk_ledger_entries_account_id',
+      );
+      expect(
+        (await pgFailure(() => db('finance_accounts').where({ id: accountId }).delete())).constraint,
+      ).toBe('fk_ledger_entries_account_id');
+      expect((await pgFailure(() => db('ledger_entries').insert({ account_id: accountId }))).code).toBe(
+        '23502',
+      );
+    });
+
+    it('cod_remittances: positive amounts, a real agent and confirming user', async () => {
+      const { insertAgent, insertUser } = fx();
+      const { agentId } = await insertAgent();
+      const adminId = await insertUser('admin');
+      const remit = (overrides: Record<string, unknown>) =>
+        db('cod_remittances').insert({
+          agent_id: agentId,
+          amount: '500.00',
+          confirmed_by_user_id: adminId,
+          note: null,
+          ...overrides,
+        });
+      await remit({});
+      expect((await pgFailure(() => remit({ amount: '0.00' }))).constraint).toBe(
+        'chk_cod_remittances_amount',
+      );
+      expect((await pgFailure(() => remit({ agent_id: randomUUID() }))).constraint).toBe(
+        'fk_cod_remittances_agent_id',
+      );
+      expect((await pgFailure(() => remit({ confirmed_by_user_id: randomUUID() }))).constraint).toBe(
+        'fk_cod_remittances_confirmed_by_user_id',
+      );
+    });
+
+    it('payouts: whitelisted payee type, positive amounts, one record per transfer and payee (FI-7)', async () => {
+      const adminId = await fx().insertUser('admin');
+      const payeeId = randomUUID();
+      const payout = (overrides: Record<string, unknown>) =>
+        db('payouts').insert({
+          payee_type: 'seller',
+          payee_id: payeeId,
+          amount: '90.00',
+          external_reference: 'TRX-1',
+          recorded_by_user_id: adminId,
+          paid_at: new Date(),
+          ...overrides,
+        });
+      await payout({});
+      expect((await pgFailure(() => payout({}))).constraint).toBe(
+        'uq_payouts_payee_type_payee_id_external_reference',
+      );
+      await payout({ payee_type: 'agent' }); // same reference, another payee
+      expect(
+        (await pgFailure(() => payout({ external_reference: 'TRX-2', amount: '0.00' }))).constraint,
+      ).toBe('chk_payouts_amount');
+      expect(
+        (await pgFailure(() => payout({ external_reference: 'TRX-3', payee_type: 'customer' }))).constraint,
+      ).toBe('chk_payouts_payee_type');
+      expect(
+        (await pgFailure(() => payout({ external_reference: 'TRX-4', recorded_by_user_id: randomUUID() })))
+          .constraint,
+      ).toBe('fk_payouts_recorded_by_user_id');
+    });
+
+    it('D-12 indexes exist and serve the account, statement, remittance and payout lists without a sort', async () => {
+      const definitions = await db.raw<{ rows: { name: string; definition: string }[] }>(
+        `SELECT c.relname AS name, pg_get_indexdef(i.indexrelid) AS definition
+           FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+          WHERE c.relname IN ('uq_finance_accounts_account_type_owner_id', 'idx_finance_accounts_balance_id',
+                              'idx_finance_accounts_updated_at_id', 'idx_ledger_entries_account_id_created_at_id',
+                              'idx_ledger_entries_reference_type_reference_id',
+                              'idx_cod_remittances_agent_id_created_at_id', 'idx_cod_remittances_created_at_id',
+                              'idx_payouts_payee_type_payee_id_created_at_id', 'idx_payouts_created_at_id')`,
+      );
+      const byName = Object.fromEntries(definitions.rows.map((row) => [row.name, row.definition]));
+      expect(byName.uq_finance_accounts_account_type_owner_id).toMatch(
+        /UNIQUE.*\(account_type, owner_id\) NULLS NOT DISTINCT/,
+      );
+      expect(byName.idx_finance_accounts_balance_id).toMatch(/\(balance DESC, id DESC\)$/);
+      expect(byName.idx_finance_accounts_updated_at_id).toMatch(/\(updated_at DESC, id DESC\)$/);
+      expect(byName.idx_ledger_entries_account_id_created_at_id).toMatch(
+        /\(account_id, created_at DESC, id DESC\)$/,
+      );
+      expect(byName.idx_ledger_entries_reference_type_reference_id).toMatch(
+        /\(reference_type, reference_id\)$/,
+      );
+      expect(byName.idx_cod_remittances_agent_id_created_at_id).toMatch(
+        /\(agent_id, created_at DESC, id DESC\)$/,
+      );
+      expect(byName.idx_cod_remittances_created_at_id).toMatch(/\(created_at DESC, id DESC\)$/);
+      expect(byName.idx_payouts_payee_type_payee_id_created_at_id).toMatch(
+        /\(payee_type, payee_id, created_at DESC, id DESC\)$/,
+      );
+      expect(byName.idx_payouts_created_at_id).toMatch(/\(created_at DESC, id DESC\)$/);
+
+      const planOf = (sql: string) =>
+        db.transaction(async (trx) => {
+          await trx.raw('SET LOCAL enable_seqscan = off; SET LOCAL enable_bitmapscan = off');
+          const result = await trx.raw<{ rows: { 'QUERY PLAN': string }[] }>(`EXPLAIN ${sql}`);
+          return result.rows.map((row) => row['QUERY PLAN']).join('\n');
+        });
+      const someId = '0192f5e0-0000-7000-8000-000000000000';
+      for (const [sql, index] of [
+        [
+          `SELECT id FROM finance_accounts ORDER BY balance DESC, id DESC LIMIT 21`,
+          'idx_finance_accounts_balance_id',
+        ],
+        [
+          `SELECT id FROM finance_accounts ORDER BY updated_at DESC, id DESC LIMIT 21`,
+          'idx_finance_accounts_updated_at_id',
+        ],
+        [
+          `SELECT id FROM ledger_entries WHERE account_id = '${someId}' ORDER BY created_at DESC, id DESC LIMIT 21`,
+          'idx_ledger_entries_account_id_created_at_id',
+        ],
+        [
+          `SELECT id FROM cod_remittances WHERE agent_id = '${someId}' ORDER BY created_at DESC, id DESC LIMIT 21`,
+          'idx_cod_remittances_agent_id_created_at_id',
+        ],
+        [
+          `SELECT id FROM cod_remittances ORDER BY created_at DESC, id DESC LIMIT 21`,
+          'idx_cod_remittances_created_at_id',
+        ],
+        [
+          `SELECT id FROM payouts WHERE payee_type = 'seller' AND payee_id = '${someId}' ORDER BY created_at DESC, id DESC LIMIT 21`,
+          'idx_payouts_payee_type_payee_id_created_at_id',
+        ],
+        [`SELECT id FROM payouts ORDER BY created_at DESC, id DESC LIMIT 21`, 'idx_payouts_created_at_id'],
+      ] as const) {
+        const plan = await planOf(sql);
+        expect(plan, sql).toContain(index);
+        expect(plan, sql).not.toContain('Sort');
+      }
+    });
+  });
 });

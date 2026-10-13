@@ -7,7 +7,7 @@ import { API } from '../helpers/identity';
 import { signTestAccessToken } from '../helpers/jwt';
 import { startTestApp, type TestApp } from '../helpers/test-app';
 
-/** Every timestamp a list cursor sorts on (migration 20261012140001, database D-11). */
+/** Every timestamp a list cursor sorts on (migration 20261012140001, database D-11; finance tables D-12). */
 const CURSOR_COLUMNS = [
   ['users', 'created_at'],
   ['sellers', 'created_at'],
@@ -19,6 +19,10 @@ const CURSOR_COLUMNS = [
   ['payment_refunds', 'created_at'],
   ['delivery_agents', 'created_at'],
   ['shipments', 'created_at'],
+  ['finance_accounts', 'updated_at'],
+  ['ledger_entries', 'created_at'],
+  ['cod_remittances', 'created_at'],
+  ['payouts', 'created_at'],
 ] as const;
 
 /*

@@ -40,6 +40,10 @@ import * as m20261012130002 from './20261012130002_create_shipments';
 import * as m20261012130003 from './20261012130003_create_shipment_attempts';
 import * as m20261012130004 from './20261012130004_create_shipment_status_history';
 import * as m20261012140001 from './20261012140001_cursor_timestamps_millisecond_precision';
+import * as m20261013120001 from './20261013120001_create_finance_accounts';
+import * as m20261013120002 from './20261013120002_create_ledger_entries';
+import * as m20261013120003 from './20261013120003_create_cod_remittances';
+import * as m20261013120004 from './20261013120004_create_payouts';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -85,5 +89,9 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261012130003_create_shipment_attempts', module: m20261012130003 },
   { name: '20261012130004_create_shipment_status_history', module: m20261012130004 },
   { name: '20261012140001_cursor_timestamps_millisecond_precision', module: m20261012140001 },
+  { name: '20261013120001_create_finance_accounts', module: m20261013120001 },
+  { name: '20261013120002_create_ledger_entries', module: m20261013120002 },
+  { name: '20261013120003_create_cod_remittances', module: m20261013120003 },
+  { name: '20261013120004_create_payouts', module: m20261013120004 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];
