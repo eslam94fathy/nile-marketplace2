@@ -76,6 +76,11 @@ export class JobRunner {
     job.timer = setTimeout(() => {
       job.running = this.execute(job.definition)
         .then(() => undefined)
+        // execute() handles its own errors; this keeps a future bug from becoming an unhandled
+        // rejection, which stops the whole worker (found by the P8 load baseline).
+        .catch((error: unknown) => {
+          this.logger.error('job run crashed', { event: 'JOB_FAILED', job: job.definition.name, error });
+        })
         .finally(() => {
           job.running = undefined;
           this.schedule(job, job.definition.intervalMs);
@@ -85,7 +90,18 @@ export class JobRunner {
 
   private async execute(definition: JobDefinition): Promise<boolean> {
     const lockKey = jobLockKey(definition.name);
-    const connection = await this.pool().acquireConnection();
+    let connection: unknown;
+    try {
+      // Pool exhausted or database unreachable: skip this run, the next interval tries again.
+      connection = await this.pool().acquireConnection();
+    } catch (error) {
+      this.logger.error('job skipped: no database connection', {
+        event: 'JOB_FAILED',
+        job: definition.name,
+        error,
+      });
+      return false;
+    }
     try {
       const lock = await this.knex
         .raw<{ rows: { locked: boolean }[] }>('SELECT pg_try_advisory_lock(?, ?) AS locked', [
