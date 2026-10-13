@@ -82,6 +82,21 @@ describe('lib/logger JsonLogger', () => {
     });
   });
 
+  // P8 security review F-7: provider credentials and signatures are on the list too.
+  it('redacts provider keys and signatures', () => {
+    const { logger, writer } = makeLogger();
+    logger.info('provider call', {
+      kashierSecretKey: 's1',
+      KASHIER_API_KEY: 's2',
+      mailjet_secret_key: 's3',
+      secretKey: 's4',
+      webhookSecret: 's5',
+      signature: 'abc123',
+    });
+    expect(writer.lines[0] ?? '').not.toMatch(/"s[1-5]"|abc123/);
+    expect(writer.parsed[0]).toMatchObject({ kashierSecretKey: '[REDACTED]', signature: '[REDACTED]' });
+  });
+
   it('serialises errors with name, message, code, stack and cause', () => {
     const { logger, writer } = makeLogger();
     const cause = Object.assign(new Error('connection reset'), { code: 'ECONNRESET' });
