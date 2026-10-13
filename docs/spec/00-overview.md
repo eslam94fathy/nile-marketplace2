@@ -70,7 +70,7 @@ Nothing marked [PROPOSED] may be implemented until it is approved.
 | `ordering` | `orders`, `seller_orders`, `order_items`, `order_status_history` | Checkout, split per seller, snapshots, stored statuses, cancellation (full + partial), 24 h acceptance timeout |
 | `payments` | `payments`, `payment_events` | COD and Kashier payments, Kashier webhook (signature-verified, idempotent), manual-refund recording |
 | `delivery` | `governorates`, `delivery_agents`, `shipments`, `shipment_attempts`, `shipment_status_history` | Governorate fees, agent profiles + availability, automatic assignment, attempts (max 3), returns to seller, COD collection |
-| `finance` | `ledger_entries`, `cod_remittances`, `seller_payouts` | Double-entry style ledger: commission, seller balances, agent fee shares, COD cash owed by agents, admin-confirmed remittances, manual payouts |
+| `finance` | `finance_accounts`, `ledger_entries`, `cod_remittances`, `payouts` | Double-entry style ledger: commission, seller balances, agent fee shares, COD cash owed by agents, admin-confirmed remittances, manual payouts |
 | `notifications` (minimal) | `notification_log` | Transactional email only: verification OTP, password reset OTP, account invites via **Mailjet** (Q-35) |
 | `health` | n/a | live / ready probes |
 
@@ -238,7 +238,7 @@ The user accepted every recommendation (2026-10-08). Answers are logged in §9.1
 
 | # | Document | Change | Reason | Status |
 |---|---|---|---|---|
-| O-1 | `00-overview.md` §2 | Table names: `otp_codes` → `verification_codes`; finance `seller_payouts` → `finance_accounts`, `ledger_entries`, `cod_remittances`, `payouts`; add the history/settings tables listed in `02-database.md` §1 | Align with the approved schema | **Pending** |
+| O-1 | `00-overview.md` §2 | Table names: `otp_codes` → `verification_codes`; finance `seller_payouts` → `finance_accounts`, `ledger_entries`, `cod_remittances`, `payouts`; add the history/settings tables listed in `02-database.md` §1 | Align with the approved schema | **Pending**; finance part applied in §2 (Phase 7, approved 2026-10-13) |
 | O-2 | `00-overview.md` §6 | API surface: replace with specs 03–12 (new: invite accept, password change, admin admins, resend invite, user suspend/reactivate, seller reapply, settings endpoints, `DELETE /cart`, agent profile, finance self-service, stock adjustments) | Detailed specs | **Pending** (with the module specs) |
 | O-3 | `00-overview.md` §7 | Event list: replace with `02-events.md` | Detailed specs | **Applied** (v1.1), implied by approving `02-events.md` |
 | A-1 | `01-architecture.md` §3, §5 | Event names and queue bindings as in `02-events.md` | E-1…E-7 | **Applied** (v1.1), implied by approving `02-events.md` |
@@ -256,6 +256,7 @@ The user accepted every recommendation (2026-10-08). Answers are logged in §9.1
 | D-9 | `02-database.md` §6 | `inventory_reservations.quantity >= 0` (was `> 0`) + `chk_inventory_reservations_released` (released ⇔ 0) | Spec 07 UC-IN-2 lowers the quantity to 0 on a full release | **Applied** (v1.9, approved 2026-10-12) |
 | D-10 | `02-database.md` §10 | `idx_shipments_created_at_desc_id`, `idx_shipments_agent_id_created_at_id`, retry index with `id`, `idx_delivery_agents_created_at_id`, `shipments.seller_order_cancelled_at`, FK `ON DELETE RESTRICT`, no index on `shipment_attempts.agent_id` | Admin and agent lists, a return after a late cancellation (P6-Q3, P6-Q5) | **Applied** (v1.10, approved 2026-10-12) |
 | D-11 | `02-database.md` §0 | Every timestamp a list cursor sorts on is `TIMESTAMPTZ(3)` (10 columns, one migration) | The cursor carries milliseconds; microsecond columns repeated or skipped rows across pages | **Applied** (v1.11, approved 2026-10-12) |
+| D-12 | `02-database.md` §0, §11 | Finance: cursor timestamps `TIMESTAMPTZ(3)`, `chk_finance_accounts_balance_non_negative`, enum CHECKs incl. `reference_type`, account / remittance / payout list indexes, `uq_payouts_payee_type_payee_id_external_reference`, FK `ON DELETE RESTRICT`, polymorphic ids and audit pointers documented | Admin lists, a DB guard for balances, the same transfer never recorded twice (P7-Q3, P7-Q8) | **Applied** (v1.12, approved 2026-10-13) |
 
 ## 9. Answered log (2026-10-07)
 

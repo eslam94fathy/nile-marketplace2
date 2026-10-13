@@ -1,6 +1,6 @@
 # System Design 02 — Database Schema (Release 1)
 
-Status: **v1.11 APPROVED (2026-10-12).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). v1.5: public product listings sort on `published_at` (D-5); `id` tie-break on the stock-history index (D-6). v1.6: `idx_products_category_id` for category usage checks (D-7). v1.7: cart FK `ON DELETE` behaviour and why `cart_items.variant_id` has no index (§7, P4-Q11). v1.8: ordering/payments indexes, Kashier session columns, refund reason `amount_mismatch`, FK behaviour and unindexed FKs (§6, §8, §9, D-8, Phase 5). v1.9: `inventory_reservations.quantity` is what is still reserved, `>= 0`, and 0 exactly when `released` (§6, D-9). v1.10: shipment snapshots, the cancelled-after-pickup marker and the delivery list indexes (§10, D-2, D-3, D-10, Phase 6). v1.11: every timestamp a list cursor sorts on is `TIMESTAMPTZ(3)` (§0, D-11). Changes from now on need explicit approval and a version bump. Decisions: §13.
+Status: **v1.12 APPROVED (2026-10-13).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). v1.5: public product listings sort on `published_at` (D-5); `id` tie-break on the stock-history index (D-6). v1.6: `idx_products_category_id` for category usage checks (D-7). v1.7: cart FK `ON DELETE` behaviour and why `cart_items.variant_id` has no index (§7, P4-Q11). v1.8: ordering/payments indexes, Kashier session columns, refund reason `amount_mismatch`, FK behaviour and unindexed FKs (§6, §8, §9, D-8, Phase 5). v1.9: `inventory_reservations.quantity` is what is still reserved, `>= 0`, and 0 exactly when `released` (§6, D-9). v1.10: shipment snapshots, the cancelled-after-pickup marker and the delivery list indexes (§10, D-2, D-3, D-10, Phase 6). v1.11: every timestamp a list cursor sorts on is `TIMESTAMPTZ(3)` (§0, D-11). v1.12: finance enum CHECKs, the non-negative balance guard, list indexes, FK behaviour and the duplicate-payout guard (§0, §11, D-12, Phase 7). Changes from now on need explicit approval and a version bump. Decisions: §13.
 Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §6. Business rules: `docs/spec/00-overview.md` v1.0.
 
 ---
@@ -10,7 +10,7 @@ Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §
 - **std columns** = `id UUID PRIMARY KEY DEFAULT uuidv7()`, `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`, `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`. Repositories set `updated_at = now()` on every update.
 - **append-only columns** = `id UUID PRIMARY KEY DEFAULT uuidv7()`, `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`. No `updated_at`; rows are never updated.
 - Every column is **NOT NULL** unless marked `null`. **No other DEFAULTs.**
-- **Cursor timestamps** are `TIMESTAMPTZ(3)`: every timestamp a list cursor sorts on (`created_at` of `users`, `sellers`, `products`, `inventory_movements`, `orders`, `seller_orders`, `payment_refunds`, `delivery_agents`, `shipments`, and `products.published_at`). The cursor carries a JS `Date` (milliseconds); with microseconds an ascending page repeats its last row and a descending one skips same-millisecond rows. A new list sorted on a timestamp makes that column `TIMESTAMPTZ(3)` too [v1.11, D-11].
+- **Cursor timestamps** are `TIMESTAMPTZ(3)`: every timestamp a list cursor sorts on (`created_at` of `users`, `sellers`, `products`, `inventory_movements`, `orders`, `seller_orders`, `payment_refunds`, `delivery_agents`, `shipments`, `ledger_entries`, `cod_remittances`, `payouts`, plus `finance_accounts.updated_at` and `products.published_at`). The cursor carries a JS `Date` (milliseconds); with microseconds an ascending page repeats its last row and a descending one skips same-millisecond rows. A new list sorted on a timestamp makes that column `TIMESTAMPTZ(3)` too [v1.11, D-11].
 - `money` = `NUMERIC(12,2)` with `CHECK (>= 0)`. `rate` = `NUMERIC(5,4)` with `CHECK (BETWEEN 0 AND 1)` (e.g. `0.1000` = 10%).
 - `phone` = `VARCHAR(16)`, E.164 (`+201xxxxxxxxx`), validated in the DTO.
 - `status`/enum columns = `VARCHAR(n)` + a named `CHECK (col IN (...))` matching the TS enum.
@@ -480,11 +480,12 @@ Same shape as the order histories. Index `(shipment_id, created_at)`.
 
 ## 11. finance
 
-Balances are stored per account, and every change is an immutable ledger entry written **in the same transaction** as the balance update (row-locked). This gives fast balance reads plus a full audit trail.
+Balances are stored per account, and every change is an immutable ledger entry written **in the same transaction** as the balance update (row-locked). This gives fast balance reads plus a full audit trail. Every FK is `ON DELETE RESTRICT` [v1.12, D-12].
 
 ### finance_accounts
-std columns · `account_type VARCHAR(30)` · `owner_id UUID null` · `balance NUMERIC(14,2)` (signed; `CHECK (balance >= 0)` for payable accounts, enforced per type in the app; see the note below).
-`uq_finance_accounts_account_type_owner_id (account_type, owner_id) NULLS NOT DISTINCT`.
+std columns (`updated_at TIMESTAMPTZ(3)`: cursor-sorted [v1.12, D-12]) · `account_type VARCHAR(30)` (CHECK) · `owner_id UUID null` · `balance NUMERIC(14,2)` (signed).
+- `owner_id` is polymorphic (a seller id or an agent id; null for the platform accounts), so it has **no FK**. Accounts are created only by a booking or an admin action that already resolved the owner [v1.12, D-12].
+- `chk_finance_accounts_balance_non_negative CHECK (account_type = 'platform_delivery_revenue' OR balance >= 0)`: the DB backs the app's check. Only delivery revenue may go negative (spec 12 §1.1, FI-1) [v1.12, D-12].
 
 Account types:
 - `seller_payable` (owner = seller): what the platform owes the seller.
@@ -492,19 +493,33 @@ Account types:
 - `agent_cod_cash` (owner = agent): cash the agent holds that belongs to the platform.
 - `platform_commission_revenue`, `platform_delivery_revenue` (owner = null).
 
-### ledger_entries (append-only)
-`account_id` fk → finance_accounts · `direction VARCHAR(6)` (`credit, debit`) · `amount money CHECK (> 0)` · `balance_after NUMERIC(14,2)` · `entry_type VARCHAR(40)` (`seller_net_earned, commission_earned, agent_fee_earned, platform_fee_earned, cod_cash_collected, cod_cash_remitted, seller_payout, agent_payout`) · `reference_type VARCHAR(30)` · `reference_id UUID` · `source_event_id UUID null`.
 Indexes:
-- `idx_ledger_entries_account_id_created_at_id (account_id, created_at DESC, id DESC)`: account statement, cursor-paginated.
+- `uq_finance_accounts_account_type_owner_id (account_type, owner_id) NULLS NOT DISTINCT`: one account per type and owner; resolves an owner's account and backs the lazy `INSERT … ON CONFLICT DO NOTHING`.
+- `idx_finance_accounts_balance_id (balance DESC, id DESC)`: `GET /admin/finance/accounts`, default sort `-balance` [v1.12, D-12].
+- `idx_finance_accounts_updated_at_id (updated_at DESC, id DESC)`: the same list sorted by `updatedAt` [v1.12, D-12].
+The table stays small (one row per seller, two per agent, two platform rows), so these indexes cost one small update per booking.
+
+### ledger_entries (append-only)
+append-only columns (`created_at TIMESTAMPTZ(3)` [v1.12, D-12]) · `account_id` fk → finance_accounts · `direction VARCHAR(6)` (`credit, debit`) · `amount money CHECK (> 0)` · `balance_after NUMERIC(14,2)` · `entry_type VARCHAR(40)` (`seller_net_earned, commission_earned, agent_fee_earned, platform_fee_earned, cod_cash_collected, cod_cash_remitted, seller_payout, agent_payout`) · `reference_type VARCHAR(30)` (`seller_order, order, cod_remittance, payout`) [v1.12, D-12] · `reference_id UUID` · `source_event_id UUID null` (null for admin actions, which have no event).
+Every enum column has its named CHECK [v1.12, D-12]. `reference_id` points at another module's row or at a finance row, depending on `reference_type`, so it has no FK.
+Indexes:
+- `idx_ledger_entries_account_id_created_at_id (account_id, created_at DESC, id DESC)`: account statement, cursor-paginated (also the FK's lookup path).
 - `idx_ledger_entries_reference_type_reference_id (reference_type, reference_id)`: "all money movements of seller order X".
 
 ### cod_remittances (append-only)
-`agent_id` fk → delivery_agents · `amount money CHECK (> 0)` · `confirmed_by_user_id` fk → users · `note VARCHAR(500) null`.
-Index: `idx_cod_remittances_agent_id_created_at (agent_id, created_at DESC)`.
+append-only columns (`created_at TIMESTAMPTZ(3)` [v1.12, D-12]) · `agent_id` fk → delivery_agents · `amount money CHECK (> 0)` · `confirmed_by_user_id` fk → users · `note VARCHAR(500) null`.
+Indexes:
+- `idx_cod_remittances_agent_id_created_at_id (agent_id, created_at DESC, id DESC)`: `GET /admin/finance/cod-remittances?agentId[eq]=…` and `GET /agent/finance/remittances`, with the keyset tie-break [v1.12, D-12].
+- `idx_cod_remittances_created_at_id (created_at DESC, id DESC)`: the unfiltered admin list [v1.12, D-12].
+- No index on `confirmed_by_user_id` (audit pointer, never a lookup path) [v1.12, D-12].
 
 ### payouts (append-only)
-`payee_type VARCHAR(20)` (`seller, agent`) · `payee_id UUID` · `amount money CHECK (> 0)` · `external_reference VARCHAR(200)` (bank / wallet transfer ref) · `recorded_by_user_id` fk → users · `paid_at TIMESTAMPTZ`.
-Index: `idx_payouts_payee_type_payee_id_created_at (payee_type, payee_id, created_at DESC)`.
+append-only columns (`created_at TIMESTAMPTZ(3)` [v1.12, D-12]) · `payee_type VARCHAR(20)` (`seller, agent`) · `payee_id UUID` (polymorphic, no FK) · `amount money CHECK (> 0)` · `external_reference VARCHAR(200)` (bank / wallet transfer ref) · `recorded_by_user_id` fk → users · `paid_at TIMESTAMPTZ`.
+Indexes:
+- `idx_payouts_payee_type_payee_id_created_at_id (payee_type, payee_id, created_at DESC, id DESC)`: `GET /admin/finance/payouts?payeeType[eq]=…&payeeId[eq]=…`, `GET /seller/finance/payouts`, with the keyset tie-break [v1.12, D-12].
+- `idx_payouts_created_at_id (created_at DESC, id DESC)`: the unfiltered admin list [v1.12, D-12].
+- `uq_payouts_payee_type_payee_id_external_reference`: the same transfer can't be recorded twice for one payee → `409 PAYOUT_ALREADY_RECORDED` (spec 12 FI-7) [v1.12, D-12].
+- No index on `recorded_by_user_id` (audit pointer) [v1.12, D-12].
 A payout amount must be ≤ the account balance. This is checked under `SELECT … FOR UPDATE` on the account row.
 
 ---
@@ -547,5 +562,6 @@ Index: `idx_processed_events_processed_at`: the cleanup job.
 | D-9 | `inventory_reservations.quantity >= 0` with `chk_inventory_reservations_released` (released ⇔ 0), so a full release can lower it to 0 as spec 07 UC-IN-2 says; the earlier `> 0` contradicted it (Phase 5 migrations, 2026-10-12) |
 | D-10 | Phase 6 (P6-Q3, P6-Q5, 2026-10-12): D-2 (shipment snapshots, no `agent_fee_share`) and D-3 (`idx_shipments_status_created_at_id`) applied; plus `idx_shipments_created_at_desc_id`, `idx_shipments_agent_id_created_at_id`, the retry index with `id`, `idx_delivery_agents_created_at_id`, `shipments.seller_order_cancelled_at`, every delivery FK `ON DELETE RESTRICT`, no index on `shipment_attempts.agent_id` |
 | D-11 | Every timestamp a list cursor sorts on is `TIMESTAMPTZ(3)` (§0): the cursor carries a JS `Date`, so microseconds repeated rows on ascending pages and skipped same-millisecond rows on descending ones. Migration `20261012140001` (Phase 6 implementation, 2026-10-12) |
+| D-12 | Phase 7 (P7-Q3, P7-Q8, 2026-10-13): finance cursor timestamps `TIMESTAMPTZ(3)`; `chk_finance_accounts_balance_non_negative` (every type but `platform_delivery_revenue`); CHECKs on every finance enum column, including the new `reference_type`; `idx_finance_accounts_balance_id`, `idx_finance_accounts_updated_at_id`; `id` tie-break on the remittance and payout payee indexes; `idx_cod_remittances_created_at_id`, `idx_payouts_created_at_id`; `uq_payouts_payee_type_payee_id_external_reference`; FKs `ON DELETE RESTRICT`, polymorphic `owner_id` / `payee_id` without FK, no index on the `*_by_user_id` audit pointers |
 
 No open schema questions.

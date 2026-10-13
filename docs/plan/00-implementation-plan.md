@@ -1,7 +1,7 @@
 # Implementation Plan (Release 1)
 
-Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09). P3 (§5) v1.0 APPROVED (2026-10-10). P4 (§6) v1.0 APPROVED (2026-10-11) and implemented (see the P4 status after §6.6). P5 (§7) v1.0 APPROVED (2026-10-12); PR (a) and PR (b) implemented (see the P5 status after §7.6). P6 (§8) v1.0 APPROVED (2026-10-12).** Later phases are detailed when their specs are approved.
-Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.8, `docs/design/02-database.md` v1.10, `docs/spec/01-api-conventions.md` v1.3, `docs/spec/02-events.md` v1.0. Module phases also need their module spec (03–13) approved.
+Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09). P3 (§5) v1.0 APPROVED (2026-10-10). P4 (§6) v1.0 APPROVED (2026-10-11) and implemented (see the P4 status after §6.6). P5 (§7) v1.0 APPROVED (2026-10-12); PR (a) and PR (b) implemented (see the P5 status after §7.6). P6 (§8) v1.0 APPROVED (2026-10-12) and implemented. P7 (§9) v1.0 APPROVED (2026-10-13).** Later phases are detailed when their specs are approved.
+Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.8, `docs/design/02-database.md` v1.12, `docs/spec/01-api-conventions.md` v1.3, `docs/spec/02-events.md` v1.1. Module phases also need their module spec (03–13) approved.
 
 ---
 
@@ -21,7 +21,7 @@ Each phase ends green in CI (lint, type-check, unit, integration, build, Docker 
 | P7 | finance | Spec 12 |
 | P8 | Hardening: load test against the targets, security review, Terraform (`infra/terraform`), staging deploy | SD-3d (region) |
 
-P0–P6 are detailed below (§2–§8). P7–P8 get their own section when their specs are approved.
+P0–P7 are detailed below (§2–§9). P8 gets its own section when SD-3d is settled.
 
 ---
 
@@ -579,3 +579,65 @@ Needs approved: spec `11-delivery.md` (v1.1 now), D-2, D-3 and D-10 (database v1
 - **E-8 / OR-15 / DE-15** (events v1.1, ordering v1.4, delivery v1.2): `seller_order.items_cancelled` carries `previousStatus`, so an item cancellation that overtakes `ready_for_pickup` is retried instead of acked; the COD amount only goes down (an older event is a `warn` no-op).
 - **DE-16** (delivery v1.2): `seller_order.returned` for a missing shipment is retried; returns and cancellations on a finished shipment are `warn` no-ops; the after-pickup cancellation locks the checkout's shipments (it releases the fee).
 - The out-of-order cases are tested on the consumer service directly (the broker's retry path is covered by `lib/events`), because the test retry delays (100 / 200 ms) are too short to hold an event back reliably.
+
+---
+
+## 9. Phase 7: finance
+
+Status: **v1.0 APPROVED (2026-10-13).** All P7-Q recommendations accepted; the branch `p7-finance` is stacked on `p6-delivery`.
+Needs approved: spec `12-finance.md` v1.0 (the P7-Q clarifications are FI-1…FI-11), D-12 (database v1.12), plus the P7-Q decisions below. It builds on P5 and P6: `seller_order.delivered` and `order.closed` are already published with every amount the ledger needs (events §3.4), and the public APIs finance calls exist (`sellers.getSellerByUserId` / `getSummaries`, `delivery.getAgentByUserId` / `getAgentSummaries`, DE-11). No other module changes.
+
+### 9.1 What P7 delivers, and what it can't yet
+- **finance:** accounts and the append-only ledger, the `finance.ledger` consumer (spec 12 §1.2), admin COD remittances and payouts (§1.3), admin balance / statement / reference views, and the seller and agent read-only endpoints (S-14).
+- **End to end:** with P5 and P6, a delivered seller order now ends in the ledger: seller earning, commission, agent fee share, COD cash held by the agent. The closed order books the platform's delivery revenue, and admins clear the cash and record payouts.
+- **Not in R1:** automated payouts, refunds in the ledger (E-6), notifications on `cod.remittance_confirmed` / `payout.recorded` (no consumer).
+- **No backfill:** nothing runs in production yet. The `finance.ledger` queue is declared when the worker first starts finance, so local orders delivered before P7 are never booked (local data only; the walkthrough uses new orders).
+
+### 9.2 Decisions to approve (P7-Q)
+
+| # | Topic | Options / recommendation |
+|---|---|---|
+| P7-Q1 | Approvals and branch | **Rec:** approve spec 12 → v1.0 with P7-Q2…Q12 written into it, and D-12 (database v1.12, P7-Q3). One branch `p7-finance` stacked on `p6-delivery`, one PR (smaller than P6: four tables, one consumer, read endpoints and two admin writes) |
+| P7-Q2 | `platform_delivery_revenue` can stay negative | Spec 12 §1.1 says "briefly". With the accepted S-3 gap (spec 11 §1), a COD checkout can deliver seller orders whose agents earn their share while the fee is never collected. Rows 3/4 then debit the account with no row 6 credit, for good. **Rec:** spec 12 §1.1 says "Yes": briefly when events arrive out of order, and permanently by the agent shares of a checkout whose COD fee was never collected (S-3). That is the platform's real loss (the agents earned their share), and it matches the `COD_DELIVERY_FEE_UNCOLLECTED` log line · or withhold the agent shares when the fee wasn't collected (changes ordering's fee share rule, spec 09 §3.8, and Q-27) |
+| P7-Q3 | **D-12**: schema gaps in `02-database.md` §11 | (a) every cursor-sorted timestamp is `TIMESTAMPTZ(3)` (D-11): `finance_accounts.updated_at`, `ledger_entries.created_at`, `cod_remittances.created_at`, `payouts.created_at`; (b) a DB guard for the non-negative accounts, `chk_finance_accounts_balance_non_negative CHECK (account_type = 'platform_delivery_revenue' OR balance >= 0)`, instead of "enforced in the app" only; (c) CHECKs for `account_type`, `direction`, `entry_type`, `payee_type`, and a new one for `reference_type` (`seller_order, order, cod_remittance, payout`), which §11 leaves unconstrained; (d) the admin account list sorts by `-balance` (default) or `updatedAt` with a cursor: `idx_finance_accounts_balance_id (balance DESC, id DESC)` and `idx_finance_accounts_updated_at_id (updated_at DESC, id DESC)` (CLAUDE.md §6.3; the table stays under ~10k rows, and the write cost is one small index per booking); (e) keyset tie-break `id` on `idx_cod_remittances_agent_id_created_at_id` and `idx_payouts_payee_type_payee_id_created_at_id` (as D-6); (f) the unfiltered admin lists sort every row by `-createdAt`: `idx_cod_remittances_created_at_id` and `idx_payouts_created_at_id (created_at DESC, id DESC)` (as D-8 a); (g) FKs `ON DELETE RESTRICT`: `ledger_entries.account_id`, `cod_remittances.agent_id` → `delivery_agents`, `confirmed_by_user_id` / `recorded_by_user_id` → `users`. `finance_accounts.owner_id` and `payouts.payee_id` are polymorphic (seller or agent) and have no FK (reason in a SQL comment); no index on the `*_by_user_id` FKs (audit pointers, as P6-Q3 f); (h) `ledger_entries.source_event_id` stays nullable (admin actions have no event); (i) P7-Q8's unique constraint. **Rec:** all of (a)–(i) |
+| P7-Q4 | Locking accounts in one booking | Spec 12 §1.1 locks the accounts of a booking "sorted by account id", but a lazily created account has no id until it is inserted. **Rec:** one multi-row `INSERT … ON CONFLICT (account_type, owner_id) DO NOTHING` for every account the booking touches, then one `SELECT … WHERE (account_type, owner_id) IN (…) ORDER BY id FOR UPDATE`, then the entries (one multi-row insert) and one balance update per account. Finance locks only its own rows and calls no module inside the transaction, so it adds no cycle to OR-3 / P6-Q6. The platform accounts are locked by every delivery, a hot row; accepted at the scale targets (~0.25 bookings/s at peak, short transactions) |
+| P7-Q5 | Booking details | **Rec:** (a) an entry is written only for an amount `> 0` (`amount CHECK (> 0)`), so a delivery with `agentFeeShare` `0.00` writes no rows 3/4; (b) rows 1–6 of one `seller_order.delivered` go in one transaction with its `processed_events` row, and a replay is a no-op (dedupe), never a second booking; (c) `order.closed` books row 7 only for Kashier with `deliveryFee > 0` (for COD the fee is booked when collected, row 6); any other `order.closed` is acked with nothing written; (d) amounts are taken from the payload as they are (ordering computed and rounded them, spec 09 §3.8) and parsed through `Money`; a payload that doesn't parse is a permanent failure (DLQ), like N-3 |
+| P7-Q6 | Remittance for an agent with no COD account | Spec 12 lists `AGENT_NOT_FOUND` (FK) and `REMITTANCE_EXCEEDS_BALANCE`, but the balance check runs first, and an unknown agent has no account. **Rec:** read `delivery.getAgentSummaries([agentId])` before the transaction: unknown → `422 AGENT_NOT_FOUND`; known but no account, or `amount > balance` → `422 REMITTANCE_EXCEEDS_BALANCE`. The FK stays as the backstop (mapped to the same code). Inactive agents can remit (they may still hold cash) |
+| P7-Q7 | Payout to an unknown payee | Spec 12 says "no account → `PAYOUT_EXCEEDS_BALANCE`", so a typo in `payeeId` reads as "not enough balance". **Rec:** resolve the payee first (`sellers.getSummaries` / `delivery.getAgentSummaries`): unknown → `422 PAYEE_NOT_FOUND` (new code); known without an account → `PAYOUT_EXCEEDS_BALANCE`. Any seller / agent status can be paid (a suspended seller or inactive agent is still owed money) · or keep the spec as written |
+| P7-Q8 | The same transfer recorded twice | `Idempotency-Key` stops a retried request, but not an admin recording the same bank transfer again from a new form. **Rec:** `uq_payouts_payee_type_payee_id_external_reference` → `409 PAYOUT_ALREADY_RECORDED` (D-12 i). Remittances have no external reference and stay unconstrained · or no constraint (the admin checks the payee's statement) |
+| P7-Q9 | Who may read the self-service endpoints | P6-Q4 blocks inactive agents from the delivery work endpoints, while seller order views accept any seller status. **Rec:** `/seller/finance/*` for a seller in **any** status and `/agent/finance/*` for an agent in **any** status. They are read-only views of the caller's own money, which a suspended seller or a deactivated agent still needs (balance owed, cash to hand in). No profile → `500` (P4-Q9 rule) |
+| P7-Q10 | `paidAt` and `GET /admin/finance/entries` | (a) `paidAt` must be `<= now` from the `Clock` (no tolerance); a future value → `422 PAID_AT_IN_FUTURE`. (b) The reference lookup isn't paginated: one reference has at most 6 entries (a delivery), and 1 for an order, remittance or payout; `referenceType` is an `enum` of the four reference types. **Rec:** both as written |
+| P7-Q11 | Process split and env | **Rec:** api: the finance endpoints (admin, seller, agent), including the two admin writes. Worker: the `finance.ledger` consumer only (it resolves no names, so it needs neither sellers nor delivery). No new env keys |
+| P7-Q12 | Read models | **Rec:** (a) `ownerName` in the admin account list and detail comes from one batched `sellers.getSummaries` and one `delivery.getAgentSummaries` per page (no N+1); `null` for platform accounts and for an owner the lookup no longer returns (logged `warn`); (b) `GET /seller/finance/balance` returns `"0.00"` and `updatedAt: null` when no account exists yet, and `GET /agent/finance/balances` returns `"0.00"` for a missing account; (c) seller / agent statements and lists only ever filter by the caller's own account or id, so another payee's rows are unreachable (no id in the path) |
+
+### 9.3 Scope
+
+| Area | Content |
+|---|---|
+| Docs | Spec 12 → v1.0 (P7-Q clarifications; new codes `PAYEE_NOT_FOUND`, `PAYOUT_ALREADY_RECORDED`); database → v1.12 (D-12); overview §8.2 D-12 added, O-1 finance part applied; CLAUDE.md §14 (P7-Q decisions) |
+| Migrations | `finance_accounts`, `ledger_entries`, `cod_remittances`, `payouts` (raw SQL, `02-database.md` §11 with D-12) |
+| `app/finance` | Module skeleton (`index.ts` header: owned tables, may call sellers + delivery); repositories (accounts, entries, remittances, payouts); `LedgerService` (ensure and lock accounts sorted, post entries, update balances; the only writer of balances); `LedgerBookingService` (consumer, spec 12 §1.2); `RemittanceService`, `PayoutService` (§1.3, outbox events); `FinanceViewService` (admin / seller / agent reads, name lookups); DTOs, list whitelists, errors (spec 12 §6), OpenAPI |
+| Composition roots | api: `registerFinanceModule` + `createFinanceRouter`; worker: `registerFinanceWorker` + the `finance.ledger` handlers |
+| Tooling | Postman "Admin: finance", "Seller: finance" and "Agent: finance" folders (payout / remittance requests with `Idempotency-Key`); `.env.example` unchanged |
+
+### 9.4 Tests
+- **Unit:** the booking rules per row and condition (COD with / without the fee, Kashier, share `0.00`, `order.closed` per payment method and fee), the overview §5 example (fee 60, 3 seller orders, 1 cancelled → agents 14 + 14, delivery revenue 32), balance arithmetic and `balance_after`, the non-negative rule per account type.
+- **Integration, per endpoint** (CLAUDE.md §12): happy path, validation, authz (other roles; a seller / agent sees only their own rows), not-found (`ACCOUNT_NOT_FOUND`). Plus:
+  - consumer: `seller_order.delivered` COD and Kashier → the expected entries and balances; replayed → booked once; `order.closed` before the deliveries → delivery revenue dips below 0, then ends at fee − shares; the S-3 case ends negative (P7-Q2); malformed payload → DLQ
+  - end to end with P5/P6 (agent endpoints, real consumers): COD checkout delivered → seller payable = net, commission booked, agent fee share and COD cash = items + fee; Kashier checkout delivered and closed → delivery revenue booked on close
+  - remittance: within balance → `201`, balance down, `cod.remittance_confirmed` in the outbox; over balance / no account → `REMITTANCE_EXCEEDS_BALANCE`; unknown agent → `AGENT_NOT_FOUND`; missing key `400`; replay → same body
+  - payout: seller and agent; over balance; unknown payee → `PAYEE_NOT_FOUND`; same external reference twice → `409 PAYOUT_ALREADY_RECORDED`; `paidAt` in the future → `422`
+  - concurrency: two parallel payouts that together exceed the balance → one `201`, one `422`; a payout in parallel with a delivery booking on the same account → both applied, final balance exact, `balance_after` chain consistent
+  - lists: filters, sorts and cursors on accounts (money sort on `balance`), statements and the two admin lists; the reference lookup
+
+### 9.5 Order of work (one commit each)
+1. Docs: approvals applied (spec 12, database, overview, CLAUDE.md).
+2. Migrations, with schema tests.
+3. Ledger core and the `finance.ledger` consumer (worker wiring), tests (incl. end to end with P6).
+4. Admin: accounts, statements, reference lookup, remittances, payouts, tests.
+5. Seller and agent self-service endpoints, tests.
+6. Postman, plan status.
+
+### 9.6 Done when
+- CI green; every P7 endpoint is in the OpenAPI document with its DTOs.
+- Locally (docker-compose): a COD order delivered by the demo agent (the P6 walkthrough flow) → the seller sees their net in `/seller/finance/balance`, the agent sees the fee share and the cash in `/agent/finance/balances`, and admin sees commission and delivery revenue → admin confirms a remittance of the full cash (agent COD cash `0.00`) and records a payout to the seller (seller balance `0.00`); a second payout over the balance → `422`. A Kashier order paid through `dev:kashier-webhook`, delivered and closed → delivery revenue booked on close. No `error` / `fatal` or 5xx line.
