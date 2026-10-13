@@ -10,7 +10,7 @@ import { MIGRATIONS } from '../../src/migrations';
 export const TEST_IMAGES = {
   postgres: 'postgres:18',
   redis: 'redis:7.2-alpine',
-  rabbitmq: 'rabbitmq:3.13-management',
+  rabbitmq: 'rabbitmq:4.2-management',
 } as const;
 
 export const TEMPLATE_DB = 'nile_template';
