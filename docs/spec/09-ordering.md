@@ -1,6 +1,6 @@
 # Spec 09 — ordering
 
-Status: **v1.4 APPROVED (2026-10-12).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: `amountCancelled` when the last units are cancelled (OR-12); what the order totals count (OR-13). v1.2: shipment events that overtake their predecessor are retried (OR-14). v1.3: the expiry job abandons nothing and waits on a payment in flight (OR-6 as amended by spec 10 PA-11, PA-13). v1.4: `seller_order.items_cancelled` carries `previousStatus` (OR-15). Changes from now on need explicit approval and a version bump.
+Status: **v1.5 APPROVED (2026-10-13).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: `amountCancelled` when the last units are cancelled (OR-12); what the order totals count (OR-13). v1.2: shipment events that overtake their predecessor are retried (OR-14). v1.3: the expiry job abandons nothing and waits on a payment in flight (OR-6 as amended by spec 10 PA-11, PA-13). v1.4: `seller_order.items_cancelled` carries `previousStatus` (OR-15). v1.5: one open Kashier payment per customer (OR-16, Phase 8 security review F-2). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -49,7 +49,7 @@ Pre-transaction (reads):
 2. `delivery.getAgentFeeShareRate()`.
 
 One transaction:
-3. `cart.getLinesForCheckout(customerId, trx)` (locks the cart). Empty → `CART_EMPTY`.
+3. `cart.getLinesForCheckout(customerId, trx)` (locks the cart). Empty → `CART_EMPTY`. Kashier only: the customer already has a `pending_payment` order → `ORDER_PAYMENT_PENDING` (details: that order's id) (OR-16).
 4. `catalog.getVariantsForPurchase(ids, trx)`, `sellers.getCheckoutSnapshots(sellerIds, trx)`. Any variant not purchasable or seller not `approved` → `CART_HAS_ISSUES` (details: the variant ids).
 5. Money (`Money`, overview §5): `line_total = price × qty`; per seller `subtotal`, `commission = round(subtotal × rate)`, `seller_net`; `items_total`; `delivery_fee`; `total`. `total ≠ expectedTotal` → `ORDER_TOTAL_CHANGED` (details: the current total) (S-8).
 6. Insert `orders` (`order_number` from the sequence), `seller_orders` (pickup snapshot, commission snapshot), `order_items` (snapshots, `cancelled_quantity = 0`) as multi-row inserts, and the history rows.
@@ -134,7 +134,7 @@ interface CheckoutResultDto {
   kashier: { checkoutUrl: string | null; expiresAt: string } | null;   // null for COD
 }
 ```
-Errors: `CART_EMPTY` 422, `CART_HAS_ISSUES` 409, `ADDRESS_NOT_FOUND` 422, `GOVERNORATE_NOT_DELIVERABLE` 422, `ORDER_TOTAL_CHANGED` 409, `INSUFFICIENT_STOCK` 409, idempotency errors.
+Errors: `CART_EMPTY` 422, `CART_HAS_ISSUES` 409, `ADDRESS_NOT_FOUND` 422, `GOVERNORATE_NOT_DELIVERABLE` 422, `ORDER_TOTAL_CHANGED` 409, `ORDER_PAYMENT_PENDING` 409, `INSUFFICIENT_STOCK` 409, idempotency errors.
 
 #### 4.1.2 `POST /orders/:orderId/payment/kashier-session`   rate: checkout
 Creates (or returns the still-valid) Kashier session through `payments`; one session per payment (OR-7). `200 { checkoutUrl: string; expiresAt: string }`.
@@ -220,6 +220,7 @@ Consumed: `payment.paid`, `payment.failed` (`ordering.payment-updates`); `shipme
 | `CART_HAS_ISSUES` | 409 | A line is unavailable / seller not approved (details per variant) |
 | `GOVERNORATE_NOT_DELIVERABLE` | 422 | The address governorate has no fee (Q-26) |
 | `ORDER_TOTAL_CHANGED` | 409 | `expectedTotal` ≠ the computed total |
+| `ORDER_PAYMENT_PENDING` | 409 | Kashier checkout while the customer has a `pending_payment` order (OR-16) |
 | `ORDER_NOT_FOUND` | 404 | Missing or another customer's |
 | `ORDER_NOT_AWAITING_PAYMENT` | 409 | Kashier session for an order that isn't `pending_payment`, or isn't Kashier |
 | `SELLER_ORDER_NOT_FOUND` | 404 | Missing, another seller's, or not part of that order |
@@ -255,3 +256,4 @@ Consumed: `payment.paid`, `payment.failed` (`ordering.payment-updates`); `shipme
 | OR-13 | A cancelled or returned seller order keeps its own `subtotal` (the record of what was cancelled). The order's `items_total` sums only the seller orders that are neither `cancelled` nor `returned_to_seller`, recomputed under the order lock after every change, and `total = items_total + delivery_fee`, so the order total is always what the customer still owes (it matches the COD payment amount). The close step then zeroes the fee if nothing was delivered (Phase 5 step 6, v1.1) | §1.1, §3.2–§3.9 |
 | OR-14 | The `ordering.shipment-updates` consumer tells a **stale** event from an **early** one. Each shipment event has the statuses it applies from and the statuses that mean an earlier event of the same shipment isn't applied yet (`picked_up` early while placed / accepted; `out_for_delivery` while ready_for_pickup / out_for_delivery; `attempt_failed` and `delivered` while ready_for_pickup / picked_up / delivery_failed). An early event throws and is retried by the broker with backoff (DLQ + `error` log if it never applies); a stale one (seller order cancelled, or already past it) is a no-op with a `warn` log `SHIPMENT_EVENT_IGNORED` (Phase 5 step 7, v1.2) | §3.6, architecture §3.2 |
 | OR-15 | `seller_order.items_cancelled` carries `previousStatus`: the seller order's status when the items were cancelled (unchanged by it), so delivery can tell a cancellation made while `ready_for_pickup` (shipment exists or is coming) from an earlier one (spec 02 v1.1 E-8, spec 11 DE-15; Phase 6 step 6, v1.4) | UC-OR-4 |
+| OR-16 | At most one open payment per customer: a Kashier checkout while the customer has an order in `pending_payment` answers `409 ORDER_PAYMENT_PENDING` with that order's id in `details[0].value`, until it is paid, expires or fails. Checked after the cart lock, which serialises a customer's checkouts. COD checkouts are not affected (they never wait for payment). Stops one customer holding stock with repeated unpaid Kashier checkouts (Phase 8 security review F-2, v1.5) | §3.1 |

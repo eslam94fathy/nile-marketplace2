@@ -1,6 +1,6 @@
 # System Design 01 — Architecture (Release 1)
 
-Status: **v1.9 APPROVED (2026-10-13).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). v1.4: catalog cache keys and TTLs (§8), "newest" sorts on `published_at` (§9) (Phase 3). v1.5: typo search matches words (§9, P3-O1). v1.6: edge `cart → customers` (§2, A-4, Phase 4). v1.7: checkout inserts the order rows before reserving stock (§7.1, A-3); one lock order across ordering, inventory and payments (§3.1); order jobs handle one order per transaction (§6); Kashier sessions and webhook signature (§7.2) (Phase 5). v1.8: the expiry job abandons no session (§6, spec 10 PA-11). v1.9: region `eu-central-1` (SD-3d), sizes, RabbitMQ 4.2, TLS to the data stores, secrets, network and egress IPs (K-7), deploy pipeline, alerting (§12.1, §13, Phase 8). Changes from now on need explicit approval and a version bump.
+Status: **v1.10 APPROVED (2026-10-13).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). v1.4: catalog cache keys and TTLs (§8), "newest" sorts on `published_at` (§9) (Phase 3). v1.5: typo search matches words (§9, P3-O1). v1.6: edge `cart → customers` (§2, A-4, Phase 4). v1.7: checkout inserts the order rows before reserving stock (§7.1, A-3); one lock order across ordering, inventory and payments (§3.1); order jobs handle one order per transaction (§6); Kashier sessions and webhook signature (§7.2) (Phase 5). v1.8: the expiry job abandons no session (§6, spec 10 PA-11). v1.9: region `eu-central-1` (SD-3d), sizes, RabbitMQ 4.2, TLS to the data stores, secrets, network and egress IPs (K-7), deploy pipeline, alerting (§12.1, §13, Phase 8). v1.10: suspended-user deny entry in Redis (§8, §10, spec 03 I-11). Changes from now on need explicit approval and a version bump.
 Inputs: `CLAUDE.md` (engineering rules), `docs/spec/00-overview.md` v1.0 (business). Schema: `02-database.md`.
 
 ---
@@ -180,6 +180,7 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 | Governorates + fees | Cache-aside, TTL `GOVERNORATES_CACHE_TTL_SECONDS` [v1.3] | Deleted on fee change (after commit) |
 | Product detail (public) | Cache-aside, key `v1:catalog:product:<id>` (static part only: no visibility, prices or stock, which are read fresh), TTL `PRODUCT_DETAIL_CACHE_TTL_SECONDS` [v1.4] | Deleted after commit on product/variant change. Stock is **not** taken from cache at checkout |
 | Product lists / search | **Not cached in R1.** Indexed queries are enough at the target load | n/a |
+| Suspended users (not a cache: a deny list) | Key `auth:suspended:<userId>`, written after a suspension commits, TTL = access-token lifetime [v1.10, spec 03 I-11] | Deleted on reactivation; expires once every token issued before the suspension has expired |
 
 - Cache keys use constants with a version prefix (`v1:catalog:category-tree`).
 - Redis failures degrade to reading from the DB, logged at `warn`. They never fail the request.
@@ -199,6 +200,7 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 ## 10. Security specifics
 
 - JWT: **RS256** [SD-11]. The private key (PEM, from a secret env var) exists only in `api`; the public key is used for verification. Tokens carry a `kid` header so keys can be rotated (the old public key stays valid until its tokens expire). The access token TTL comes from env. Refresh tokens are opaque random 256-bit strings, stored as SHA-256 hashes, rotated on every use, and reuse revokes the family.
+- A suspension blocks the user's access tokens at once: `authenticate` checks the Redis deny entry (§8) and answers `401`; it fails open if Redis is down, since the tokens expire within their TTL anyway [v1.10, spec 03 I-11].
 - Role guards + **ownership checks in services**:
   - a seller only touches products/orders where `seller_id` = theirs;
   - an agent only touches shipments where `agent_id` = theirs;

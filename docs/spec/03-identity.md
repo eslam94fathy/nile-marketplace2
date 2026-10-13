@@ -1,6 +1,6 @@
 # Spec 03 — identity
 
-Status: **v1.3 APPROVED (2026-10-09).** Approved by the user. v1.1: Phase 1 implementation clarifications (§7.1, I-1…I-9). v1.2: §4.11 index reference (DB-Q6). v1.3: `hashPassword` + `createPendingUser(passwordHash)` (§2, I-10, P2-Q2). Changes from now on need explicit approval and a version bump.
+Status: **v1.4 APPROVED (2026-10-13).** Approved by the user. v1.1: Phase 1 implementation clarifications (§7.1, I-1…I-9). v1.2: §4.11 index reference (DB-Q6). v1.3: `hashPassword` + `createPendingUser(passwordHash)` (§2, I-10, P2-Q2). v1.4: a suspension also blocks the access tokens already issued (I-11, Phase 8 security review F-4). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -176,7 +176,7 @@ Params: `userId` `uuid`. `204`. Errors: `USER_NOT_FOUND` 404, `USER_NOT_INVITED`
 Params: `userId` `uuid`. Body (suspend only): `reason` `str(3..500)`.
 `200 { id, email, role, status }`. Errors: `USER_NOT_FOUND` 404, `USER_INVALID_STATUS_TRANSITION` 409, `CANNOT_SUSPEND_SELF` 409.
 Only customers and admins (S-2): a seller or delivery agent → `USER_INVALID_STATUS_TRANSITION` 409 (agents go through deactivation, S-10; sellers through seller suspension, spec 05, which doesn't block login) (I-5).
-Transitions: suspend `active → suspended` (revokes every session), reactivate `suspended → active`. Invited or unverified accounts can't be suspended (I-6).
+Transitions: suspend `active → suspended` (revokes every session and blocks the access tokens already issued, I-11), reactivate `suspended → active`. Invited or unverified accounts can't be suspended (I-6).
 `reason` has no column: it is written to the `USER_SUSPENDED` audit log line with `userId` and `actorUserId` (I-9).
 
 ## 5. Events
@@ -225,3 +225,4 @@ Choices made where the text above was silent, accepted by the user when Phase 1 
 | I-8 | Change-password rate limit: IP + the account email looked up from the access token's user id; it shares the login counter of that email. If the lookup fails, the limiter fails closed (`503`) like the other strict-auth limits | §4.9b |
 | I-9 | The suspend `reason` is kept only in the `USER_SUSPENDED` audit log line (no column) | §4.13 |
 | I-10 | Self-registration hashes the password through `hashPassword` before the profile module opens its transaction; `createPendingUser` takes the hash (v1.3, Phase 2, P2-Q2) | §2 |
+| I-11 | Every suspension (`setUserStatus` and the admin endpoint) also writes the Redis deny entry `auth:suspended:<userId>` after the commit, with a TTL of `ACCESS_TOKEN_TTL_MINUTES`; reactivation deletes it. `authenticate` checks it on every authenticated request and answers `401 UNAUTHENTICATED`, so a suspended user's access tokens stop working at once instead of at expiry. Redis down: the check fails open with a `warn` (Redis is not a source of truth, architecture §8); a failed write is logged and the tokens still expire (Phase 8 security review F-4, v1.4) | §2, §4.13 |
