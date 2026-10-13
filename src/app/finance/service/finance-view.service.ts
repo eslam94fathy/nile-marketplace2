@@ -6,7 +6,7 @@ import { type IDeliveryAgentDirectory } from '../../delivery';
 import { type ISellerDirectory } from '../../sellers';
 import { AccountType, type ReferenceType } from '../enums';
 import { accountNotFound } from '../errors';
-import { type FinanceAccount, type LedgerEntry } from '../model/ledger.model';
+import { type AccountKey, type FinanceAccount, type LedgerEntry } from '../model/ledger.model';
 import { type FinanceAccountRepository } from '../repository/finance-account.repository';
 import { type LedgerEntryRepository } from '../repository/ledger-entry.repository';
 
@@ -56,6 +56,18 @@ export class FinanceViewService {
   /** Every entry of one reference (at most 6, so not paginated: spec 12 FI-9). */
   entriesByReference(referenceType: ReferenceType, referenceId: string): Promise<LedgerEntry[]> {
     return this.entries.findByReference(referenceType, referenceId);
+  }
+
+  /** The caller's own accounts that exist yet (seller / agent balances, FI-11). */
+  ownAccounts(keys: readonly AccountKey[]): Promise<FinanceAccount[]> {
+    return this.accounts.findByKeys(keys);
+  }
+
+  /** The caller's own statement; an account that doesn't exist yet has no entries (FI-11). */
+  async ownEntries(key: AccountKey, query: ParsedListQuery): Promise<Page<LedgerEntry>> {
+    const [account] = await this.accounts.findByKeys([key]);
+    const rows = account ? await this.entries.listForAccount(account.id, query) : [];
+    return toPage(rows, query, (entry) => entry.createdAt);
   }
 
   private async existing(accountId: string): Promise<FinanceAccount> {

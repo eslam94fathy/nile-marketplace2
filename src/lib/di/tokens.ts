@@ -170,6 +170,8 @@ export const TOKENS = {
   CodRemittanceService: Symbol.for('CodRemittanceService'),
   PayoutService: Symbol.for('PayoutService'),
   FinanceAdminController: Symbol.for('FinanceAdminController'),
+  SellerFinanceController: Symbol.for('SellerFinanceController'),
+  AgentFinanceController: Symbol.for('AgentFinanceController'),
 
   // notifications module
   NotificationLogRepository: Symbol.for('NotificationLogRepository'),

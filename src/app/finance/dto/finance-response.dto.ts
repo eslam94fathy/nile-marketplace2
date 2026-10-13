@@ -165,3 +165,26 @@ export function toPayoutDto(payout: Payout): PayoutDto {
     createdAt: payout.createdAt.toISOString(),
   };
 }
+
+/** `GET /seller/finance/balance` (spec 12 §4.2). */
+export class SellerBalanceDto {
+  /** What the platform owes me; "0.00" before my first delivery. */
+  @IsMoney()
+  balance!: string;
+
+  /** null before my first delivery. */
+  @IsOptional()
+  @IsDateString()
+  updatedAt!: string | null;
+}
+
+/** `GET /agent/finance/balances` (spec 12 §4.3). */
+export class AgentBalancesDto {
+  /** Fee shares the platform owes me. */
+  @IsMoney()
+  feePayable!: string;
+
+  /** Platform cash I hold and still have to hand in. */
+  @IsMoney()
+  codCashHeld!: string;
+}

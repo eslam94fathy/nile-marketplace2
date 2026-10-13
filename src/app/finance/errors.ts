@@ -1,4 +1,4 @@
-import { AppError, type PgErrorMapper } from '../../lib/error';
+import { AppError, internalError, type PgErrorMapper } from '../../lib/error';
 import { HTTP_STATUS } from '../../lib/http';
 
 /** finance error codes (docs/spec/12-finance.md §6). */
@@ -50,6 +50,10 @@ export const paidAtInFuture = () =>
 /** Referenced from a request body (422). */
 export const agentReferenceNotFound = () =>
   new AppError(C.AGENT_NOT_FOUND, 'Delivery agent not found', S.UNPROCESSABLE_ENTITY);
+
+/** Registration creates the user and the profile together, so this is a bug (P4-Q9, FI-8). */
+export const profileMissing = (role: string, userId: string) =>
+  internalError(new Error(`${role}-role user ${userId} has no ${role} profile`));
 
 /** Races behind the friendly checks still map to the same codes (CLAUDE.md §6.4). */
 export function registerFinanceConstraintErrors(mapper: PgErrorMapper): void {

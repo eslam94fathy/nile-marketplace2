@@ -29,6 +29,20 @@ export const FINANCE_ADMIN_PATHS = {
   PAYOUTS: '/admin/finance/payouts',
 } as const;
 
+/** The seller's own paths (spec 12 §4.2). */
+export const SELLER_FINANCE_PATHS = {
+  BALANCE: '/seller/finance/balance',
+  ENTRIES: '/seller/finance/entries',
+  PAYOUTS: '/seller/finance/payouts',
+} as const;
+
+/** The agent's own paths (spec 12 §4.3). */
+export const AGENT_FINANCE_PATHS = {
+  BALANCES: '/agent/finance/balances',
+  ENTRIES: '/agent/finance/entries',
+  REMITTANCES: '/agent/finance/remittances',
+} as const;
+
 /** Lengths of the admin request fields, matching the columns (database §11). */
 export const REMITTANCE_NOTE_MAX_LENGTH = 500;
 export const EXTERNAL_REFERENCE_MAX_LENGTH = 200;

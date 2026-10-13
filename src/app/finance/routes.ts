@@ -3,20 +3,28 @@ import { type JwtVerifier, UserRole } from '../../lib/auth';
 import { type ParameterObject } from 'openapi3-ts/oas31';
 import { type OpenApiRegistry } from '../../lib/http';
 import { authenticate, requireRole } from '../../lib/middleware';
-import { FINANCE_ADMIN_PATHS as A } from './constants';
+import { AGENT_FINANCE_PATHS as AG, FINANCE_ADMIN_PATHS as A, SELLER_FINANCE_PATHS as S } from './constants';
 import { type FinanceAdminController } from './controller/finance-admin.controller';
+import {
+  type AgentFinanceController,
+  type SellerFinanceController,
+} from './controller/finance-self.controller';
 import { CreatePayoutDto, CreateRemittanceDto } from './dto/finance-request.dto';
 import {
   AccountDto,
+  AgentBalancesDto,
   LedgerEntryDto,
   PayoutDto,
   ReferenceEntryDto,
   RemittanceDto,
+  SellerBalanceDto,
 } from './dto/finance-response.dto';
 import { AccountType, EntryType, PayeeType, ReferenceType } from './enums';
 
 export interface FinanceRouteDeps {
   admin: FinanceAdminController;
+  seller: SellerFinanceController;
+  agent: AgentFinanceController;
   /** Required `Idempotency-Key` (remittances and payouts: spec 12 §1.3). */
   idempotency: RequestHandler;
   jwtVerifier: JwtVerifier;
@@ -25,7 +33,7 @@ export interface FinanceRouteDeps {
   basePath: string;
 }
 
-/** Spec 12 §4.1. General rate limit (global). */
+/** Spec 12 §4.1–§4.3. General rate limit (global). */
 export function financeRoutes(deps: FinanceRouteDeps): Router {
   const { admin } = deps;
   const router = Router();
@@ -40,6 +48,17 @@ export function financeRoutes(deps: FinanceRouteDeps): Router {
   router.post(A.PAYOUTS, ...adminOnly, deps.idempotency, admin.createPayout);
   router.get(A.PAYOUTS, ...adminOnly, admin.listPayouts);
   documentAdminRoutes(deps.docs, deps.basePath);
+
+  // Read-only views of the caller's own money, in any profile status (FI-8).
+  const sellerOnly = [authenticate(deps.jwtVerifier), requireRole(UserRole.SELLER)];
+  router.get(S.BALANCE, ...sellerOnly, deps.seller.balance);
+  router.get(S.ENTRIES, ...sellerOnly, deps.seller.entries);
+  router.get(S.PAYOUTS, ...sellerOnly, deps.seller.listPayouts);
+  const agentOnly = [authenticate(deps.jwtVerifier), requireRole(UserRole.DELIVERY_AGENT)];
+  router.get(AG.BALANCES, ...agentOnly, deps.agent.balances);
+  router.get(AG.ENTRIES, ...agentOnly, deps.agent.entries);
+  router.get(AG.REMITTANCES, ...agentOnly, deps.agent.listRemittances);
+  documentSelfRoutes(deps.docs, deps.basePath);
 
   return router;
 }
@@ -58,8 +77,8 @@ const newestFirst: ParameterObject = {
   schema: { enum: ['createdAt', '-createdAt'] },
 };
 
-/** Shared with the seller / agent statements (step 5). */
-export const ENTRY_LIST_QUERY: ParameterObject[] = [
+/** Statements: admin, seller and agent. */
+const ENTRY_LIST_QUERY: ParameterObject[] = [
   ...page,
   newestFirst,
   { name: 'entryType[eq]', in: 'query', schema: { enum: Object.values(EntryType) } },
@@ -174,6 +193,73 @@ function documentAdminRoutes(docs: OpenApiRegistry, basePath: string): void {
     ],
     responses: {
       200: { description: 'One page of payouts', body: PayoutDto, isArray: true, paginated: true },
+    },
+  });
+}
+
+/** OpenAPI for spec 12 §4.2 (seller) and §4.3 (agent). */
+function documentSelfRoutes(docs: OpenApiRegistry, basePath: string): void {
+  const own = [...page, newestFirst, ...createdAtRange];
+  const seller = { tags: ['seller: finance'], auth: true } as const;
+  docs.add({
+    ...seller,
+    method: 'get',
+    path: `${basePath}${S.BALANCE}`,
+    summary: 'What the platform owes me; 0.00 and no updatedAt before my first delivery',
+    responses: { 200: { description: 'My balance', body: SellerBalanceDto } },
+  });
+  docs.add({
+    ...seller,
+    method: 'get',
+    path: `${basePath}${S.ENTRIES}`,
+    summary:
+      'My statement. Filters: entryType[eq|in], createdAt[gte|lte]. Sort: createdAt (default -createdAt)',
+    query: ENTRY_LIST_QUERY,
+    responses: {
+      200: { description: 'One page of my entries', body: LedgerEntryDto, isArray: true, paginated: true },
+    },
+  });
+  docs.add({
+    ...seller,
+    method: 'get',
+    path: `${basePath}${S.PAYOUTS}`,
+    summary: 'Payouts made to me. Filters: createdAt[gte|lte]. Sort: createdAt (default -createdAt)',
+    query: own,
+    responses: {
+      200: { description: 'One page of my payouts', body: PayoutDto, isArray: true, paginated: true },
+    },
+  });
+
+  const agent = { tags: ['agent'], auth: true } as const;
+  docs.add({
+    ...agent,
+    method: 'get',
+    path: `${basePath}${AG.BALANCES}`,
+    summary: 'Fee shares the platform owes me, and the COD cash I still have to hand in',
+    responses: { 200: { description: 'My balances', body: AgentBalancesDto } },
+  });
+  docs.add({
+    ...agent,
+    method: 'get',
+    path: `${basePath}${AG.ENTRIES}`,
+    summary:
+      'My statement of one account (account=fee or cod, required). Filters: entryType[eq|in], createdAt[gte|lte]. Sort: createdAt (default -createdAt) (INVALID_QUERY 400)',
+    query: [
+      { name: 'account', in: 'query', required: true, schema: { enum: ['fee', 'cod'] } },
+      ...ENTRY_LIST_QUERY,
+    ],
+    responses: {
+      200: { description: 'One page of my entries', body: LedgerEntryDto, isArray: true, paginated: true },
+    },
+  });
+  docs.add({
+    ...agent,
+    method: 'get',
+    path: `${basePath}${AG.REMITTANCES}`,
+    summary: 'COD cash I handed in. Filters: createdAt[gte|lte]. Sort: createdAt (default -createdAt)',
+    query: own,
+    responses: {
+      200: { description: 'One page of my remittances', body: RemittanceDto, isArray: true, paginated: true },
     },
   });
 }

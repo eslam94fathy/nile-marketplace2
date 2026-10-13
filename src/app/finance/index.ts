@@ -18,6 +18,7 @@ import { requireIdempotency } from '../../lib/middleware';
 import { type ICache } from '../../pkg/cache';
 import { LEDGER_QUEUE } from './constants';
 import { FinanceAdminController } from './controller/finance-admin.controller';
+import { AgentFinanceController, SellerFinanceController } from './controller/finance-self.controller';
 import { registerFinanceConstraintErrors } from './errors';
 import { CodRemittanceRepository } from './repository/cod-remittance.repository';
 import { FinanceAccountRepository } from './repository/finance-account.repository';
@@ -70,12 +71,16 @@ export function registerFinanceModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.CodRemittanceService, CodRemittanceService);
   container.registerSingleton(TOKENS.PayoutService, PayoutService);
   container.registerSingleton(TOKENS.FinanceAdminController, FinanceAdminController);
+  container.registerSingleton(TOKENS.SellerFinanceController, SellerFinanceController);
+  container.registerSingleton(TOKENS.AgentFinanceController, AgentFinanceController);
 }
 
 /** The module's HTTP routes, mounted by the composition root at `basePath` (`/api/v1`). */
 export function createFinanceRouter(container: DependencyContainer, basePath: string): Router {
   return financeRoutes({
     admin: container.resolve<FinanceAdminController>(TOKENS.FinanceAdminController),
+    seller: container.resolve<SellerFinanceController>(TOKENS.SellerFinanceController),
+    agent: container.resolve<AgentFinanceController>(TOKENS.AgentFinanceController),
     idempotency: requireIdempotency(
       container.resolve<ICache>(TOKENS.Cache),
       container.resolve<ApiEnv>(TOKENS.Env),

@@ -128,3 +128,19 @@ export const PAYOUT_LIST_SPEC: ListSpec = {
   },
   defaultSort: '-createdAt',
 };
+
+/** The seller's / agent's own payouts and remittances: always scoped to the caller (FI-11). */
+export const OWN_SETTLEMENT_LIST_SPEC: ListSpec = {
+  fields: { createdAt: createdAtSort },
+  defaultSort: '-createdAt',
+};
+
+/** `GET /agent/finance/entries?account=fee|cod` (spec 12 §4.3). */
+export const AgentStatementAccount = {
+  FEE: 'fee',
+  COD: 'cod',
+} as const;
+export type AgentStatementAccount = (typeof AgentStatementAccount)[keyof typeof AgentStatementAccount];
+
+/** The agent's statement: the admin whitelist plus the required `account` parameter. */
+export const AGENT_ENTRY_LIST_SPEC: ListSpec = { ...ENTRY_LIST_SPEC, extraParams: ['account'] };
