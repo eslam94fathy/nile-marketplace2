@@ -1,6 +1,6 @@
 # System Design 01 — Architecture (Release 1)
 
-Status: **v1.8 APPROVED (2026-10-12).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). v1.4: catalog cache keys and TTLs (§8), "newest" sorts on `published_at` (§9) (Phase 3). v1.5: typo search matches words (§9, P3-O1). v1.6: edge `cart → customers` (§2, A-4, Phase 4). v1.7: checkout inserts the order rows before reserving stock (§7.1, A-3); one lock order across ordering, inventory and payments (§3.1); order jobs handle one order per transaction (§6); Kashier sessions and webhook signature (§7.2) (Phase 5). v1.8: the expiry job abandons no session (§6, spec 10 PA-11). SD-3d (region, §12.2) is still open and only blocks Terraform provisioning. Changes from now on need explicit approval and a version bump.
+Status: **v1.9 APPROVED (2026-10-13).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). v1.4: catalog cache keys and TTLs (§8), "newest" sorts on `published_at` (§9) (Phase 3). v1.5: typo search matches words (§9, P3-O1). v1.6: edge `cart → customers` (§2, A-4, Phase 4). v1.7: checkout inserts the order rows before reserving stock (§7.1, A-3); one lock order across ordering, inventory and payments (§3.1); order jobs handle one order per transaction (§6); Kashier sessions and webhook signature (§7.2) (Phase 5). v1.8: the expiry job abandons no session (§6, spec 10 PA-11). v1.9: region `eu-central-1` (SD-3d), sizes, RabbitMQ 4.2, TLS to the data stores, secrets, network and egress IPs (K-7), deploy pipeline, alerting (§12.1, §13, Phase 8). Changes from now on need explicit approval and a version bump.
 Inputs: `CLAUDE.md` (engineering rules), `docs/spec/00-overview.md` v1.0 (business). Schema: `02-database.md`.
 
 ---
@@ -240,10 +240,12 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 | SD-9 | Checkout = one DB transaction across modules |
 | SD-10 | Human-readable `order_number` (`NM-` + sequence) |
 | SD-11 | JWT signed with **RS256** (key pair) |
+| SD-3d | Region **`eu-central-1`** (Frankfurt): no residency requirement, ~50–60 ms from Cairo, every service we need. RDS PostgreSQL 18 and Amazon MQ RabbitMQ 4.2 are checked there with the AWS CLI before the first apply; `me-central-1` (UAE) is the fallback if a check fails (P8-Q2, 2026-10-13) |
+| SD-12 | Phase 8 (P8-Q3…Q15, 2026-10-13): staging and prod written over the same Terraform modules in Phase 8 (no AWS needed), **staging applied in Phase 9** (staging deploy), prod at a separate go-live; two AWS accounts in one Organization; the sizes, broker version, TLS, secrets, network, pipeline and alerting in §13 |
 
 ### 12.2 Open
 
-- **SD-3d Region:** no residency requirement, so the region is chosen for latency to Egypt + service availability. Proposed: **`eu-central-1` (Frankfurt)**: ~50–60 ms from Cairo, and new RDS Postgres majors and Amazon MQ land there early. Alternative: `me-central-1` (UAE). Awaiting confirmation.
+None. SD-3d was settled in Phase 8 (§12.1).
 
 ## 13. Hosting [CONFIRMED SD-3: AWS]
 
@@ -258,7 +260,7 @@ Principle: **managed stateful services, containers for our code.** Our team then
 | RabbitMQ | Managed broker (single node in R1) | Managed, smallest | `rabbitmq:management` container |
 | TLS / LB | Managed load balancer with a managed certificate. TLS terminates there, and traffic to the api stays in the private network | Same | none (plain HTTP on localhost) |
 | Secrets | Provider secret manager → injected as env vars (JWT keys, DB/Redis/RabbitMQ creds, Kashier & Mailjet keys) | Same, separate secrets | `.env` (never committed) |
-| Images | GitHub Container Registry or the provider's registry, tagged with the git SHA | Same image as prod | Built locally |
+| Images | **ECR**, tagged with the git SHA [v1.9, P8-Q12] | Same image as prod | Built locally |
 | Deploy | GitHub Actions: CI green on `main` → build & push image → run migrations as a one-off task → rolling deploy to staging → **manual approval** → prod | | |
 | Networking | DB / Redis / RabbitMQ in private subnets only, reachable only from the api/worker security group | Same | |
 
@@ -283,4 +285,22 @@ Other options considered:
 
 Migrations run **before** the new version takes traffic, as a separate one-off container (`npm run migrate`). Because of the expand/contract rule (CLAUDE.md §6.1), the old version keeps working during a rolling deploy.
 
-Region: see SD-3d.
+Region: **`eu-central-1`** (SD-3d).
+
+### 13.1 Phase 8 specifics [v1.9, P8-Q3…Q15]
+
+| Concern | Decision |
+|---|---|
+| Environments and accounts | Two AWS accounts in one Organization (staging, prod). `envs/staging` and `envs/prod` use the same modules, written in Phase 8; staging is applied in Phase 9, prod at a separate go-live step with its own approval |
+| Terraform | Exact versions of Terraform (≥ 1.10) and the AWS provider pinned, lock file committed. S3 state per env with **native S3 locking** (`use_lockfile`; DynamoDB locking is deprecated), bucket versioned, encrypted, public access blocked. A `bootstrap` root applied once by hand: state bucket, GitHub OIDC provider, a read-only `plan` role and a `deploy` role scoped to this repository. Our own modules (`network`, `alb`, `ecs-service`, `rds`, `elasticache`, `amazon-mq`, `secrets`, `ecr`, `alarms`); no community modules |
+| Network | One VPC per env over 2 AZs. Public subnets hold only the ALB and the NAT gateway(s); ECS tasks, RDS, ElastiCache and Amazon MQ sit in private subnets, reachable only from the app security group. Staging 1 NAT gateway, prod 1 per AZ; S3 gateway endpoint. Outbound traffic leaves through the NAT Elastic IPs, which are **allow-listed in Kashier** (K-7, spec 10 PA-17) |
+| Postgres | RDS PostgreSQL 18, gp3, encrypted, `rds.force_ssl = 1`, automated backups with PITR (staging 7 days, prod 14), deletion protection in prod. Staging `db.t4g.small` single-AZ; prod `db.m7g.large` Multi-AZ instance |
+| Redis | ElastiCache **Redis OSS 7.x** (the engine local dev and tests use), TLS in transit and an AUTH token. Staging `cache.t4g.micro`; prod `cache.t4g.small` |
+| RabbitMQ | Amazon MQ **RabbitMQ 4.2**, single instance, `mq.m7g.medium` in both envs. Our durable classic queues with TTL dead-letter retries work unchanged on 4.2 (only classic mirroring is gone). Local docker-compose and the Testcontainers image move to `rabbitmq:4.2-management` so tests run on the same major |
+| Containers | ECS Fargate, **x86_64** (bcrypt is native; CI builds amd64). api 0.5 vCPU / 1 GB: staging 1 task, prod 2–4 with autoscaling on 60 % CPU. worker 0.5 vCPU / 1 GB: staging 1, prod 2. A monthly cost estimate (AWS Pricing Calculator) is approved before the first apply |
+| TLS to the data stores | The image ships the Amazon RDS global CA bundle (downloaded at build, pinned by SHA-256) and sets `NODE_EXTRA_CA_CERTS`, because Node does not trust that CA and the app verifies the server certificate when `DB_SSL` is on. Redis through `rediss://` with the AUTH token; RabbitMQ through `amqps://` |
+| Secrets and config | One Secrets Manager secret per sensitive key per env, injected as task env vars. Terraform generates the DB password (`random_password`, so it lives only in the encrypted, access-restricted state) and writes `DATABASE_URL`, `REDIS_URL` and `RABBITMQ_URL`. The JWT key pair and the Kashier and Mailjet keys are put in by hand and never pass through Terraform. Every non-secret env key is set explicitly in the task definition from Terraform variables (no defaults, CLAUDE.md §4). One DB role owns the schema and serves the app in R1 |
+| Edge | `api.staging.<domain>` (and `api.<domain>` at go-live) with an ACM certificate (DNS validation) on the ALB, HTTP → HTTPS redirect, `TRUST_PROXY_HOPS = 1`. `API_DOCS_ENABLED` true in staging, false in prod. `INVITE_URL_BASE` and `KASHIER_REDIRECT_URL` may be placeholder https URLs in staging; the mobile team's app links are required for prod |
+| Pipelines | `deploy.yml` (switched on in Phase 9 by the repository variable `DEPLOY_ENABLED`): CI green on `main` → build the image once, push to **ECR** tagged with the git SHA → `node dist/migrate.js latest` as a one-off ECS task (a non-zero exit stops the deploy) → update the api and worker services → wait until both are stable. A `production` job behind a GitHub environment with required reviewers, used at go-live. `infra.yml`: on PRs touching `infra/`, `terraform fmt -check`, `validate` and a Trivy config scan per root, plus `plan` per env with the read-only role from Phase 9; `apply` only by hand. All AWS access through GitHub OIDC; no long-lived keys. Staging admins are created with a documented `aws ecs run-task` of `seed-admin.js` |
+| Alerting | CloudWatch log groups with retention (staging 14 days, prod 90). Metric filters and alarms → an SNS email topic: `level` error / fatal, events sent to a DLQ, ALB 5xx, unhealthy targets, RDS CPU and free storage. Still no metrics endpoint or error-tracking service (SD-4) |
+| Scanning | Trivy in CI for the image (OS and npm packages) and the Terraform code, failing on high / critical; a one-off gitleaks scan of the git history (P8-Q14) |

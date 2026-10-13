@@ -1,7 +1,7 @@
 # Implementation Plan (Release 1)
 
-Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09). P3 (§5) v1.0 APPROVED (2026-10-10). P4 (§6) v1.0 APPROVED (2026-10-11) and implemented (see the P4 status after §6.6). P5 (§7) v1.0 APPROVED (2026-10-12); PR (a) and PR (b) implemented (see the P5 status after §7.6). P6 (§8) v1.0 APPROVED (2026-10-12) and implemented. P7 (§9) v1.0 APPROVED (2026-10-13).** Later phases are detailed when their specs are approved.
-Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.8, `docs/design/02-database.md` v1.12, `docs/spec/01-api-conventions.md` v1.3, `docs/spec/02-events.md` v1.1. Module phases also need their module spec (03–13) approved.
+Status: **P0 v1.0 APPROVED (2026-10-08) and implemented. P1 (§3) v1.0 APPROVED (2026-10-08) and implemented (see the P1 status after §3.6). P2 (§4) v1.0 APPROVED (2026-10-09). P3 (§5) v1.0 APPROVED (2026-10-10). P4 (§6) v1.0 APPROVED (2026-10-11) and implemented (see the P4 status after §6.6). P5 (§7) v1.0 APPROVED (2026-10-12); PR (a) and PR (b) implemented (see the P5 status after §7.6). P6 (§8) v1.0 APPROVED (2026-10-12) and implemented. P7 (§9) v1.0 APPROVED (2026-10-13) and implemented. P8 (§10) v1.0 APPROVED (2026-10-13).** Later phases are detailed when their specs are approved.
+Inputs: `CLAUDE.md`, `docs/design/01-architecture.md` v1.9, `docs/design/02-database.md` v1.12, `docs/spec/01-api-conventions.md` v1.3, `docs/spec/02-events.md` v1.1. Module phases also need their module spec (03–13) approved.
 
 ---
 
@@ -19,9 +19,10 @@ Each phase ends green in CI (lint, type-check, unit, integration, build, Docker 
 | P5 | ordering + payments (checkout, Kashier, expiry and timeout jobs) | Specs 09, 10 · A-3 |
 | P6 | delivery: agents, shipments, assignment | Spec 11 · D-2, D-3 |
 | P7 | finance | Spec 12 |
-| P8 | Hardening: load test against the targets, security review, Terraform (`infra/terraform`), staging deploy | SD-3d (region) |
+| P8 | Hardening: security review, AWS readiness, Terraform and pipelines written (no AWS), local load-test baseline, runbooks | This plan (§10) |
+| P9 | Staging deploy: cost estimate, first apply, secrets, deploy pipeline on, checks on staging (Kashier, Mailjet, walkthroughs), load test at prod sizes against the targets, restore drill | AWS accounts, a domain, staging keys (user) |
 
-P0–P7 are detailed below (§2–§9). P8 gets its own section when SD-3d is settled.
+P0–P8 are detailed below (§2–§10). P9 gets its own section when the user is ready to deploy staging.
 
 ---
 
@@ -646,3 +647,84 @@ Needs approved: spec `12-finance.md` v1.0 (the P7-Q clarifications are FI-1…FI
 - `paidAt` must carry a time and a time-zone offset (`2026-01-15` or a local `2026-01-15T10:00:00` → `400`), so a payout date is never read in the server's local time. Spec 12 only says "ISO date-time".
 - An admin remittance or payout for a payee without an account runs in the transaction that creates the account at `0.00`; the "exceeds balance" error rolls it back, so no empty account is left behind (spec 12 FI-5, FI-6).
 - A booking that would take a non-negative account below 0 raises an internal `InsufficientBalanceError` from the ledger service; the admin actions map it to their 422 codes, and from an event it can only be a bug, so the event is retried.
+
+---
+
+## 10. Phase 8: hardening and infrastructure as code
+
+Status: **v1.0 APPROVED (2026-10-13), revised the same day: no AWS in P8.** All P8-Q recommendations accepted (architecture v1.9 §13.1, CLAUDE.md §14.1k), then the user moved the staging deploy out of P8: P8 delivers everything that needs no AWS account, and the load test runs locally as a baseline. Applying staging, the checks that need it and the load test at production sizes are **P9** (§1). Until the stack reaches `main` (P8-Q1), `p8-hardening` is stacked on `p7-finance` and moves onto `main` after the merge.
+Needs approved: the P8-Q decisions below and architecture v1.9. No business behaviour changes, so no module spec changes; a defect found by the security review or the load test is fixed with a regression test, and a fix that changes behaviour goes through its spec first. P8 needs no AWS account, domain or production keys.
+
+### 10.1 What P8 delivers, and what moves to P9
+- **Security review** of the whole API and its dependencies, findings fixed.
+- **Runtime readiness for AWS:** the RDS CA bundle in the image, broker version parity (RabbitMQ 4.2), image and IaC scanning in CI.
+- **Terraform** in `infra/terraform/` (bootstrap root, shared modules, `envs/staging`, `envs/prod`), written and checked offline: `fmt`, `validate`, Trivy. No `plan` or `apply` (they need AWS credentials).
+- **Pipelines** written: `infra.yml` runs the offline checks on PRs; `deploy.yml` is in the repository but switched off until P9.
+- **Load test baseline:** k6 against the local docker-compose stack seeded toward the design horizon. It finds slow queries and tunes the P3-O1 search threshold and the P2 seller-list `like`; it is **not** proof of the production targets.
+- **Runbooks** written for P9 and go-live: deploy and rollback, seed admin, secret and JWT key rotation, restore, scaling.
+- **Moves to P9 (staging deploy):** the cost estimate and the first apply, secrets put in, the first deploy, the Kashier test payment, Mailjet, the walkthroughs on staging, the load test at production sizes against the targets, the restore drill and the rollback check (old P8-Q13 target part, P8-Q16).
+- **Not in P8 or P9:** production goes live only after a separate go-live decision (P8-Q3); Release 2 features; a metrics or error-tracking service (SD-4).
+
+### 10.2 Before P8 starts: CI and `main`
+Facts (2026-10-13): GitHub shows **no workflow run ever** on `eslam94fathy/nile-marketplace2` and no pull request; `main` is still the P0 plan commit, so it has no `ci.yml`; the phase branches `p0-foundation` … `p7-finance` are stacked. Every phase's "done when" still waits for a green CI run. P8-Q1 settles how the stack reaches `main`.
+
+### 10.3 Decisions (P8-Q, approved 2026-10-13)
+
+| # | Topic | Decision |
+|---|---|---|
+| P8-Q1 | Getting the stack onto `main` with green CI | (a) check that Actions is enabled for the repository; (b) open one PR `p7-finance → main` (it contains P0–P7), get CI green on it and fix what CI finds on `p7-finance`; (c) merge it, so `main` = the whole stack; the per-phase PRs are then closed as merged-through. P8 branches start from `main` |
+| P8-Q2 | **SD-3d** region | `eu-central-1` (Frankfurt). RDS PostgreSQL 18 and Amazon MQ RabbitMQ 4.2 are checked in that region with the AWS CLI before the first apply (P9); `me-central-1` (UAE) if a check fails |
+| P8-Q3 | Environments | `envs/staging` and `envs/prod` written over the same modules in P8; **staging applied in P9**; production at a separate go-live step with its own approval |
+| P8-Q4 | AWS accounts | Two accounts in one AWS Organization (staging, prod), created by the user before P9, with a bootstrap admin identity for the first apply |
+| P8-Q5 | Terraform setup | Exact Terraform (≥ 1.10) and AWS provider versions pinned, lock file committed; S3 state per env with native S3 locking (`use_lockfile`), bucket versioned, encrypted, public access blocked; a `bootstrap` root (state bucket, GitHub OIDC provider, read-only `plan` role, `deploy` role scoped to the repo) applied once by hand in P9; our own small modules, no community modules |
+| P8-Q6 | Network and **K-7** | One VPC per env over 2 AZs; public subnets hold only the ALB and NAT gateway(s); ECS tasks and data stores in private subnets reachable only from the app security group; staging 1 NAT, prod 1 per AZ; S3 gateway endpoint. **K-7 = allow-list the NAT Elastic IPs in Kashier** (done in P9) |
+| P8-Q7 | Managed services and sizes | As architecture §13.1: RDS PG 18 (`db.t4g.small` / `db.m7g.large` Multi-AZ), Redis OSS 7.x (`cache.t4g.micro` / `cache.t4g.small`), Amazon MQ RabbitMQ 4.2 `mq.m7g.medium`, Fargate x86_64 (api 1 / 2–4 autoscaled, worker 1 / 2). The cost estimate is approved before the first apply (P9) |
+| P8-Q8 | RabbitMQ version | 4.2 in AWS; docker-compose and the Testcontainers image move to `rabbitmq:4.2-management` |
+| P8-Q9 | TLS to the data stores | The image ships the Amazon RDS global CA bundle (downloaded at build, pinned by SHA-256) and sets `NODE_EXTRA_CA_CERTS`; Redis through `rediss://` with the AUTH token; RabbitMQ through `amqps://`. Verified by the first staging deploy (P9) |
+| P8-Q10 | Secrets and configuration | One Secrets Manager secret per sensitive key per env; Terraform generates the DB password and writes the connection URLs; JWT, Kashier and Mailjet keys put in by hand (P9); every non-secret env key explicit in the task definition |
+| P8-Q11 | Domain, certificate and app links | `api.staging.<domain>` with an ACM certificate on the ALB, HTTP → HTTPS, `TRUST_PROXY_HOPS = 1`; docs on in staging only. The domain is a Terraform variable, so P8 needs none; the user provides it before P9. App links may be placeholders in staging, required for prod |
+| P8-Q12 | Pipelines | `deploy.yml` (ECR image by git SHA → migrate task → rolling update of api and worker; a `production` job behind required reviewers) is **written in P8 and runs only when the repository variable `DEPLOY_ENABLED` is `true`**, set in P9; until then it also offers `workflow_dispatch` that fails fast without the variable. `infra.yml` on PRs touching `infra/`: `terraform fmt -check`, `init -backend=false`, `validate` and Trivy config scan per root, from a pinned `hashicorp/terraform` image; the `plan` job is added in P9 with the read-only role. All AWS access through OIDC |
+| P8-Q13 | Load test | **k6** scripts in `test/load/` from the pinned `grafana/k6` image. **P8: a local baseline** on the docker-compose stack, seeded by `scripts/perf-seed.js` toward the design horizon (2k sellers, 100k products / 300k variants, 100k customers, 200k orders with ledger rows), with the CLAUDE.md §15 traffic mix. It reports p50 / p95 / p99 and errors per scenario, finds slow queries (`EXPLAIN` of the worst), and tunes `SEARCH_WORD_SIMILARITY_THRESHOLD` and the seller-list `like`. Report: `docs/perf/p8-load-baseline.md`, labelled as a laptop baseline. **P9:** the same scripts against staging at prod sizes, pass = 300 req/s for 10 min, p95 < 300 ms reads / < 500 ms checkout, < 0.1 % errors |
+| P8-Q14 | Security review | Full review against the OWASP API Top 10 and CLAUDE.md §10, findings in `docs/security/p8-review.md`, each high or critical fixed with a regression test; Trivy in CI (image + Terraform), failing on high / critical; a one-off gitleaks scan of the git history |
+| P8-Q15 | Alerting | Written as the Terraform `alarms` module (log retention 14 / 90 days; alarms on error / fatal logs, DLQ events, ALB 5xx, unhealthy targets, RDS CPU and storage → SNS email); live from P9. SD-4 stays |
+| P8-Q16 | Checks on a running environment | **Move to P9:** the Kashier test payment, Mailjet from staging, the walkthroughs on staging, the PITR restore drill, the rollback check |
+| P8-Q17 | Branches and PRs | `p8-hardening` in three PRs: (a) security review fixes + runtime readiness; (b) Terraform + pipelines (offline); (c) load-test baseline, tuning, runbooks |
+
+### 10.4 Scope
+
+| Area | Content |
+|---|---|
+| Docs | Architecture v1.9 (P9 timing noted); CLAUDE.md §14.1k; `docs/security/p8-review.md`; `docs/perf/p8-load-baseline.md`; `docs/runbooks/` (deploy and rollback, seed admin, secrets and JWT key rotation, restore, scaling), written for P9 |
+| App / image | RDS CA bundle + `NODE_EXTRA_CA_CERTS`; RabbitMQ 4.2 in docker-compose and Testcontainers; security fixes; tuning from the baseline |
+| CI | Trivy (image + IaC) in `ci.yml`; gitleaks (once, documented); `infra.yml` (offline checks); `deploy.yml` (gated off) |
+| `infra/terraform` | `bootstrap/`, `modules/{network,alb,ecs-service,rds,elasticache,amazon-mq,secrets,ecr,alarms}`, `envs/staging`, `envs/prod`; every root passes `fmt`, `validate` and Trivy |
+| Load test | `scripts/perf-seed.js`, `test/load/*.js` (k6), a compose override for the run |
+
+### 10.5 Verification
+- **CI:** green on every P8 PR, including Trivy (no high / critical) and the offline Terraform checks for every root.
+- **Security:** each fixed finding has a regression test; the report lists every finding with its status.
+- **Runtime readiness:** the full integration suite passes on RabbitMQ 4.2; the image contains the CA bundle with its pinned checksum, and a local run with `NODE_EXTRA_CA_CERTS` set still connects.
+- **Terraform:** `validate` passes for `bootstrap`, `envs/staging` and `envs/prod`; a reviewer can read every resource in the modules (no community modules).
+- **Load baseline:** the report gives the numbers per scenario, the slow queries found and what changed; re-run after each fix.
+
+### 10.6 Order of work (one commit each, after P8-Q1)
+PR (a):
+1. Docs: approvals applied (architecture v1.9, CLAUDE.md, this section).
+2. Security review: report, then fixes with regression tests (as many commits as findings need).
+3. Runtime readiness: RDS CA bundle, RabbitMQ 4.2 parity, Trivy in CI, gitleaks run.
+
+PR (b):
+4. Terraform bootstrap root and modules (network, alb, ecs-service, rds, elasticache, amazon-mq, secrets, ecr, alarms).
+5. `envs/staging`, `envs/prod`, `infra.yml` (offline), `deploy.yml` (gated off).
+
+PR (c):
+6. Perf seed and k6 scenarios; the local baseline; tuning; report.
+7. Runbooks, plan status.
+
+### 10.7 Done when
+- CI green on `main` with every P8 PR merged.
+- The security review has no open high or critical finding.
+- The app, image and tests are ready for AWS (CA bundle, RabbitMQ 4.2); Trivy and the offline Terraform checks run in CI.
+- `infra/terraform` describes staging and prod completely and passes every offline check; `deploy.yml` is ready to switch on.
+- The local load baseline is written up, with its tuning applied.
+- P9 can start as soon as the user provides the AWS accounts, a domain, the staging keys and approves the cost estimate.
