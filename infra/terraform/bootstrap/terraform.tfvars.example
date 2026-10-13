@@ -1,0 +1,4 @@
+# Copy to <env>.tfvars (not committed) and run with -var-file. See infra/terraform/README.md.
+environment       = "staging"
+region            = "eu-central-1"
+github_repository = "eslam94fathy/nile-marketplace2"
