@@ -6,6 +6,11 @@ export const KASHIER_SIGNATURE_HEADER = 'x-kashier-signature';
 
 const SUCCESS_STATUS = 'SUCCESS';
 const HEX_SHA256 = /^[0-9a-f]{64}$/i;
+/**
+ * Every field we act on must be among the signed ones (spec 10 PA-21): `signatureKeys` comes from the
+ * request itself, so an unsigned field could have been changed in transit.
+ */
+const REQUIRED_SIGNED_FIELDS = ['merchantOrderId', 'status', 'amount', 'currency', 'transactionId'] as const;
 /** Never stored: card data, hashes and signatures (spec 10 UC-PA-1 step 2). */
 const UNSTORABLE_KEY = /card|cvv|^pan$|hash|signature|token|secret|apikey/i;
 
@@ -63,6 +68,7 @@ export function readKashierWebhook(
   if (!Array.isArray(keys) || keys.length === 0 || !keys.every((k): k is string => typeof k === 'string')) {
     return null;
   }
+  if (!REQUIRED_SIGNED_FIELDS.every((field) => keys.includes(field))) return null;
 
   const expected = Buffer.from(signKashierWebhook(data, keys, apiKey), 'hex');
   const given = Buffer.from(signatureHeader, 'hex');

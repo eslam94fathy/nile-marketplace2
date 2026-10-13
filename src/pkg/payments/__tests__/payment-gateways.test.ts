@@ -88,6 +88,18 @@ describe('Kashier webhook signature (spec 10 PA-1)', () => {
     const { body, signature } = make();
     expect(readKashierWebhook(body, signature, API_KEY)).toBeNull();
   });
+
+  // PA-21: a field we act on that is not signed could have been changed (security review F-1).
+  it.each(['merchantOrderId', 'status', 'amount', 'currency', 'transactionId'])(
+    'rejects a correctly signed webhook whose signatureKeys leave out %s',
+    (field) => {
+      const signatureKeys = ['transactionId', 'amount', 'currency', 'merchantOrderId', 'status'].filter(
+        (key) => key !== field,
+      );
+      const { body, signature } = webhook({ signatureKeys });
+      expect(readKashierWebhook(body, signature, API_KEY)).toBeNull();
+    },
+  );
 });
 
 describe('toProviderStatus (spec 10 PA-13)', () => {
