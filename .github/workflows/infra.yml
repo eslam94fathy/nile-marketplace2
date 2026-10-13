@@ -1,0 +1,55 @@
+# Terraform checks (architecture §13.1, P8-Q12): offline in Phase 8, no AWS credentials. `plan` per
+# environment with the read-only role is added in P9; `apply` is never run by CI (by hand only).
+name: Infra
+
+on:
+  pull_request:
+    paths: ['infra/**', '.github/workflows/infra.yml']
+  push:
+    branches: [main]
+    paths: ['infra/**', '.github/workflows/infra.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terraform:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # The pinned image (infra/terraform/.terraform-version); no third-party action. One provider
+      # cache for every root, so the AWS provider is downloaded once per run.
+      TF: >-
+        docker run --rm -v ${{ github.workspace }}/infra/terraform:/tf -w /tf
+        -v /tmp/tf-plugins:/plugins -e TF_PLUGIN_CACHE_DIR=/plugins hashicorp/terraform:1.16.4
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Format
+        run: $TF fmt -check -recursive -diff
+
+      # Validating the roots validates every module they use (envs/* use all of them).
+      - name: Validate the roots
+        run: |
+          mkdir -p /tmp/tf-plugins
+          for dir in bootstrap envs/staging envs/prod; do
+            echo "::group::$dir"
+            $TF -chdir="$dir" init -backend=false -input=false
+            $TF -chdir="$dir" validate
+            echo "::endgroup::"
+          done
+
+      # A whole environment planned against mocked providers: settings check, per-process env.
+      - name: Terraform tests
+        run: |
+          $TF -chdir=modules/environment init -backend=false -input=false
+          $TF -chdir=modules/environment test
+
+      - name: Configuration scan (Trivy)
+        run: >-
+          docker run --rm -v "${{ github.workspace }}/infra:/src" aquasec/trivy:0.74.0
+          config --quiet --exit-code 1 --severity HIGH,CRITICAL --skip-dirs "**/.terraform" /src

@@ -1,6 +1,6 @@
 # Spec 01 — API Conventions (shared by all module specs)
 
-Status: **v1.0 APPROVED (2026-10-08).** Approved by the user. Changes from now on need explicit approval and a version bump.
+Status: **v1.3 APPROVED (2026-10-10).** Approved by the user. v1.1: passwords are never trimmed; `opt` implemented by a shared `Optional()` decorator (Phase 1). v1.2: `GOVERNORATE_NOT_FOUND` is a common code (§6, P2-Q7). v1.3: an unmapped restrict violation (`23001`) is a `CONFLICT` too (§6, P3-Q11). Changes from now on need explicit approval and a version bump.
 Inputs: `CLAUDE.md` §7–§10, `docs/design/01-architecture.md` v1.0, `docs/design/02-database.md` v1.0.
 
 Module specs: `03-identity.md` · `04-customers.md` · `05-sellers.md` · `06-catalog.md` · `07-inventory.md` · `08-cart.md` · `09-ordering.md` · `10-payments.md` · `11-delivery.md` · `12-finance.md` · `13-notifications.md`. Events: `02-events.md`.
@@ -32,8 +32,8 @@ Request DTOs are tables. Every row becomes a class-validator decorator set. The 
 | `int(a..b)` | `@IsInt() @Min(a) @Max(b)` on a JSON number (no string coercion, D2) |
 | `bool` | `@IsBoolean()` on a JSON boolean |
 | `enum(X)` | `@IsIn(Object.values(X))` |
-| `opt` | `@IsOptional()`. `null` is **rejected** unless the row says `nullable` |
-| `password` | `str(8..)` + custom `@MaxBytes(72)` (bcrypt limit, UTF-8 bytes). No composition rules (NIST 800-63B) |
+| `opt` | `@Optional()` (`lib/http`): the field may be absent, but `null` is still validated and so **rejected** unless the row says `nullable`. Plain `@IsOptional()` is not used, because it lets `null` through |
+| `password` | `@IsString() @MinLength(8)` + custom `@MaxBytes(72)` (bcrypt limit, UTF-8 bytes). **Never trimmed**: passwords are compared byte for byte (unlike `str`). No composition rules (NIST 800-63B) |
 | `otp` | `^\d{6}$` |
 | `slug` | `^[a-z0-9]+(?:-[a-z0-9]+)*$`, length as stated |
 
@@ -95,16 +95,17 @@ All paths are under `/api/v1`.
 | `FORBIDDEN` | 403 | Wrong role, or the profile behind the token is missing |
 | `ROUTE_NOT_FOUND` | 404 | No route matches |
 | `PAYLOAD_TOO_LARGE` | 413 | Body over the env limit |
-| `CONFLICT` | 409 | Unmapped unique violation (`23505`) |
+| `CONFLICT` | 409 | Unmapped unique violation (`23505`) or restrict violation (`23001`, a delete blocked by a reference) [v1.3] |
 | `IDEMPOTENCY_REQUEST_IN_PROGRESS` | 409 | Same key is still being processed |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | Same key, different request |
 | `REFERENCE_NOT_FOUND` | 422 | Unmapped FK violation (`23503`) |
+| `GOVERNORATE_NOT_FOUND` | 404 / 422 | Governorate in the path (404) or referenced from a body (422). Shared because delivery owns `governorates` while customers and sellers reference it through FKs and may not import delivery [v1.2, P2-Q7] |
 | `CONSTRAINT_VIOLATION` | 422 | Unmapped check violation (`23514`) |
 | `RATE_LIMITED` | 429 | Over the limit. `Retry-After` header set |
 | `INTERNAL_ERROR` | 500 | Anything unexpected. Generic message |
 | `SERVICE_UNAVAILABLE` | 503 | A fail-closed dependency (Redis on auth/checkout) is down |
 
-Module error codes are **globally unique** and listed in each module spec. Repositories map known constraint names to module codes (e.g. `uq_users_email` → `EMAIL_ALREADY_REGISTERED`). Anything unmapped falls back to the generic codes above.
+Module error codes are **globally unique** and listed in each module spec. A code raised by several modules lives here instead (e.g. `GOVERNORATE_NOT_FOUND`); each module still maps its own constraint names to it. Repositories map known constraint names to module codes (e.g. `uq_users_email` → `EMAIL_ALREADY_REGISTERED`). Anything unmapped falls back to the generic codes above.
 
 ## 7. Rate-limit classes (values from env)
 

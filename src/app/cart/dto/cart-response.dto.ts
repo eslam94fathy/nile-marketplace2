@@ -1,0 +1,129 @@
+import { Type } from 'class-transformer';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
+import { IsMoney } from '../../../lib/http';
+import { CartItemIssue } from '../enums';
+import { type CartLineView, type CartView } from '../model/cart-view.model';
+
+/* Response DTOs for spec 08 §4 (decorators describe the OpenAPI shape only). */
+
+export class CartItemAttributeDto {
+  @IsString()
+  attribute!: string;
+
+  @IsString()
+  value!: string;
+}
+
+export class CartItemDto {
+  @IsUUID()
+  id!: string;
+
+  @IsUUID()
+  variantId!: string;
+
+  @IsUUID()
+  productId!: string;
+
+  @IsString()
+  productName!: string;
+
+  @IsString()
+  productSlug!: string;
+
+  @IsString()
+  sku!: string;
+
+  @ValidateNested({ each: true })
+  @Type(() => CartItemAttributeDto)
+  attributes!: CartItemAttributeDto[];
+
+  /** The current price (EGP). */
+  @IsMoney()
+  unitPrice!: string;
+
+  @IsInt()
+  quantity!: number;
+
+  /** unitPrice × quantity, also on lines with an issue. */
+  @IsMoney()
+  lineTotal!: string;
+
+  // Nullable: present in every item, null when the line is OK.
+  @IsOptional()
+  @IsIn(Object.values(CartItemIssue))
+  issue!: CartItemIssue | null;
+
+  /** 0 when UNAVAILABLE, else min(sellable, 99). */
+  @IsInt()
+  availableQuantity!: number;
+}
+
+export class CartSellerDto {
+  @IsUUID()
+  sellerId!: string;
+
+  @IsString()
+  businessName!: string;
+
+  @ValidateNested({ each: true })
+  @Type(() => CartItemDto)
+  items!: CartItemDto[];
+
+  /** Lines without an issue only. */
+  @IsMoney()
+  subtotal!: string;
+}
+
+export class CartDto {
+  // Nullable: null until the first add.
+  @IsOptional()
+  @IsUUID()
+  id!: string | null;
+
+  @ValidateNested({ each: true })
+  @Type(() => CartSellerDto)
+  sellers!: CartSellerDto[];
+
+  /** Σ subtotals; the delivery fee isn't known until an address is chosen. */
+  @IsMoney()
+  itemsTotal!: string;
+
+  /** Σ quantities of lines without an issue. */
+  @IsInt()
+  itemCount!: number;
+
+  @IsBoolean()
+  hasIssues!: boolean;
+}
+
+function toCartItemDto(line: CartLineView): CartItemDto {
+  return {
+    id: line.id,
+    variantId: line.variantId,
+    productId: line.productId,
+    productName: line.productName,
+    productSlug: line.productSlug,
+    sku: line.sku,
+    attributes: line.attributes.map(({ attribute, value }) => ({ attribute, value })),
+    unitPrice: line.unitPrice.toString(),
+    quantity: line.quantity,
+    lineTotal: line.lineTotal.toString(),
+    issue: line.issue,
+    availableQuantity: line.availableQuantity,
+  };
+}
+
+export function toCartDto(view: CartView): CartDto {
+  return {
+    id: view.id,
+    sellers: view.sellers.map((group) => ({
+      sellerId: group.sellerId,
+      businessName: group.businessName,
+      items: group.items.map(toCartItemDto),
+      subtotal: group.subtotal.toString(),
+    })),
+    itemsTotal: view.itemsTotal.toString(),
+    itemCount: view.itemCount,
+    hasIssues: view.hasIssues,
+  };
+}

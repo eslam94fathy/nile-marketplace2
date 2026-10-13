@@ -1,0 +1,140 @@
+# Staging (architecture §13.1). Applied in P9 (plan §10): written and checked offline in P8.
+
+terraform {
+  required_version = "~> 1.16.4"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "6.64.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "3.8.1"
+    }
+  }
+  # Partial configuration: bucket, kms_key_id and region come from backend.hcl (bootstrap outputs).
+  backend "s3" {
+    key          = "staging/terraform.tfstate"
+    encrypt      = true
+    use_lockfile = true
+  }
+}
+
+provider "aws" {
+  region = var.region
+  default_tags {
+    tags = { Project = "nile-marketplace", Environment = "staging", ManagedBy = "terraform" }
+  }
+}
+
+module "environment" {
+  source           = "../../modules/environment"
+  environment_name = "staging"
+  region           = var.region
+  cidr_block       = "10.20.0.0/16"
+  domain_name      = var.domain_name
+  route53_zone_id  = var.route53_zone_id
+  alert_email      = var.alert_email
+  image_tag        = var.image_tag
+
+  sizes = {
+    nat_gateway_count         = 1
+    log_retention_days        = 14
+    deletion_protection       = false
+    container_insights        = false
+    rds_instance_class        = "db.t4g.small"
+    rds_multi_az              = false
+    rds_storage_gb            = 20
+    rds_max_storage_gb        = 100
+    rds_backup_retention_days = 7
+    redis_node_type           = "cache.t4g.micro"
+    mq_instance_type          = "mq.m7g.medium"
+    api_cpu                   = 512
+    api_memory                = 1024
+    api_desired_count         = 1
+    api_autoscaling           = null
+    worker_cpu                = 512
+    worker_memory             = 1024
+    worker_desired_count      = 1
+    error_log_alarm_threshold = 5
+    alb_5xx_alarm_threshold   = 10
+  }
+
+  # Every non-secret setting, explicitly (CLAUDE.md §4). Values from the approved decisions
+  # (P1-Q4, P2-Q5, P3-Q9, P4-Q10, P5-Q10, P6-Q9) unless noted.
+  settings = {
+    LOG_LEVEL               = "info"
+    SHUTDOWN_TIMEOUT_MS     = "20000"
+    HEALTH_CHECK_TIMEOUT_MS = "2000"
+    DB_POOL_MIN             = "0"
+    DB_POOL_MAX             = "10"
+    DB_STATEMENT_TIMEOUT_MS = "10000"
+    REDIS_KEY_PREFIX        = "nile:staging:"
+
+    HTTP_BODY_LIMIT_KB       = "100"
+    CORS_ALLOWED_ORIGINS     = ""     # mobile app only
+    API_DOCS_ENABLED         = "true" # staging only (P0-Q4)
+    PAGINATION_DEFAULT_LIMIT = "20"
+    PAGINATION_MAX_LIMIT     = "100"
+
+    JWT_ISSUER               = "nile-staging"
+    JWT_AUDIENCE             = "nile-app"
+    JWT_ACTIVE_KID           = var.jwt_active_kid
+    ACCESS_TOKEN_TTL_MINUTES = "15"
+    REFRESH_TOKEN_TTL_DAYS   = "30"
+
+    RATE_LIMIT_GENERAL_POINTS             = "600"
+    RATE_LIMIT_GENERAL_WINDOW_SECONDS     = "60"
+    RATE_LIMIT_STRICT_AUTH_POINTS         = "10"
+    RATE_LIMIT_STRICT_AUTH_WINDOW_SECONDS = "300"
+    RATE_LIMIT_REFRESH_POINTS             = "30"
+    RATE_LIMIT_REFRESH_WINDOW_SECONDS     = "300"
+    RATE_LIMIT_CHECKOUT_POINTS            = "10"
+    RATE_LIMIT_CHECKOUT_WINDOW_SECONDS    = "60"
+    IDEMPOTENCY_TTL_HOURS                 = "24"
+    IDEMPOTENCY_LOCK_TTL_SECONDS          = "60" # above the longest request (review F-9)
+
+    BCRYPT_COST                 = "12"
+    OTP_TTL_MINUTES             = "10"
+    OTP_MAX_ATTEMPTS            = "5"
+    OTP_RESEND_COOLDOWN_SECONDS = "60"
+    INVITE_TTL_HOURS            = "72"
+    INVITE_URL_BASE             = var.invite_url_base
+
+    CUSTOMER_MAX_ADDRESSES           = "20"
+    GOVERNORATES_CACHE_TTL_SECONDS   = "3600"
+    CATEGORY_TREE_CACHE_TTL_SECONDS  = "3600"
+    PRODUCT_DETAIL_CACHE_TTL_SECONDS = "60"
+    SEARCH_WORD_SIMILARITY_THRESHOLD = "0.35" # tuned by the load baseline (P8-Q13)
+    CART_MAX_LINES                   = "50"
+
+    SELLER_ACCEPT_TIMEOUT_HOURS = "24"
+    KASHIER_PAYMENT_TTL_MINUTES = "15"
+    KASHIER_HTTP_TIMEOUT_MS     = "10000"
+    KASHIER_BASE_URL            = "https://test-api.kashier.io"
+    KASHIER_MODE                = "test"
+    KASHIER_REDIRECT_URL        = var.kashier_redirect_url
+
+    SECRETS_ENCRYPTION_ACTIVE_KEY_ID = var.secrets_encryption_active_key_id
+
+    RABBITMQ_EXCHANGE                         = "nile.events"
+    RABBITMQ_PREFETCH                         = "20"
+    MQ_RETRY_DELAYS_MS                        = "5000,30000,300000"
+    OUTBOX_DRAIN_INTERVAL_MS                  = "1000"
+    OUTBOX_BATCH_SIZE                         = "100"
+    OUTBOX_MAX_BACKOFF_MS                     = "300000"
+    OUTBOX_RETENTION_DAYS                     = "7"
+    PROCESSED_EVENTS_RETENTION_DAYS           = "30"
+    CODES_RETENTION_DAYS                      = "30"
+    CLEANUP_JOB_INTERVAL_MS                   = "86400000"
+    JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS = "60000"
+    JOB_KASHIER_PAYMENT_EXPIRY_INTERVAL_MS    = "30000"
+    ORDER_JOBS_BATCH_SIZE                     = "100"
+    JOB_SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_MS = "60000"
+    SHIPMENT_JOBS_BATCH_SIZE                  = "100"
+
+    EMAIL_HTTP_TIMEOUT_MS = "10000"
+    MAILJET_FROM_EMAIL    = var.mailjet_from_email
+    MAILJET_FROM_NAME     = "Nile (staging)"
+  }
+}

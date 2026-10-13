@@ -1,6 +1,6 @@
 # System Design 02 — Database Schema (Release 1)
 
-Status: **v1.1 APPROVED (2026-10-08).** v1.1: COD payment status `cancelled` added (D-1, S-12). Changes from now on need explicit approval and a version bump. Decisions: §13.
+Status: **v1.13 APPROVED (2026-10-13).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). v1.5: public product listings sort on `published_at` (D-5); `id` tie-break on the stock-history index (D-6). v1.6: `idx_products_category_id` for category usage checks (D-7). v1.7: cart FK `ON DELETE` behaviour and why `cart_items.variant_id` has no index (§7, P4-Q11). v1.8: ordering/payments indexes, Kashier session columns, refund reason `amount_mismatch`, FK behaviour and unindexed FKs (§6, §8, §9, D-8, Phase 5). v1.9: `inventory_reservations.quantity` is what is still reserved, `>= 0`, and 0 exactly when `released` (§6, D-9). v1.10: shipment snapshots, the cancelled-after-pickup marker and the delivery list indexes (§10, D-2, D-3, D-10, Phase 6). v1.11: every timestamp a list cursor sorts on is `TIMESTAMPTZ(3)` (§0, D-11). v1.12: finance enum CHECKs, the non-negative balance guard, list indexes, FK behaviour and the duplicate-payout guard (§0, §11, D-12, Phase 7). v1.13: `idx_products_min_price_id` for the price-sorted listing without a category (§5, D-13, Phase 8 load baseline). Changes from now on need explicit approval and a version bump. Decisions: §13.
 Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §6. Business rules: `docs/spec/00-overview.md` v1.0.
 
 ---
@@ -10,6 +10,7 @@ Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §
 - **std columns** = `id UUID PRIMARY KEY DEFAULT uuidv7()`, `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`, `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`. Repositories set `updated_at = now()` on every update.
 - **append-only columns** = `id UUID PRIMARY KEY DEFAULT uuidv7()`, `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`. No `updated_at`; rows are never updated.
 - Every column is **NOT NULL** unless marked `null`. **No other DEFAULTs.**
+- **Cursor timestamps** are `TIMESTAMPTZ(3)`: every timestamp a list cursor sorts on (`created_at` of `users`, `sellers`, `products`, `inventory_movements`, `orders`, `seller_orders`, `payment_refunds`, `delivery_agents`, `shipments`, `ledger_entries`, `cod_remittances`, `payouts`, plus `finance_accounts.updated_at` and `products.published_at`). The cursor carries a JS `Date` (milliseconds); with microseconds an ascending page repeats its last row and a descending one skips same-millisecond rows. A new list sorted on a timestamp makes that column `TIMESTAMPTZ(3)` too [v1.11, D-11].
 - `money` = `NUMERIC(12,2)` with `CHECK (>= 0)`. `rate` = `NUMERIC(5,4)` with `CHECK (BETWEEN 0 AND 1)` (e.g. `0.1000` = 10%).
 - `phone` = `VARCHAR(16)`, E.164 (`+201xxxxxxxxx`), validated in the DTO.
 - `status`/enum columns = `VARCHAR(n)` + a named `CHECK (col IN (...))` matching the TS enum.
@@ -52,6 +53,7 @@ Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §
 
 Indexes:
 - `uq_users_email (email)`: login, registration duplicate check, forgot password.
+- `idx_users_role_created_at (role, created_at DESC, id DESC)`: admin lists by role with keyset pagination (`WHERE role = ? … ORDER BY created_at DESC, id DESC`, spec 03 §4.11). Built `CONCURRENTLY` (DB-Q6, v1.4).
 
 ### refresh_tokens
 | column | type | rules |
@@ -62,13 +64,14 @@ Indexes:
 | token_hash | CHAR(64) | SHA-256 hex of the opaque token |
 | expires_at | TIMESTAMPTZ | |
 | revoked_at | TIMESTAMPTZ null | |
-| replaced_by_id | UUID null | `fk_refresh_tokens_replaced_by_id` → refresh_tokens |
+| replaced_by_id | UUID null | `fk_refresh_tokens_replaced_by_id` → refresh_tokens, `ON DELETE SET NULL` (audit pointer; the retention cleanup may delete rows of a family in any order, D-4) |
 | user_agent | VARCHAR(255) null | for "active sessions" auditing |
 
 Indexes:
 - `uq_refresh_tokens_token_hash (token_hash)`: the refresh lookup.
 - `idx_refresh_tokens_family_id (family_id)`: revoke the whole family on reuse.
 - `idx_refresh_tokens_user_id (user_id) WHERE revoked_at IS NULL`: revoke all sessions on suspend or password reset.
+- `idx_refresh_tokens_expires_at (expires_at)`: retention cleanup `DELETE … WHERE expires_at < now() - retention`; every refresh inserts a row, so the table is large (D-4).
 
 ### verification_codes
 OTPs (email verification, password reset) and invite tokens.
@@ -214,11 +217,13 @@ The public "visible" predicate, used by every public partial index (abbreviated 
 
 Indexes:
 - `uq_products_slug (slug)`: product detail by slug.
-- `idx_products_category_id_created_at_id (category_id, created_at DESC, id DESC) WHERE VIS`: category listing, newest first.
+- `idx_products_category_id_published_at_id (category_id, published_at DESC, id DESC) WHERE VIS`: category listing, newest first (D-5, v1.5).
 - `idx_products_category_id_min_price_id (category_id, min_price, id) WHERE VIS`: category listing sorted or filtered by price.
-- `idx_products_created_at_id (created_at DESC, id DESC) WHERE VIS`: listing without a category filter.
+- `idx_products_published_at_id (published_at DESC, id DESC) WHERE VIS`: listing without a category filter (D-5, v1.5).
+- `idx_products_min_price_id (min_price, id) WHERE VIS`: listing sorted (or filtered) by price without a category filter; built concurrently [v1.13, D-13].
 - `idx_products_search_vector USING GIN (search_vector) WHERE VIS`: full-text search.
 - `idx_products_name_trgm USING GIN (name gin_trgm_ops) WHERE VIS`: typo-tolerant / partial-word search.
+- `idx_products_category_id (category_id)`: category usage checks outside VIS (deactivate a category, add or delete an attribute in a subtree, `PRODUCT_CATEGORY_LOCKED`), deleted products included; also the FK (D-7, v1.6).
 - `idx_products_seller_id_created_at_id (seller_id, created_at DESC, id DESC) WHERE deleted_at IS NULL`: seller dashboard list. It also serves the projection update `WHERE seller_id = ?`.
 
 ### product_variants (soft delete)
@@ -264,24 +269,26 @@ Indexes:
 Index: `uq_inventory_items_variant_id`: batched lookup `variant_id = ANY(?)` (cart, checkout, product detail).
 
 ### inventory_reservations
-std columns · `inventory_item_id` fk · `order_item_id` fk → order_items · `quantity INTEGER CHECK (quantity > 0)` · `status VARCHAR(20)` (`active, committed, released`).
+std columns · `inventory_item_id` fk · `order_item_id` fk → order_items · `quantity INTEGER CHECK (quantity >= 0)`: what is still reserved; a release lowers it, a commit keeps it [v1.9] · `status VARCHAR(20)` (`active, committed, released`) · `chk_inventory_reservations_released CHECK ((status = 'released') = (quantity = 0))` [v1.9, D-9].
 - `uq_inventory_reservations_order_item_id (order_item_id)`: one reservation per order line. Also the commit/release lookup.
+- FKs `ON DELETE RESTRICT`. No index on `inventory_item_id`: nothing looks reservations up by item, and items are never deleted [v1.8, D-8].
 - Partial item cancellation lowers `quantity` and releases the difference, with a movement row.
 
 ### inventory_movements (append-only, audit)
 `inventory_item_id` fk · `type VARCHAR(30)` (`seller_adjustment, reserve, release, commit`) · `quantity_delta INTEGER` · `on_hand_after INTEGER` · `reserved_after INTEGER` · `reference_type VARCHAR(30) null` · `reference_id UUID null` · `actor_user_id UUID null`.
-Index: `idx_inventory_movements_inventory_item_id_created_at (inventory_item_id, created_at DESC)`: seller stock history.
+Index: `idx_inventory_movements_inventory_item_id_created_at_id (inventory_item_id, created_at DESC, id DESC)`: seller stock history with keyset pagination (D-6, v1.5).
 
 ---
 
 ## 7. cart
 
 ### carts
-std columns · `customer_id` fk → customers. `uq_carts_customer_id`: one cart per customer, the lookup path.
+std columns · `customer_id` fk → customers (`fk_carts_customer_id`, `ON DELETE RESTRICT`). `uq_carts_customer_id`: one cart per customer, the lookup path, and the conflict target of the add's create-and-lock upsert.
 
 ### cart_items
-std columns · `cart_id` fk `ON DELETE CASCADE` · `variant_id` fk → product_variants · `quantity INTEGER CHECK (quantity BETWEEN 1 AND 99)` [DB-Q3]. Max **50** distinct lines per cart, enforced by the app (config).
+std columns · `cart_id` fk `ON DELETE CASCADE` (`fk_cart_items_cart_id`) · `variant_id` fk → product_variants (`fk_cart_items_variant_id`, `ON DELETE RESTRICT`) · `quantity INTEGER CHECK (quantity BETWEEN 1 AND 99)` [DB-Q3]. Max **50** distinct lines per cart, enforced by the app (config).
 `uq_cart_items_cart_id_variant_id (cart_id, variant_id)`: one line per variant, and serves "items of my cart".
+No index on `variant_id`: nothing looks lines up by variant, and variants are never hard-deleted (soft delete), so the `RESTRICT` check never runs (P4-Q11).
 
 ---
 
@@ -291,7 +298,7 @@ std columns · `cart_id` fk `ON DELETE CASCADE` · `variant_id` fk → product_v
 | column | type | rules |
 |---|---|---|
 | std columns | | |
-| order_number | VARCHAR(20) | `'NM-' \|\| lpad(nextval('order_number_seq')::text, 9, '0')`, set explicitly in the INSERT [SD-10] |
+| order_number | VARCHAR(20) | `'NM-' \|\| lpad(nextval('order_number_seq')::text, 9, '0')`, set explicitly in the INSERT [SD-10]. The sequence is created in the `orders` migration [v1.8] |
 | customer_id | UUID | fk → customers |
 | status | VARCHAR(30) | `pending_payment, placed, in_progress, completed, partially_completed, cancelled` |
 | payment_method | VARCHAR(20) | `cod, kashier` |
@@ -316,6 +323,7 @@ Indexes:
 - `idx_orders_customer_id_created_at_id (customer_id, created_at DESC, id DESC)`: "my orders".
 - `idx_orders_payment_expires_at (payment_expires_at) WHERE status = 'pending_payment'`: the expiry job.
 - `idx_orders_status_created_at_id (status, created_at DESC, id DESC)`: admin order list by status.
+- `idx_orders_created_at_id (created_at DESC, id DESC)`: admin order list without a status filter (default sort `-createdAt`) [v1.8, D-8].
 
 ### seller_orders
 | column | type | rules |
@@ -361,6 +369,7 @@ Indexes:
 | line_total | money | `= unit_price × (quantity − cancelled_quantity)` |
 
 Index: `idx_order_items_seller_order_id (seller_order_id)`: items of seller orders (batched `= ANY(?)`).
+No indexes on `variant_id` / `product_id`: nothing looks order lines up by variant or product, and variants and products are only soft-deleted, so the `RESTRICT` check never runs [v1.8, D-8].
 
 ### order_item_cancellations (append-only)
 `order_item_id` fk · `quantity INTEGER CHECK (> 0)` · `reason VARCHAR(40)` (`out_of_stock, seller_request, other`) · `note VARCHAR(500) null` · `actor_user_id` fk → users.
@@ -369,6 +378,8 @@ Index: `idx_order_item_cancellations_order_item_id (order_item_id)`.
 ### order_status_history / seller_order_status_history (append-only)
 `order_id` (or `seller_order_id`) fk · `from_status VARCHAR(30) null` · `to_status VARCHAR(30)` · `actor_role VARCHAR(20)` (`customer, seller, admin, delivery_agent, system`) · `actor_user_id UUID null` · `reason VARCHAR(500) null`.
 Index: `(order_id | seller_order_id, created_at)`: timeline view.
+
+Every FK in §8 is `ON DELETE RESTRICT` [v1.8, D-8].
 
 ---
 
@@ -384,7 +395,9 @@ Index: `(order_id | seller_order_id, created_at)`: timeline view.
 | amount | money | order total at checkout (adjusted on cancellations before payment) |
 | collected_amount | money | COD: sum collected by agents. Kashier: amount paid. The app inserts 0 |
 | refunded_amount | money | app inserts 0. `CHECK (refunded_amount <= collected_amount)` |
-| provider_order_ref | VARCHAR(100) null | the Kashier order/session id |
+| provider_order_ref | VARCHAR(100) null | the Kashier session id |
+| provider_session_url | VARCHAR(500) null | Kashier `sessionUrl`; null for COD and before a session exists [v1.8, D-8] |
+| provider_session_expires_at | TIMESTAMPTZ null | the session's `expireAt`; set together with the two columns above (`chk_payments_session_columns`: all three null or all three set) [v1.8, D-8] |
 | provider_transaction_ref | VARCHAR(100) null | the Kashier transaction id |
 | paid_at | TIMESTAMPTZ null | |
 
@@ -393,14 +406,17 @@ Indexes:
 - `uq_payments_provider_order_ref (provider_order_ref) WHERE provider_order_ref IS NOT NULL`: webhook → payment lookup.
 
 ### payment_refunds
-std columns · `payment_id` fk · `seller_order_id UUID null` fk (null = whole order / fee) · `amount money CHECK (> 0)` · `reason VARCHAR(40)` (`seller_order_cancelled, items_cancelled, delivery_failed, late_payment_after_expiry, all_cancelled_fee`) · `status VARCHAR(20)` (`pending_manual, recorded`) · `recorded_by_user_id UUID null` · `recorded_at TIMESTAMPTZ null` · `provider_refund_ref VARCHAR(100) null`.
+std columns · `payment_id` fk · `seller_order_id UUID null` fk (null = whole order / fee) · `amount money CHECK (> 0)` · `reason VARCHAR(40)` (`seller_order_cancelled, items_cancelled, delivery_failed, late_payment_after_expiry, all_cancelled_fee, amount_mismatch`; `amount_mismatch` v1.8, spec 10 PA-6) · `status VARCHAR(20)` (`pending_manual, recorded`) · `recorded_by_user_id UUID null` · `recorded_at TIMESTAMPTZ null` · `provider_refund_ref VARCHAR(100) null`.
 Indexes:
-- `idx_payment_refunds_created_at WHERE status = 'pending_manual'`: the admin refund queue.
+- `idx_payment_refunds_created_at_id (created_at, id) WHERE status = 'pending_manual'`: the admin refund queue, oldest first, with the keyset `id` tie-break [v1.8, D-8].
 - `idx_payment_refunds_payment_id (payment_id)`.
+- No index on `seller_order_id`: nothing looks refunds up by seller order [v1.8, D-8].
 
 ### payment_events (append-only, webhook inbox)
 `payment_id UUID null` fk · `provider VARCHAR(20)` (`kashier`) · `provider_event_id VARCHAR(100)` · `event_type VARCHAR(50)` · `payload JSONB` (secrets/card data stripped) · `signature_valid BOOLEAN` · `processed_at TIMESTAMPTZ null`.
 `uq_payment_events_provider_provider_event_id (provider, provider_event_id)`: webhook dedupe.
+`idx_payment_events_payment_id (payment_id)`: the admin payment view lists a payment's events [v1.8, D-8].
+Every FK in §9 is `ON DELETE RESTRICT` [v1.8, D-8].
 
 ---
 
@@ -419,6 +435,7 @@ std columns · `user_id` fk → users (`uq_delivery_agents_user_id`) · `full_na
 Indexes:
 - `uq_delivery_agents_user_id`: resolve the agent from the JWT.
 - `idx_delivery_agents_home_governorate_id_last_assigned_at (home_governorate_id, last_assigned_at NULLS FIRST) WHERE status = 'active' AND on_shift`: candidate selection for auto-assignment.
+- `idx_delivery_agents_created_at_id (created_at DESC, id DESC)`: `GET /admin/delivery-agents` [v1.10, D-10].
 
 ### shipments
 | column | type | rules |
@@ -428,25 +445,34 @@ Indexes:
 | order_id | UUID | fk → orders (shipments of one checkout: fee split and fee carrier) |
 | agent_id | UUID null | fk → delivery_agents |
 | status | VARCHAR(30) | `unassigned, assigned, picked_up, out_for_delivery, delivery_failed, returning_to_seller, returned_to_seller, delivered, cancelled` |
-| pickup_* / dropoff_* | | address snapshots copied from the event payload (same columns as on orders / seller_orders) |
+| order_number | VARCHAR(20) | snapshot for the agent's screen [v1.10, D-2] |
+| payment_method | VARCHAR(20) | `cod, kashier` (CHECK) [v1.10, D-2] |
+| order_delivery_fee | money | the checkout's COD fee, used by the fee carrier; `0.00` for Kashier [v1.10, D-2] |
+| pickup_business_name | VARCHAR(150) | snapshot [v1.10, D-2] |
+| pickup_* / dropoff_* | | address snapshots copied from the event payload (same columns as on orders / seller_orders, plus `dropoff_governorate_name`) |
 | cod_items_amount | money | COD: seller order subtotal to collect. Kashier: 0 |
 | carries_delivery_fee | BOOLEAN | `true` on the one shipment that collects the COD fee: the first of the checkout to go `out_for_delivery`. Moves to the next shipment going out if this one fails or returns [SD-2, DB-Q1 approved] |
 | cod_fee_amount | money | the fee if `carries_delivery_fee`, else 0 |
 | cod_collected_amount | NUMERIC(12,2) null | set on delivered |
-| agent_fee_share | NUMERIC(12,2) null | set on delivered (equal split, Q-27) |
 | attempt_count | SMALLINT | app inserts 0. `CHECK (attempt_count BETWEEN 0 AND 3)` |
 | assigned_at, picked_up_at, delivered_at, returned_at | TIMESTAMPTZ null | |
+| seller_order_cancelled_at | TIMESTAMPTZ null | set when the seller order is cancelled after pickup: the agent then confirms the return himself (spec 11 DE-6) [v1.10, D-10] |
+
+No `agent_fee_share` column: ordering computes the share and the ledger records it [v1.10, D-2]. Every FK is `ON DELETE RESTRICT` [v1.10, D-10].
 
 Indexes:
 - `uq_shipments_seller_order_id`.
 - `idx_shipments_agent_id_status (agent_id, status) WHERE agent_id IS NOT NULL`: the agent's active list, and the "active shipment count" used for assignment.
-- `idx_shipments_created_at (created_at) WHERE status = 'unassigned'`: the assignment retry job.
+- `idx_shipments_created_at_id (created_at, id) WHERE status = 'unassigned'`: the assignment retry job, oldest first with a keyset tie-break [v1.10, D-10].
+- `idx_shipments_status_created_at_id (status, created_at DESC, id DESC)`: `GET /admin/shipments?status[…]` [v1.10, D-3].
+- `idx_shipments_created_at_desc_id (created_at DESC, id DESC)`: the unfiltered admin list [v1.10, D-10].
+- `idx_shipments_agent_id_created_at_id (agent_id, created_at, id) WHERE agent_id IS NOT NULL`: the agent's list, oldest first, also over a long delivered history [v1.10, D-10].
 - `idx_shipments_order_id (order_id)`: shipments of one checkout.
 - `uq_shipments_order_id_fee_carrier (order_id) WHERE carries_delivery_fee`: **at most one** fee-carrying shipment per checkout.
 
 ### shipment_attempts (append-only)
 `shipment_id` fk · `attempt_number SMALLINT CHECK (BETWEEN 1 AND 3)` · `reason VARCHAR(30)` (`customer_unreachable, customer_refused, wrong_address, customer_rescheduled`) · `note VARCHAR(500) null` · `agent_id` fk.
-`uq_shipment_attempts_shipment_id_attempt_number`: no duplicate attempt numbers, and serves "attempts of a shipment".
+`uq_shipment_attempts_shipment_id_attempt_number`: no duplicate attempt numbers, and serves "attempts of a shipment". No index on `agent_id` (audit pointer) [v1.10, D-10].
 
 ### shipment_status_history (append-only)
 Same shape as the order histories. Index `(shipment_id, created_at)`.
@@ -455,11 +481,12 @@ Same shape as the order histories. Index `(shipment_id, created_at)`.
 
 ## 11. finance
 
-Balances are stored per account, and every change is an immutable ledger entry written **in the same transaction** as the balance update (row-locked). This gives fast balance reads plus a full audit trail.
+Balances are stored per account, and every change is an immutable ledger entry written **in the same transaction** as the balance update (row-locked). This gives fast balance reads plus a full audit trail. Every FK is `ON DELETE RESTRICT` [v1.12, D-12].
 
 ### finance_accounts
-std columns · `account_type VARCHAR(30)` · `owner_id UUID null` · `balance NUMERIC(14,2)` (signed; `CHECK (balance >= 0)` for payable accounts, enforced per type in the app; see the note below).
-`uq_finance_accounts_account_type_owner_id (account_type, owner_id) NULLS NOT DISTINCT`.
+std columns (`updated_at TIMESTAMPTZ(3)`: cursor-sorted [v1.12, D-12]) · `account_type VARCHAR(30)` (CHECK) · `owner_id UUID null` · `balance NUMERIC(14,2)` (signed).
+- `owner_id` is polymorphic (a seller id or an agent id; null for the platform accounts), so it has **no FK**. Accounts are created only by a booking or an admin action that already resolved the owner [v1.12, D-12].
+- `chk_finance_accounts_balance_non_negative CHECK (account_type = 'platform_delivery_revenue' OR balance >= 0)`: the DB backs the app's check. Only delivery revenue may go negative (spec 12 §1.1, FI-1) [v1.12, D-12].
 
 Account types:
 - `seller_payable` (owner = seller): what the platform owes the seller.
@@ -467,19 +494,33 @@ Account types:
 - `agent_cod_cash` (owner = agent): cash the agent holds that belongs to the platform.
 - `platform_commission_revenue`, `platform_delivery_revenue` (owner = null).
 
-### ledger_entries (append-only)
-`account_id` fk → finance_accounts · `direction VARCHAR(6)` (`credit, debit`) · `amount money CHECK (> 0)` · `balance_after NUMERIC(14,2)` · `entry_type VARCHAR(40)` (`seller_net_earned, commission_earned, agent_fee_earned, platform_fee_earned, cod_cash_collected, cod_cash_remitted, seller_payout, agent_payout`) · `reference_type VARCHAR(30)` · `reference_id UUID` · `source_event_id UUID null`.
 Indexes:
-- `idx_ledger_entries_account_id_created_at_id (account_id, created_at DESC, id DESC)`: account statement, cursor-paginated.
+- `uq_finance_accounts_account_type_owner_id (account_type, owner_id) NULLS NOT DISTINCT`: one account per type and owner; resolves an owner's account and backs the lazy `INSERT … ON CONFLICT DO NOTHING`.
+- `idx_finance_accounts_balance_id (balance DESC, id DESC)`: `GET /admin/finance/accounts`, default sort `-balance` [v1.12, D-12].
+- `idx_finance_accounts_updated_at_id (updated_at DESC, id DESC)`: the same list sorted by `updatedAt` [v1.12, D-12].
+The table stays small (one row per seller, two per agent, two platform rows), so these indexes cost one small update per booking.
+
+### ledger_entries (append-only)
+append-only columns (`created_at TIMESTAMPTZ(3)` [v1.12, D-12]) · `account_id` fk → finance_accounts · `direction VARCHAR(6)` (`credit, debit`) · `amount money CHECK (> 0)` · `balance_after NUMERIC(14,2)` · `entry_type VARCHAR(40)` (`seller_net_earned, commission_earned, agent_fee_earned, platform_fee_earned, cod_cash_collected, cod_cash_remitted, seller_payout, agent_payout`) · `reference_type VARCHAR(30)` (`seller_order, order, cod_remittance, payout`) [v1.12, D-12] · `reference_id UUID` · `source_event_id UUID null` (null for admin actions, which have no event).
+Every enum column has its named CHECK [v1.12, D-12]. `reference_id` points at another module's row or at a finance row, depending on `reference_type`, so it has no FK.
+Indexes:
+- `idx_ledger_entries_account_id_created_at_id (account_id, created_at DESC, id DESC)`: account statement, cursor-paginated (also the FK's lookup path).
 - `idx_ledger_entries_reference_type_reference_id (reference_type, reference_id)`: "all money movements of seller order X".
 
 ### cod_remittances (append-only)
-`agent_id` fk → delivery_agents · `amount money CHECK (> 0)` · `confirmed_by_user_id` fk → users · `note VARCHAR(500) null`.
-Index: `idx_cod_remittances_agent_id_created_at (agent_id, created_at DESC)`.
+append-only columns (`created_at TIMESTAMPTZ(3)` [v1.12, D-12]) · `agent_id` fk → delivery_agents · `amount money CHECK (> 0)` · `confirmed_by_user_id` fk → users · `note VARCHAR(500) null`.
+Indexes:
+- `idx_cod_remittances_agent_id_created_at_id (agent_id, created_at DESC, id DESC)`: `GET /admin/finance/cod-remittances?agentId[eq]=…` and `GET /agent/finance/remittances`, with the keyset tie-break [v1.12, D-12].
+- `idx_cod_remittances_created_at_id (created_at DESC, id DESC)`: the unfiltered admin list [v1.12, D-12].
+- No index on `confirmed_by_user_id` (audit pointer, never a lookup path) [v1.12, D-12].
 
 ### payouts (append-only)
-`payee_type VARCHAR(20)` (`seller, agent`) · `payee_id UUID` · `amount money CHECK (> 0)` · `external_reference VARCHAR(200)` (bank / wallet transfer ref) · `recorded_by_user_id` fk → users · `paid_at TIMESTAMPTZ`.
-Index: `idx_payouts_payee_type_payee_id_created_at (payee_type, payee_id, created_at DESC)`.
+append-only columns (`created_at TIMESTAMPTZ(3)` [v1.12, D-12]) · `payee_type VARCHAR(20)` (`seller, agent`) · `payee_id UUID` (polymorphic, no FK) · `amount money CHECK (> 0)` · `external_reference VARCHAR(200)` (bank / wallet transfer ref) · `recorded_by_user_id` fk → users · `paid_at TIMESTAMPTZ`.
+Indexes:
+- `idx_payouts_payee_type_payee_id_created_at_id (payee_type, payee_id, created_at DESC, id DESC)`: `GET /admin/finance/payouts?payeeType[eq]=…&payeeId[eq]=…`, `GET /seller/finance/payouts`, with the keyset tie-break [v1.12, D-12].
+- `idx_payouts_created_at_id (created_at DESC, id DESC)`: the unfiltered admin list [v1.12, D-12].
+- `uq_payouts_payee_type_payee_id_external_reference`: the same transfer can't be recorded twice for one payee → `409 PAYOUT_ALREADY_RECORDED` (spec 12 FI-7) [v1.12, D-12].
+- No index on `recorded_by_user_id` (audit pointer) [v1.12, D-12].
 A payout amount must be ≤ the account balance. This is checked under `SELECT … FOR UPDATE` on the account row.
 
 ---
@@ -487,9 +528,10 @@ A payout amount must be ≤ the account balance. This is checked under `SELECT �
 ## 12. notifications & shared
 
 ### notification_log
-std columns · `user_id UUID null` fk · `template VARCHAR(50)` (`email_verification, password_reset, account_invite`) · `to_email VARCHAR(254)` · `status VARCHAR(20)` (`sent, failed`) · `provider_message_id VARCHAR(100) null` · `error VARCHAR(2000) null` · `source_event_id UUID`.
+std columns · `user_id UUID null` `fk_notification_log_user_id` → users `ON DELETE SET NULL` (the log outlives the user) · `template VARCHAR(50)` (`email_verification, password_reset, account_invite`) · `to_email VARCHAR(254)` · `status VARCHAR(20)` (`sent, failed`) · `provider_message_id VARCHAR(100) null` · `error VARCHAR(2000) null` · `source_event_id UUID`.
 - `uq_notification_log_source_event_id`: never send the same email twice.
 - `idx_notification_log_user_id_created_at`: support lookup.
+- `chk_notification_log_error_on_failure CHECK (status = 'sent' OR error IS NOT NULL)`: a failed row always says why (v1.3).
 - The OTP itself is never stored here.
 
 ### events_outbox
@@ -513,5 +555,15 @@ Index: `idx_processed_events_processed_at`: the cleanup job.
 | DB-Q3 | Cart: max quantity **99** per line, max **50** lines |
 | DB-Q4 | Lengths: product `name` 200, `description` 5000, seller `business_name` 150 |
 | DB-Q5 | Retention: dispatched outbox 7 days, processed events 30 days, expired codes/tokens 30 days (all env config) |
+| DB-Q6 | `idx_users_role_created_at (role, created_at DESC, id DESC)` for the admin list (spec 03 §4.11), added in Phase 1 as a `CREATE INDEX CONCURRENTLY` migration (2026-10-08) |
+| D-5 | Public product listings sort "newest" on `published_at`; the two public listing indexes use `(…, published_at DESC, id DESC) WHERE VIS` (P3-Q7, 2026-10-10) |
+| D-6 | `idx_inventory_movements_inventory_item_id_created_at_id` includes `id` for the keyset tie-break (P3-Q8, 2026-10-10) |
+| D-7 | `idx_products_category_id (category_id)`: the category usage checks run outside VIS and would otherwise scan `products` (Phase 3 implementation, 2026-10-10) |
+| D-8 | Phase 5 (P5-Q4, 2026-10-12): `idx_orders_created_at_id`; `idx_payment_events_payment_id`; refund queue index with `id`; `payments.provider_session_url` + `provider_session_expires_at`; `RefundReason` `amount_mismatch`; every ordering/payments/reservation FK `ON DELETE RESTRICT`; no indexes on `order_items.variant_id` / `product_id`, `inventory_reservations.inventory_item_id`, `payment_refunds.seller_order_id`; `order_number_seq` created with `orders` |
+| D-9 | `inventory_reservations.quantity >= 0` with `chk_inventory_reservations_released` (released ⇔ 0), so a full release can lower it to 0 as spec 07 UC-IN-2 says; the earlier `> 0` contradicted it (Phase 5 migrations, 2026-10-12) |
+| D-10 | Phase 6 (P6-Q3, P6-Q5, 2026-10-12): D-2 (shipment snapshots, no `agent_fee_share`) and D-3 (`idx_shipments_status_created_at_id`) applied; plus `idx_shipments_created_at_desc_id`, `idx_shipments_agent_id_created_at_id`, the retry index with `id`, `idx_delivery_agents_created_at_id`, `shipments.seller_order_cancelled_at`, every delivery FK `ON DELETE RESTRICT`, no index on `shipment_attempts.agent_id` |
+| D-11 | Every timestamp a list cursor sorts on is `TIMESTAMPTZ(3)` (§0): the cursor carries a JS `Date`, so microseconds repeated rows on ascending pages and skipped same-millisecond rows on descending ones. Migration `20261012140001` (Phase 6 implementation, 2026-10-12) |
+| D-12 | Phase 7 (P7-Q3, P7-Q8, 2026-10-13): finance cursor timestamps `TIMESTAMPTZ(3)`; `chk_finance_accounts_balance_non_negative` (every type but `platform_delivery_revenue`); CHECKs on every finance enum column, including the new `reference_type`; `idx_finance_accounts_balance_id`, `idx_finance_accounts_updated_at_id`; `id` tie-break on the remittance and payout payee indexes; `idx_cod_remittances_created_at_id`, `idx_payouts_created_at_id`; `uq_payouts_payee_type_payee_id_external_reference`; FKs `ON DELETE RESTRICT`, polymorphic `owner_id` / `payee_id` without FK, no index on the `*_by_user_id` audit pointers |
+| D-13 | `idx_products_min_price_id (min_price, id) WHERE VIS`, built concurrently: the public listing sorted by price without a category read and sorted every visible product (144 ms idle, ~300 ms under load on 100k products), found by the P8 load baseline (2026-10-13) |
 
 No open schema questions.

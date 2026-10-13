@@ -1,6 +1,6 @@
 # Spec 09 — ordering
 
-Status: **DRAFT v0.1 (2026-10-08), under review.** [PROPOSED] unless it restates overview §4.3 / §5.
+Status: **v1.5 APPROVED (2026-10-13).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: `amountCancelled` when the last units are cancelled (OR-12); what the order totals count (OR-13). v1.2: shipment events that overtake their predecessor are retried (OR-14). v1.3: the expiry job abandons nothing and waits on a payment in flight (OR-6 as amended by spec 10 PA-11, PA-13). v1.4: `seller_order.items_cancelled` carries `previousStatus` (OR-15). v1.5: one open Kashier payment per customer (OR-16, Phase 8 security review F-2). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -9,7 +9,7 @@ Checkout (the orchestrator), the order and its per-seller split, snapshots, stor
 Tables: `orders`, `seller_orders`, `order_items`, `order_item_cancellations`, `order_status_history`, `seller_order_status_history`.
 Depends on (sync): `customers`, `cart`, `catalog`, `sellers`, `inventory`, `payments`, `delivery` (fee + agent-share setting only). **No module calls ordering** (architecture §2).
 
-Config: `SELLER_ACCEPT_TIMEOUT_HOURS` (24), `KASHIER_PAYMENT_TTL_MINUTES` (15), job intervals (architecture §6).
+Config: `SELLER_ACCEPT_TIMEOUT_HOURS` (24), `KASHIER_PAYMENT_TTL_MINUTES` (15), `JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS` (60 000), `JOB_KASHIER_PAYMENT_EXPIRY_INTERVAL_MS` (30 000), `ORDER_JOBS_BATCH_SIZE` (100) (architecture §6; process split in OR-8).
 
 ### 1.1 Statuses
 `SellerOrderStatus`: `pending_payment, placed, accepted, ready_for_pickup, picked_up, out_for_delivery, delivery_failed, returning_to_seller, returned_to_seller, delivered, cancelled`.
@@ -36,7 +36,7 @@ Terminal: `delivered`, `cancelled`, `returned_to_seller`.
 4. Otherwise → `in_progress`.
 
 ### 1.2 Concurrency rule
-Every write that touches a checkout locks **the `orders` row first** (`SELECT … FOR UPDATE`), then its seller orders, then calls inventory (which locks items sorted by id). One lock order everywhere → no deadlocks. It also serialises the status derivation and the agent-share remainder (§3.8) per checkout. Every seller-order transition is a conditional update on the expected status. 0 rows → `SELLER_ORDER_INVALID_STATUS_TRANSITION` (HTTP) or a guarded no-op with a `warn` log (consumers).
+Every write that touches a checkout locks **the `orders` row first** (`SELECT … FOR UPDATE`), then its seller orders, then calls inventory (which locks items sorted by id), then payments. The full order is `carts` (checkout only) → `orders` → `seller_orders` (by id) → `inventory_items` (by id) → `payments` (OR-3). One lock order everywhere → no deadlocks. It also serialises the status derivation and the agent-share remainder (§3.8) per checkout. Every seller-order transition is a conditional update on the expected status. 0 rows → `SELLER_ORDER_INVALID_STATUS_TRANSITION` (HTTP) or a guarded no-op with a `warn` log (consumers).
 
 ## 2. Public API (`index.ts`)
 None. Only event contracts (in `lib/events/contracts`).
@@ -49,7 +49,7 @@ Pre-transaction (reads):
 2. `delivery.getAgentFeeShareRate()`.
 
 One transaction:
-3. `cart.getLinesForCheckout(customerId, trx)` (locks the cart). Empty → `CART_EMPTY`.
+3. `cart.getLinesForCheckout(customerId, trx)` (locks the cart). Empty → `CART_EMPTY`. Kashier only: the customer already has a `pending_payment` order → `ORDER_PAYMENT_PENDING` (details: that order's id) (OR-16).
 4. `catalog.getVariantsForPurchase(ids, trx)`, `sellers.getCheckoutSnapshots(sellerIds, trx)`. Any variant not purchasable or seller not `approved` → `CART_HAS_ISSUES` (details: the variant ids).
 5. Money (`Money`, overview §5): `line_total = price × qty`; per seller `subtotal`, `commission = round(subtotal × rate)`, `seller_net`; `items_total`; `delivery_fee`; `total`. `total ≠ expectedTotal` → `ORDER_TOTAL_CHANGED` (details: the current total) (S-8).
 6. Insert `orders` (`order_number` from the sequence), `seller_orders` (pickup snapshot, commission snapshot), `order_items` (snapshots, `cancelled_quantity = 0`) as multi-row inserts, and the history rows.
@@ -59,7 +59,7 @@ One transaction:
 8. `payments.createForOrder({ orderId, method, amount: total }, trx)`.
 9. `cart.clear(customerId, trx)`.
 10. COD: outbox `order.placed`.
-11. Commit. Kashier: `payments.createKashierSession(orderId)` **after** commit; if it fails, `checkoutUrl = null` and the app calls §4.1.2 (SD-5).
+11. Commit. Kashier: `payments.createKashierSession(orderId, paymentExpiresAt)` **after** commit; if it fails, `checkoutUrl = null` and the app calls §4.1.2 (SD-5). The idempotency layer stores and replays this `201` body as is, `checkoutUrl: null` included (OR-10).
 
 ### 3.2 UC-OR-2 Customer cancels a seller order
 Only `placed` (Q-31). Whole seller order only. Effects: `cancelled` (`cancel_reason = customer_cancelled`, `cancelled_by_user_id`), `inventory.release` of all its open quantities, history (note in `reason`), outbox `seller_order.cancelled`, order re-derived (§1.1).
@@ -103,12 +103,14 @@ One transaction (order row locked):
 - Outbox `order.closed` (`deliveredItemsTotal`, final and original fee).
 
 ### 3.10 Jobs (worker, advisory-locked)
-- **seller-acceptance-timeout:** `placed` seller orders with `accept_deadline_at < now()`, batch, `FOR UPDATE SKIP LOCKED` (after locking their orders) → like UC-OR-4 with `seller_acceptance_timeout`, actor `system`.
-- **kashier-payment-expiry:** orders `pending_payment` with `payment_expires_at < now()`:
-  1. Outside any transaction: `payments.fetchProviderStatus(orderId)` (asks Kashier, SD-5).
-  2. Provider says paid → `payments.markPaidFromProvider(...)`, skip (the normal `payment.paid` flow places the order).
-  3. Otherwise one transaction: `payments.expire(orderId, trx)` (conditional `initiated → expired`; 0 rows = the webhook won, skip) → all seller orders `cancelled` (`payment_expired`), `inventory.release`, order closed as `cancelled` (fee 0). Outbox: `seller_order.cancelled` ×n, `order.closed`.
-  4. Provider unreachable → expire anyway (a late success is handled by SD-5).
+Both jobs (OR-5): each run reads up to `ORDER_JOBS_BATCH_SIZE` candidate order ids from the partial index **without locks**, then handles **one order per short transaction**, starting with `SELECT … FROM orders WHERE id = ? FOR UPDATE SKIP LOCKED` (busy → left for the next run). A failing order is logged at `error` and doesn't stop the batch.
+- **seller-acceptance-timeout:** orders with a `placed` seller order whose `accept_deadline_at < now()`. Per order: lock it, then each such seller order by a conditional update on `status = 'placed' AND accept_deadline_at < now()` → like UC-OR-4 with `seller_acceptance_timeout`, actor `system`.
+- **kashier-payment-expiry:** orders `pending_payment` with `payment_expires_at < now()`, per order (OR-6):
+  1. Local payment already `paid` (webhook applied, consumer not run yet) → skip without calling Kashier.
+  2. Outside any transaction: `payments.fetchProviderStatus(orderId)` (asks Kashier, SD-5).
+  3. Provider says paid → `payments.markPaidFromProvider(...)`, skip (the normal `payment.paid` flow places the order). Provider says `pending` (an attempt in flight) → skip; the next run asks again (spec 10 PA-13).
+  4. Provider says unpaid or is unreachable → one transaction in the §1.2 lock order: lock the order and its seller orders → all seller orders `cancelled` (`payment_expired`), `inventory.release`, order closed as `cancelled` (fee 0), then `payments.expire(orderId, trx)` (conditional `initiated → expired`). `false` = the webhook won: roll back and skip. Outbox: `seller_order.cancelled` ×n, `order.closed` (and `payment.expired` from payments).
+  5. A payment that still succeeds after expiry is handled by SD-5 (spec 10 UC-PA-2).
 
 ### 3.11 Payment results (consumer `ordering.payment-updates`)
 - `payment.paid` (`lateAfterExpiry = false`): order `pending_payment → placed`, seller orders `→ placed` with `accept_deadline_at = now() + 24 h`, `placed_at`, outbox `order.placed`. Order not in `pending_payment` → no-op + `warn` (payments already flagged the refund, SD-5).
@@ -132,10 +134,10 @@ interface CheckoutResultDto {
   kashier: { checkoutUrl: string | null; expiresAt: string } | null;   // null for COD
 }
 ```
-Errors: `CART_EMPTY` 422, `CART_HAS_ISSUES` 409, `ADDRESS_NOT_FOUND` 422, `GOVERNORATE_NOT_DELIVERABLE` 422, `ORDER_TOTAL_CHANGED` 409, `INSUFFICIENT_STOCK` 409, idempotency errors.
+Errors: `CART_EMPTY` 422, `CART_HAS_ISSUES` 409, `ADDRESS_NOT_FOUND` 422, `GOVERNORATE_NOT_DELIVERABLE` 422, `ORDER_TOTAL_CHANGED` 409, `ORDER_PAYMENT_PENDING` 409, `INSUFFICIENT_STOCK` 409, idempotency errors.
 
 #### 4.1.2 `POST /orders/:orderId/payment/kashier-session`   rate: checkout
-Creates (or returns the still-valid) Kashier session through `payments`. `200 { checkoutUrl: string; expiresAt: string }`.
+Creates (or returns the still-valid) Kashier session through `payments`; one session per payment (OR-7). `200 { checkoutUrl: string; expiresAt: string }`.
 Errors: `ORDER_NOT_FOUND` 404, `ORDER_NOT_AWAITING_PAYMENT` 409, `PAYMENT_PROVIDER_UNAVAILABLE` 502.
 
 #### 4.1.3 Read
@@ -153,7 +155,7 @@ interface OrderDetailDto {
                      floor: string | null; apartment: string | null; landmark: string | null };
   sellerOrders: {
     id: string; sellerId: string; businessName: string; status: SellerOrderStatus; subtotal: string;
-    canCancel: boolean;                                    // status === 'placed'
+    canCancel: boolean;                                    // status === 'placed' (never while the order is pending_payment)
     items: OrderItemDto[];
     timeline: { status: SellerOrderStatus; at: string }[]; // from the history
   }[];
@@ -218,6 +220,7 @@ Consumed: `payment.paid`, `payment.failed` (`ordering.payment-updates`); `shipme
 | `CART_HAS_ISSUES` | 409 | A line is unavailable / seller not approved (details per variant) |
 | `GOVERNORATE_NOT_DELIVERABLE` | 422 | The address governorate has no fee (Q-26) |
 | `ORDER_TOTAL_CHANGED` | 409 | `expectedTotal` ≠ the computed total |
+| `ORDER_PAYMENT_PENDING` | 409 | Kashier checkout while the customer has a `pending_payment` order (OR-16) |
 | `ORDER_NOT_FOUND` | 404 | Missing or another customer's |
 | `ORDER_NOT_AWAITING_PAYMENT` | 409 | Kashier session for an order that isn't `pending_payment`, or isn't Kashier |
 | `SELLER_ORDER_NOT_FOUND` | 404 | Missing, another seller's, or not part of that order |
@@ -233,3 +236,24 @@ Consumed: `payment.paid`, `payment.failed` (`ordering.payment-updates`); `shipme
 - **S-9** No admin cancellation in R1.
 - **S-11** Sellers see no customer PII.
 - **S-13** The remainder goes to the delivery that closes the order, else stays with the platform.
+
+### 7.1 Clarifications (v1.0, Phase 5 plan, 2026-10-12)
+
+| # | Clarification | Where |
+|---|---|---|
+| OR-1 | Architecture §7.1 follows the §3.1 step order: the order rows are inserted **before** `inventory.reserve`, because a reservation references `order_item_id`; a shortfall still rolls everything back (A-3, architecture v1.7) | §3.1 |
+| OR-2 | The shipment-driven use cases (UC-OR-6/7/8, the close step after delivery) are built in Phase 5 and tested by publishing the `shipment.*` contract events; delivery emits them from Phase 6 (P5-Q2) | §3.6–§3.9 |
+| OR-3 | Lock order everywhere: `carts` (checkout only) → `orders` → `seller_orders` (by id) → `inventory_items` (by id) → `payments`. The payments webhook never locks `orders`, and the `ordering.payment-updates` consumer never locks `payments` (P5-Q3) | §1.2, §3.10 |
+| OR-4 | The schema additions this spec relies on are database D-8 (v1.8): `idx_orders_created_at_id` for the unfiltered admin list, every FK `ON DELETE RESTRICT`, `order_number_seq` created with `orders` (P5-Q4) | §4.3 |
+| OR-5 | Jobs read candidate ids without locks and handle one order per short transaction, `FOR UPDATE SKIP LOCKED` on the order row; batch size `ORDER_JOBS_BATCH_SIZE` (P5-Q5) | §3.10 |
+| OR-6 | Expiry: a locally `paid` payment is skipped without a provider call; sessions are created with `expireAt = payment_expires_at`, so Kashier stops taking payment when the window closes. v1.3: nothing is abandoned (Kashier allows one open session per payment, spec 10 PA-11, PA-12), and a payment in flight (`pending`) is left for the next run (PA-13) (P5-Q6, K-1, K-3) | §3.10 |
+| OR-7 | One Kashier session per payment: `kashier-session` returns the stored session while it is valid; a race is resolved in payments (spec 10 PA-3). No new session after `payment_expires_at` → `ORDER_NOT_AWAITING_PAYMENT` (P5-Q7) | §4.1.2 |
+| OR-8 | Env split (P1-Q1): api `KASHIER_PAYMENT_TTL_MINUTES`, `SELLER_ACCEPT_TIMEOUT_HOURS`; worker `SELLER_ACCEPT_TIMEOUT_HOURS` (the payment consumer sets the deadline), both job intervals, `ORDER_JOBS_BATCH_SIZE`. No defaults (P5-Q10) | §1 |
+| OR-9 | Read models: business names come live from `sellers.getSummaries`; `OrderSummaryDto.itemCount` = Σ open quantities (`quantity − cancelled_quantity`); detail views load seller orders, items and histories with one batched query each; `canCancel` is `false` while the order is `pending_payment` (P5-Q13) | §4 |
+| OR-10 | The checkout `201` body is stored and replayed by the idempotency layer as is; a replay may show `checkoutUrl: null`, and the app then calls §4.1.2. The `checkout` rate limit (per user, fail closed) covers `POST /checkout` and §4.1.2 (P5-Q12) | §3.1, §4.1 |
+| OR-11 | `KASHIER_REDIRECT_URL` is an https app link agreed with the mobile team before staging; the app never trusts the redirect and reads `GET /orders/:id` (P5-Q14) | §4.1.2 |
+| OR-12 | When an item cancellation leaves no open unit, the seller order becomes `cancelled` and only `seller_order.cancelled` is published; its `amountCancelled` is the seller order's subtotal **before** that item cancellation, so the refund (Kashier) or COD reduction covers the last units too (Phase 5 step 4, v1.1) | §3.5 |
+| OR-13 | A cancelled or returned seller order keeps its own `subtotal` (the record of what was cancelled). The order's `items_total` sums only the seller orders that are neither `cancelled` nor `returned_to_seller`, recomputed under the order lock after every change, and `total = items_total + delivery_fee`, so the order total is always what the customer still owes (it matches the COD payment amount). The close step then zeroes the fee if nothing was delivered (Phase 5 step 6, v1.1) | §1.1, §3.2–§3.9 |
+| OR-14 | The `ordering.shipment-updates` consumer tells a **stale** event from an **early** one. Each shipment event has the statuses it applies from and the statuses that mean an earlier event of the same shipment isn't applied yet (`picked_up` early while placed / accepted; `out_for_delivery` while ready_for_pickup / out_for_delivery; `attempt_failed` and `delivered` while ready_for_pickup / picked_up / delivery_failed). An early event throws and is retried by the broker with backoff (DLQ + `error` log if it never applies); a stale one (seller order cancelled, or already past it) is a no-op with a `warn` log `SHIPMENT_EVENT_IGNORED` (Phase 5 step 7, v1.2) | §3.6, architecture §3.2 |
+| OR-15 | `seller_order.items_cancelled` carries `previousStatus`: the seller order's status when the items were cancelled (unchanged by it), so delivery can tell a cancellation made while `ready_for_pickup` (shipment exists or is coming) from an earlier one (spec 02 v1.1 E-8, spec 11 DE-15; Phase 6 step 6, v1.4) | UC-OR-4 |
+| OR-16 | At most one open payment per customer: a Kashier checkout while the customer has an order in `pending_payment` answers `409 ORDER_PAYMENT_PENDING` with that order's id in `details[0].value`, until it is paid, expires or fails. Checked after the cart lock, which serialises a customer's checkouts. COD checkouts are not affected (they never wait for payment). Stops one customer holding stock with repeated unpaid Kashier checkouts (Phase 8 security review F-2, v1.5) | §3.1 |

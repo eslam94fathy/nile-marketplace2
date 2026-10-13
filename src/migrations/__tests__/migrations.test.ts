@@ -1,0 +1,93 @@
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { ListMigrationSource, type MigrationModule } from '../../lib/db';
+import { MIGRATIONS } from '..';
+
+const noop: MigrationModule = { up: () => Promise.resolve(), down: () => Promise.resolve() };
+
+describe('migrations list (ListMigrationSource)', () => {
+  it('serves the registered migrations in order', async () => {
+    const source = new ListMigrationSource(MIGRATIONS);
+    const listed = await source.getMigrations();
+    expect(listed.map((m) => source.getMigrationName(m))).toEqual([
+      '20261008000001_enable_pg_trgm',
+      '20261008000002_create_events_outbox',
+      '20261008000003_create_processed_events',
+      '20261008123200_create_users',
+      '20261008123202_create_refresh_tokens',
+      '20261008123204_create_verification_codes',
+      '20261008134257_create_notification_log',
+      '20261008135708_add_users_role_created_at_index',
+      '20261009192351_create_governorates',
+      '20261009192353_create_delivery_settings',
+      '20261009194352_create_customers',
+      '20261009194354_create_customer_addresses',
+      '20261009202641_create_sellers',
+      '20261009202643_create_seller_status_history',
+      '20261009202644_create_seller_commission_history',
+      '20261009202646_create_seller_settings',
+      '20261010120001_create_categories',
+      '20261010120002_create_category_attributes',
+      '20261010120003_create_category_attribute_options',
+      '20261010120004_create_products',
+      '20261010120005_create_product_variants',
+      '20261010120006_create_variant_attribute_values',
+      '20261010120007_create_inventory_items',
+      '20261010120008_create_inventory_movements',
+      '20261011120001_create_carts',
+      '20261011120002_create_cart_items',
+      '20261012120001_create_orders',
+      '20261012120002_create_seller_orders',
+      '20261012120003_create_order_items',
+      '20261012120004_create_order_item_cancellations',
+      '20261012120005_create_order_status_history',
+      '20261012120006_create_seller_order_status_history',
+      '20261012120007_create_inventory_reservations',
+      '20261012120008_create_payments',
+      '20261012120009_create_payment_refunds',
+      '20261012120010_create_payment_events',
+      '20261012130001_create_delivery_agents',
+      '20261012130002_create_shipments',
+      '20261012130003_create_shipment_attempts',
+      '20261012130004_create_shipment_status_history',
+      '20261012140001_cursor_timestamps_millisecond_precision',
+      '20261013120001_create_finance_accounts',
+      '20261013120002_create_ledger_entries',
+      '20261013120003_create_cod_remittances',
+      '20261013120004_create_payouts',
+      '20261013150001_add_products_min_price_id_index',
+    ]);
+  });
+
+  it('every migration file in the folder is registered (no forgotten migration)', () => {
+    const files = readdirSync(join(__dirname, '..'))
+      .filter((file) => /^\d{14}_[a-z0-9_]+\.ts$/.test(file))
+      .map((file) => file.replace(/\.ts$/, ''));
+    expect(MIGRATIONS.map((m) => m.name)).toEqual(files.sort());
+  });
+
+  it('every migration has an up and a down', () => {
+    for (const { name, module } of MIGRATIONS) {
+      expect(typeof module.up, name).toBe('function');
+      expect(typeof module.down, name).toBe('function');
+    }
+  });
+
+  it('rejects out-of-order or duplicate names', () => {
+    expect(
+      () =>
+        new ListMigrationSource([
+          { name: '20261008000002_b', module: noop },
+          { name: '20261008000001_a', module: noop },
+        ]),
+    ).toThrow(/timestamp order/);
+    expect(
+      () =>
+        new ListMigrationSource([
+          { name: '20261008000001_a', module: noop },
+          { name: '20261008000001_a', module: noop },
+        ]),
+    ).toThrow(/Duplicate/);
+  });
+});

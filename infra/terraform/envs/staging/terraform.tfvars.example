@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars (P9) and fill in. No secret goes here: secrets are put into Secrets Manager
+# by hand (docs/runbooks/secrets.md).
+region                           = "eu-central-1"
+domain_name                      = "api.staging.example.com"
+route53_zone_id                  = null
+alert_email                      = "ops@example.com"
+image_tag                        = "<git sha of the first pushed image>"
+invite_url_base                  = "https://staging.example.com/invite"
+kashier_redirect_url             = "https://staging.example.com/payment-return"
+mailjet_from_email               = "no-reply@example.com"
+jwt_active_kid                   = "staging-2026-10"
+secrets_encryption_active_key_id = "staging-2026-10"

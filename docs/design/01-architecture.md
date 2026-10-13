@@ -1,6 +1,6 @@
 # System Design 01 — Architecture (Release 1)
 
-Status: **v1.1 APPROVED (2026-10-08).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). SD-3d (region, §12.2) is still open and only blocks Terraform provisioning. Changes from now on need explicit approval and a version bump.
+Status: **v1.10 APPROVED (2026-10-13).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). v1.4: catalog cache keys and TTLs (§8), "newest" sorts on `published_at` (§9) (Phase 3). v1.5: typo search matches words (§9, P3-O1). v1.6: edge `cart → customers` (§2, A-4, Phase 4). v1.7: checkout inserts the order rows before reserving stock (§7.1, A-3); one lock order across ordering, inventory and payments (§3.1); order jobs handle one order per transaction (§6); Kashier sessions and webhook signature (§7.2) (Phase 5). v1.8: the expiry job abandons no session (§6, spec 10 PA-11). v1.9: region `eu-central-1` (SD-3d), sizes, RabbitMQ 4.2, TLS to the data stores, secrets, network and egress IPs (K-7), deploy pipeline, alerting (§12.1, §13, Phase 8). v1.10: suspended-user deny entry in Redis (§8, §10, spec 03 I-11). Changes from now on need explicit approval and a version bump.
 Inputs: `CLAUDE.md` (engineering rules), `docs/spec/00-overview.md` v1.0 (business). Schema: `02-database.md`.
 
 ---
@@ -54,12 +54,25 @@ Synchronous calls go through a module's public API (`index.ts`, resolved by DI t
            │      catalog ─┘                  │
            │        ▲  │                      │
            │        │  └──► inventory         │
-           │      cart ─────► inventory       │
+           │      cart ─► inventory, customers│
            │        ▲                         │
            └─── ordering ──► catalog, sellers, customers, inventory, payments, delivery(fee lookup only)
 
-     payments ──► (none)          finance ──► (none)          notifications ──► (none: the recipient email is in the event payload)
+     payments ──► (none)          finance ──► sellers, delivery          notifications ──► (none: the recipient email is in the event payload)
 ```
+
+The full edge list (A-2, v1.3; A-4, v1.6), which `module-graph.js` enforces:
+
+| Module | May call |
+|---|---|
+| customers | identity |
+| sellers | identity |
+| delivery | identity |
+| catalog | sellers, inventory |
+| cart | customers (profile from the JWT `sub`, A-4), catalog, inventory, sellers (display names) |
+| ordering | customers, cart, catalog, sellers, inventory, payments, delivery |
+| finance | sellers, delivery (profile resolution, display names) |
+| identity, inventory, payments, notifications | none |
 
 The rules:
 - `ordering` is the orchestrator of checkout and may call the others. Nobody calls `ordering` synchronously.
@@ -82,10 +95,11 @@ The rules:
 ### 3.1 Transactions across modules
 - One `lib/db` `TransactionRunner.run(async trx => …)` starts the transaction. Every public module method that writes accepts `trx` and passes it to its repositories.
 - Outbox inserts use the same `trx`, so the state change and its event commit or roll back together.
-- Lock ordering inside checkout, to avoid deadlocks: inventory rows are locked/updated **sorted by `inventory_item.id`**.
+- Lock ordering, to avoid deadlocks: `carts` (checkout only) → `orders` → `seller_orders` (by id) → `inventory_items` (by id) → `payments`. Inventory rows are locked/updated **sorted by `inventory_item.id`**. The Kashier webhook never locks `orders`, and ordering's payment consumer never locks `payments` [v1.7, spec 09 OR-3].
 
 ### 3.2 Consistency guards for consumers
 - At-least-once delivery. Every consumer records `(consumer, event_id)` in `processed_events` **in the same transaction** as its effects, and a duplicate is acknowledged and skipped.
+- **External effects** (an HTTP call such as sending an email) must not run inside that transaction (CLAUDE.md §6.4). A consumer with one declares a `beforeTransaction` step: the host checks `processed_events` first and skips duplicates, runs the step outside any transaction, then commits its result (e.g. the `notification_log` row) together with the `processed_events` row. A crash between the two can repeat the effect once on redelivery, so this is only used where that is acceptable (spec 13 UC-NO-1) [v1.2].
 - Consumers are **state-machine guarded**: they apply a transition only if the current state allows it (e.g. ignore `shipment.picked_up` if the seller order is already `cancelled`, and log at `warn`). Out-of-order or stale events are therefore harmless.
 
 ## 4. Request pipeline (api)
@@ -122,8 +136,8 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 | Job | Every | What it does |
 |---|---|---|
 | `outbox-drain` | 1 s | Publish pending outbox rows |
-| `kashier-payment-expiry` | 30 s | `pending_payment` orders older than 15 min → payment `expired`, seller orders `cancelled`, reservations released, all in one trx (batched, `SKIP LOCKED`). Before expiring, it asks Kashier for the payment status so it doesn't race a late success (SD-5) |
-| `seller-acceptance-timeout` | 1 min | `placed` seller orders with `accept_deadline_at < now()` → `cancelled` (reason `seller_acceptance_timeout`) |
+| `kashier-payment-expiry` | 30 s | `pending_payment` orders past `payment_expires_at` → seller orders `cancelled`, reservations released, payment `expired`, one short trx **per order** (`FOR UPDATE SKIP LOCKED` on the order row, batch size from env). Before expiring, outside the trx, it skips payments already `paid` locally, asks Kashier for the session status so it doesn't race a late success (SD-5), and leaves a payment in flight for the next run. Kashier itself stops taking payment at the session's `expireAt` [v1.8, spec 09 §3.10, spec 10 PA-11, PA-13] |
+| `seller-acceptance-timeout` | 1 min | `placed` seller orders with `accept_deadline_at < now()` → `cancelled` (reason `seller_acceptance_timeout`), one short trx per order as above [v1.7] |
 | `shipment-assignment-retry` | 1 min | Retry auto-assignment for `unassigned` shipments |
 | `outbox-cleanup` | daily | Delete dispatched outbox rows older than the retention period (env) |
 | `processed-events-cleanup` | daily | Delete dedupe rows older than the retention period |
@@ -131,22 +145,23 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 
 ## 7. Key flows
 
-### 7.1 Checkout (`POST /api/v1/checkout`, Idempotency-Key required)
-1. Validate the DTO (`addressId`, `paymentMethod`). Load the cart (cart API).
-2. Batch-load the variants with their product/seller data (catalog API, one query) and the seller status/commission/pickup snapshot (sellers API, one query). Reject if any variant is inactive or deleted, or any seller is not approved.
-3. Load the address (customers API). Get the governorate fee (delivery API). Reject if the governorate isn't deliverable.
-4. Compute the money with `decimal.js` (spec §5).
-5. **One transaction:**
-   - `inventory.reserve(items, trx)`: an atomic conditional update per item, sorted by id. Any shortfall → `409 INSUFFICIENT_STOCK` with the affected variant ids.
-   - Insert `orders`, `seller_orders`, `order_items`, and the status history.
+### 7.1 Checkout (`POST /api/v1/checkout`, Idempotency-Key required) [v1.7, A-3; detail in spec 09 §3.1]
+1. Validate the DTO (`addressId`, `paymentMethod`, `expectedTotal`).
+2. Before the transaction (reads): the address snapshot (customers API), the governorate fee (delivery API; reject if not deliverable) and the agent fee-share rate.
+3. **One transaction:**
+   - Load and lock the cart (cart API). Empty → `CART_EMPTY`.
+   - Batch-load the variants with their product/seller data (catalog API, one query) and the seller status/commission/pickup snapshot (sellers API, one query). Reject if any variant isn't purchasable or any seller isn't approved.
+   - Compute the money with `decimal.js` (overview §5); reject if it differs from `expectedTotal`.
+   - Insert `orders`, `seller_orders`, `order_items` and the status history (multi-row inserts). The rows come **before** the reservation, because a reservation references `order_item_id`.
+   - `inventory.reserve(lines, trx)`: an atomic conditional update per item, sorted by id. Any shortfall → `409 INSUFFICIENT_STOCK` with the affected variant ids, and the whole transaction (order rows included) rolls back.
    - `payments.createForOrder(trx)` (COD → `pending`, Kashier → `initiated`).
    - `cart.clear(trx)`.
    - Outbox `order.placed` (COD only; for Kashier, `placed` happens on payment).
    - Commit.
-6. The response includes the order. For Kashier, it also includes what the app needs to open the Kashier payment page (session created **after** commit; SD-5 covers the failure case).
+4. The response includes the order. For Kashier, it also includes the Kashier session URL (session created **after** commit, one per payment; SD-5 covers the failure case).
 
 ### 7.2 Kashier webhook (`POST /api/v1/webhooks/kashier`)
-- Verify the signature over the **raw body** using the secret from env. Invalid → `401`, logged at `warn` (no payload in logs).
+- Parse the **raw body** and verify `x-kashier-signature` (an HMAC over the signed fields Kashier lists, keyed by the payment API key from env) [v1.7, spec 10 PA-1]. Invalid → `401`, logged at `warn` (no payload in logs), nothing stored.
 - Insert `payment_events` with `uq(provider, provider_event_id)`. A duplicate → `200` with no further work.
 - Check the amount and the order reference against the payment. On a mismatch: `error` log, payment `failed`, and an admin review flag.
 - Transition the payment, plus the outbox `payment.paid` / `payment.failed` event, then respond `200` quickly.
@@ -161,10 +176,11 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 
 | Data | Strategy | Invalidation |
 |---|---|---|
-| Category tree + attributes | Cache-aside, TTL from env | Deleted on any admin category/attribute change (same request, after commit) |
-| Governorates + fees | Cache-aside | Deleted on fee change |
-| Product detail (public) | Cache-aside, short TTL | Deleted after commit on product/variant change. Stock is **not** taken from cache at checkout |
+| Category tree + attributes | Cache-aside, key `v1:catalog:category-tree`, TTL `CATEGORY_TREE_CACHE_TTL_SECONDS` [v1.4] | Deleted on any admin category/attribute change (same request, after commit) |
+| Governorates + fees | Cache-aside, TTL `GOVERNORATES_CACHE_TTL_SECONDS` [v1.3] | Deleted on fee change (after commit) |
+| Product detail (public) | Cache-aside, key `v1:catalog:product:<id>` (static part only: no visibility, prices or stock, which are read fresh), TTL `PRODUCT_DETAIL_CACHE_TTL_SECONDS` [v1.4] | Deleted after commit on product/variant change. Stock is **not** taken from cache at checkout |
 | Product lists / search | **Not cached in R1.** Indexed queries are enough at the target load | n/a |
+| Suspended users (not a cache: a deny list) | Key `auth:suspended:<userId>`, written after a suspension commits, TTL = access-token lifetime [v1.10, spec 03 I-11] | Deleted on reactivation; expires once every token issued before the suspension has expired |
 
 - Cache keys use constants with a version prefix (`v1:catalog:category-tree`).
 - Redis failures degrade to reading from the DB, logged at `warn`. They never fail the request.
@@ -172,18 +188,19 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 
 ## 9. Search & filtering (catalog)
 
-- Postgres FTS: a `products.search_vector` generated column (name weight A, description weight B) + GIN index. A `pg_trgm` GIN index on name handles typos and partial words. Text search configuration: `english` [SD-1].
+- Postgres FTS: a `products.search_vector` generated column (name weight A, description weight B) + GIN index. A `pg_trgm` GIN index on name handles typos and partial words, matched per word (`q <% name`, threshold from env) [v1.5, spec 06 CA-14]. Text search configuration: `english` [SD-1].
 - Filters, from a whitelist:
   - `category` (includes descendants: the ids come from the cached tree, then `category_id = ANY(?)`)
   - `price[gte|lte]` (on the denormalized `min_price`)
   - `inStock`
   - `seller`
   - `attr[<code>]=<optionCode,...>`: `EXISTS` subqueries through `variant_attribute_values`
-- Sort: `newest` (`created_at, id`), `price_asc/desc` (`min_price, id`), `relevance` (search only). All use cursor pagination.
+- Sort: `newest` (`published_at, id`) [v1.4], `price_asc/desc` (`min_price, id`), `relevance` (search only). All use cursor pagination.
 
 ## 10. Security specifics
 
 - JWT: **RS256** [SD-11]. The private key (PEM, from a secret env var) exists only in `api`; the public key is used for verification. Tokens carry a `kid` header so keys can be rotated (the old public key stays valid until its tokens expire). The access token TTL comes from env. Refresh tokens are opaque random 256-bit strings, stored as SHA-256 hashes, rotated on every use, and reuse revokes the family.
+- A suspension blocks the user's access tokens at once: `authenticate` checks the Redis deny entry (§8) and answers `401`; it fails open if Redis is down, since the tokens expire within their TTL anyway [v1.10, spec 03 I-11].
 - Role guards + **ownership checks in services**:
   - a seller only touches products/orders where `seller_id` = theirs;
   - an agent only touches shipments where `agent_id` = theirs;
@@ -225,10 +242,12 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 | SD-9 | Checkout = one DB transaction across modules |
 | SD-10 | Human-readable `order_number` (`NM-` + sequence) |
 | SD-11 | JWT signed with **RS256** (key pair) |
+| SD-3d | Region **`eu-central-1`** (Frankfurt): no residency requirement, ~50–60 ms from Cairo, every service we need. RDS PostgreSQL 18 and Amazon MQ RabbitMQ 4.2 are checked there with the AWS CLI before the first apply; `me-central-1` (UAE) is the fallback if a check fails (P8-Q2, 2026-10-13) |
+| SD-12 | Phase 8 (P8-Q3…Q15, 2026-10-13): staging and prod written over the same Terraform modules in Phase 8 (no AWS needed), **staging applied in Phase 9** (staging deploy), prod at a separate go-live; two AWS accounts in one Organization; the sizes, broker version, TLS, secrets, network, pipeline and alerting in §13 |
 
 ### 12.2 Open
 
-- **SD-3d Region:** no residency requirement, so the region is chosen for latency to Egypt + service availability. Proposed: **`eu-central-1` (Frankfurt)**: ~50–60 ms from Cairo, and new RDS Postgres majors and Amazon MQ land there early. Alternative: `me-central-1` (UAE). Awaiting confirmation.
+None. SD-3d was settled in Phase 8 (§12.1).
 
 ## 13. Hosting [CONFIRMED SD-3: AWS]
 
@@ -243,7 +262,7 @@ Principle: **managed stateful services, containers for our code.** Our team then
 | RabbitMQ | Managed broker (single node in R1) | Managed, smallest | `rabbitmq:management` container |
 | TLS / LB | Managed load balancer with a managed certificate. TLS terminates there, and traffic to the api stays in the private network | Same | none (plain HTTP on localhost) |
 | Secrets | Provider secret manager → injected as env vars (JWT keys, DB/Redis/RabbitMQ creds, Kashier & Mailjet keys) | Same, separate secrets | `.env` (never committed) |
-| Images | GitHub Container Registry or the provider's registry, tagged with the git SHA | Same image as prod | Built locally |
+| Images | **ECR**, tagged with the git SHA [v1.9, P8-Q12] | Same image as prod | Built locally |
 | Deploy | GitHub Actions: CI green on `main` → build & push image → run migrations as a one-off task → rolling deploy to staging → **manual approval** → prod | | |
 | Networking | DB / Redis / RabbitMQ in private subnets only, reachable only from the api/worker security group | Same | |
 
@@ -268,4 +287,22 @@ Other options considered:
 
 Migrations run **before** the new version takes traffic, as a separate one-off container (`npm run migrate`). Because of the expand/contract rule (CLAUDE.md §6.1), the old version keeps working during a rolling deploy.
 
-Region: see SD-3d.
+Region: **`eu-central-1`** (SD-3d).
+
+### 13.1 Phase 8 specifics [v1.9, P8-Q3…Q15]
+
+| Concern | Decision |
+|---|---|
+| Environments and accounts | Two AWS accounts in one Organization (staging, prod). `envs/staging` and `envs/prod` use the same modules, written in Phase 8; staging is applied in Phase 9, prod at a separate go-live step with its own approval |
+| Terraform | Exact versions of Terraform (≥ 1.10) and the AWS provider pinned, lock file committed. S3 state per env with **native S3 locking** (`use_lockfile`; DynamoDB locking is deprecated), bucket versioned, encrypted, public access blocked. A `bootstrap` root applied once by hand: state bucket, GitHub OIDC provider, a read-only `plan` role and a `deploy` role scoped to this repository. Our own modules (`network`, `alb`, `ecs-service`, `rds`, `elasticache`, `amazon-mq`, `secrets`, `ecr`, `alarms`); no community modules |
+| Network | One VPC per env over 2 AZs. Public subnets hold only the ALB and the NAT gateway(s); ECS tasks, RDS, ElastiCache and Amazon MQ sit in private subnets, reachable only from the app security group. Staging 1 NAT gateway, prod 1 per AZ; S3 gateway endpoint. Outbound traffic leaves through the NAT Elastic IPs, which are **allow-listed in Kashier** (K-7, spec 10 PA-17) |
+| Postgres | RDS PostgreSQL 18, gp3, encrypted, `rds.force_ssl = 1`, automated backups with PITR (staging 7 days, prod 14), deletion protection in prod. Staging `db.t4g.small` single-AZ; prod `db.m7g.large` Multi-AZ instance |
+| Redis | ElastiCache **Redis OSS 7.x** (the engine local dev and tests use), TLS in transit and an AUTH token. Staging `cache.t4g.micro`; prod `cache.t4g.small` |
+| RabbitMQ | Amazon MQ **RabbitMQ 4.2**, single instance, `mq.m7g.medium` in both envs. Our durable classic queues with TTL dead-letter retries work unchanged on 4.2 (only classic mirroring is gone). Local docker-compose and the Testcontainers image move to `rabbitmq:4.2-management` so tests run on the same major |
+| Containers | ECS Fargate, **x86_64** (bcrypt is native; CI builds amd64). api 0.5 vCPU / 1 GB: staging 1 task, prod 2–4 with autoscaling on 60 % CPU. worker 0.5 vCPU / 1 GB: staging 1, prod 2. A monthly cost estimate (AWS Pricing Calculator) is approved before the first apply |
+| TLS to the data stores | The image ships the Amazon RDS global CA bundle (downloaded at build, pinned by SHA-256) and sets `NODE_EXTRA_CA_CERTS`, because Node does not trust that CA and the app verifies the server certificate when `DB_SSL` is on. Redis through `rediss://` with the AUTH token; RabbitMQ through `amqps://` |
+| Secrets and config | One Secrets Manager secret per sensitive key per env, injected as task env vars. Terraform generates the DB password (`random_password`, so it lives only in the encrypted, access-restricted state) and writes `DATABASE_URL`, `REDIS_URL` and `RABBITMQ_URL`. The JWT key pair and the Kashier and Mailjet keys are put in by hand and never pass through Terraform. Every non-secret env key is set explicitly in the task definition from Terraform variables (no defaults, CLAUDE.md §4). One DB role owns the schema and serves the app in R1 |
+| Edge | `api.staging.<domain>` (and `api.<domain>` at go-live) with an ACM certificate (DNS validation) on the ALB, HTTP → HTTPS redirect, `TRUST_PROXY_HOPS = 1`. `API_DOCS_ENABLED` true in staging, false in prod. `INVITE_URL_BASE` and `KASHIER_REDIRECT_URL` may be placeholder https URLs in staging; the mobile team's app links are required for prod |
+| Pipelines | `deploy.yml` (switched on in Phase 9 by the repository variable `DEPLOY_ENABLED`): CI green on `main` → build the image once, push to **ECR** tagged with the git SHA → `node dist/migrate.js latest` as a one-off ECS task (a non-zero exit stops the deploy) → update the api and worker services → wait until both are stable. A `production` job behind a GitHub environment with required reviewers, used at go-live. `infra.yml`: on PRs touching `infra/`, `terraform fmt -check`, `validate` and a Trivy config scan per root, plus `plan` per env with the read-only role from Phase 9; `apply` only by hand. All AWS access through GitHub OIDC; no long-lived keys. Staging admins are created with a documented `aws ecs run-task` of `seed-admin.js` |
+| Alerting | CloudWatch log groups with retention (staging 14 days, prod 90). Metric filters and alarms → an SNS email topic: `level` error / fatal, events sent to a DLQ, ALB 5xx, unhealthy targets, RDS CPU and free storage. Still no metrics endpoint or error-tracking service (SD-4) |
+| Scanning | Trivy in CI for the image (OS and npm packages) and the Terraform code, failing on high / critical; a one-off gitleaks scan of the git history (P8-Q14) |

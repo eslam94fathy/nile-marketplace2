@@ -1,0 +1,99 @@
+import { type NamedMigration } from '../lib/db/migration-source';
+import * as m20261008000001 from './20261008000001_enable_pg_trgm';
+import * as m20261008000002 from './20261008000002_create_events_outbox';
+import * as m20261008000003 from './20261008000003_create_processed_events';
+import * as m20261008123200 from './20261008123200_create_users';
+import * as m20261008123202 from './20261008123202_create_refresh_tokens';
+import * as m20261008123204 from './20261008123204_create_verification_codes';
+import * as m20261008134257 from './20261008134257_create_notification_log';
+import * as m20261008135708 from './20261008135708_add_users_role_created_at_index';
+import * as m20261009192351 from './20261009192351_create_governorates';
+import * as m20261009192353 from './20261009192353_create_delivery_settings';
+import * as m20261009194352 from './20261009194352_create_customers';
+import * as m20261009194354 from './20261009194354_create_customer_addresses';
+import * as m20261009202641 from './20261009202641_create_sellers';
+import * as m20261009202643 from './20261009202643_create_seller_status_history';
+import * as m20261009202644 from './20261009202644_create_seller_commission_history';
+import * as m20261009202646 from './20261009202646_create_seller_settings';
+import * as m20261010120001 from './20261010120001_create_categories';
+import * as m20261010120002 from './20261010120002_create_category_attributes';
+import * as m20261010120003 from './20261010120003_create_category_attribute_options';
+import * as m20261010120004 from './20261010120004_create_products';
+import * as m20261010120005 from './20261010120005_create_product_variants';
+import * as m20261010120006 from './20261010120006_create_variant_attribute_values';
+import * as m20261010120007 from './20261010120007_create_inventory_items';
+import * as m20261010120008 from './20261010120008_create_inventory_movements';
+import * as m20261011120001 from './20261011120001_create_carts';
+import * as m20261011120002 from './20261011120002_create_cart_items';
+import * as m20261012120001 from './20261012120001_create_orders';
+import * as m20261012120002 from './20261012120002_create_seller_orders';
+import * as m20261012120003 from './20261012120003_create_order_items';
+import * as m20261012120004 from './20261012120004_create_order_item_cancellations';
+import * as m20261012120005 from './20261012120005_create_order_status_history';
+import * as m20261012120006 from './20261012120006_create_seller_order_status_history';
+import * as m20261012120007 from './20261012120007_create_inventory_reservations';
+import * as m20261012120008 from './20261012120008_create_payments';
+import * as m20261012120009 from './20261012120009_create_payment_refunds';
+import * as m20261012120010 from './20261012120010_create_payment_events';
+import * as m20261012130001 from './20261012130001_create_delivery_agents';
+import * as m20261012130002 from './20261012130002_create_shipments';
+import * as m20261012130003 from './20261012130003_create_shipment_attempts';
+import * as m20261012130004 from './20261012130004_create_shipment_status_history';
+import * as m20261012140001 from './20261012140001_cursor_timestamps_millisecond_precision';
+import * as m20261013120001 from './20261013120001_create_finance_accounts';
+import * as m20261013120002 from './20261013120002_create_ledger_entries';
+import * as m20261013120003 from './20261013120003_create_cod_remittances';
+import * as m20261013120004 from './20261013120004_create_payouts';
+import * as m20261013150001 from './20261013150001_add_products_min_price_id_index';
+// <migration-imports> (npm run migrate:make appends above this line)
+
+/** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
+export const MIGRATIONS: readonly NamedMigration[] = [
+  { name: '20261008000001_enable_pg_trgm', module: m20261008000001 },
+  { name: '20261008000002_create_events_outbox', module: m20261008000002 },
+  { name: '20261008000003_create_processed_events', module: m20261008000003 },
+  { name: '20261008123200_create_users', module: m20261008123200 },
+  { name: '20261008123202_create_refresh_tokens', module: m20261008123202 },
+  { name: '20261008123204_create_verification_codes', module: m20261008123204 },
+  { name: '20261008134257_create_notification_log', module: m20261008134257 },
+  { name: '20261008135708_add_users_role_created_at_index', module: m20261008135708 },
+  { name: '20261009192351_create_governorates', module: m20261009192351 },
+  { name: '20261009192353_create_delivery_settings', module: m20261009192353 },
+  { name: '20261009194352_create_customers', module: m20261009194352 },
+  { name: '20261009194354_create_customer_addresses', module: m20261009194354 },
+  { name: '20261009202641_create_sellers', module: m20261009202641 },
+  { name: '20261009202643_create_seller_status_history', module: m20261009202643 },
+  { name: '20261009202644_create_seller_commission_history', module: m20261009202644 },
+  { name: '20261009202646_create_seller_settings', module: m20261009202646 },
+  { name: '20261010120001_create_categories', module: m20261010120001 },
+  { name: '20261010120002_create_category_attributes', module: m20261010120002 },
+  { name: '20261010120003_create_category_attribute_options', module: m20261010120003 },
+  { name: '20261010120004_create_products', module: m20261010120004 },
+  { name: '20261010120005_create_product_variants', module: m20261010120005 },
+  { name: '20261010120006_create_variant_attribute_values', module: m20261010120006 },
+  { name: '20261010120007_create_inventory_items', module: m20261010120007 },
+  { name: '20261010120008_create_inventory_movements', module: m20261010120008 },
+  { name: '20261011120001_create_carts', module: m20261011120001 },
+  { name: '20261011120002_create_cart_items', module: m20261011120002 },
+  { name: '20261012120001_create_orders', module: m20261012120001 },
+  { name: '20261012120002_create_seller_orders', module: m20261012120002 },
+  { name: '20261012120003_create_order_items', module: m20261012120003 },
+  { name: '20261012120004_create_order_item_cancellations', module: m20261012120004 },
+  { name: '20261012120005_create_order_status_history', module: m20261012120005 },
+  { name: '20261012120006_create_seller_order_status_history', module: m20261012120006 },
+  { name: '20261012120007_create_inventory_reservations', module: m20261012120007 },
+  { name: '20261012120008_create_payments', module: m20261012120008 },
+  { name: '20261012120009_create_payment_refunds', module: m20261012120009 },
+  { name: '20261012120010_create_payment_events', module: m20261012120010 },
+  { name: '20261012130001_create_delivery_agents', module: m20261012130001 },
+  { name: '20261012130002_create_shipments', module: m20261012130002 },
+  { name: '20261012130003_create_shipment_attempts', module: m20261012130003 },
+  { name: '20261012130004_create_shipment_status_history', module: m20261012130004 },
+  { name: '20261012140001_cursor_timestamps_millisecond_precision', module: m20261012140001 },
+  { name: '20261013120001_create_finance_accounts', module: m20261013120001 },
+  { name: '20261013120002_create_ledger_entries', module: m20261013120002 },
+  { name: '20261013120003_create_cod_remittances', module: m20261013120003 },
+  { name: '20261013120004_create_payouts', module: m20261013120004 },
+  { name: '20261013150001_add_products_min_price_id_index', module: m20261013150001 },
+  // <migration-list> (npm run migrate:make appends above this line)
+];

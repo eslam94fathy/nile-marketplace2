@@ -1,6 +1,6 @@
 # Spec 07 — inventory
 
-Status: **DRAFT v0.1 (2026-10-08), under review.** [PROPOSED].
+Status: **v1.3 APPROVED (2026-10-12).** v1.0: approved by the user with the Phase 3 clarifications in §7.1. v1.1: `INSUFFICIENT_STOCK` is exported from Phase 4 for cart (IN-4). v1.2: reservations land in Phase 5, and `payments` comes after inventory in the lock order (IN-5). v1.3: `release` takes no reason; movement deltas are the change in sellable stock (IN-6). Changes from now on need explicit approval and a version bump.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -15,7 +15,7 @@ Sellable = `on_hand − reserved`.
 
 ## 2. Public API (`index.ts`)
 
-All writes take `trx`, write an `inventory_movements` row per changed item, and emit `inventory.stock_status_changed` when sellable crosses 0 for that item (same `trx`, outbox).
+All writes take `trx` and write an `inventory_movements` row per changed item. `adjust`, `reserve` and `release` emit `inventory.stock_status_changed` when sellable crosses 0 for that item (same `trx`, outbox). `createItem` and `commit` never emit it (IN-2).
 
 | Method | Caller | Behaviour |
 |---|---|---|
@@ -23,7 +23,7 @@ All writes take `trx`, write an `inventory_movements` row per changed item, and 
 | `adjust(variantId, delta, actorUserId, trx) → StockDto` | catalog | `UPDATE … SET on_hand = on_hand + :d WHERE variant_id = ? AND on_hand + :d >= reserved AND on_hand + :d >= 0 RETURNING …`. 0 rows → `STOCK_ADJUSTMENT_INVALID` |
 | `getStockByVariantIds(variantIds, trx?) → StockDto[]` | catalog, cart, ordering | One `variant_id = ANY(?)` query. `{ variantId, onHand, reserved, sellable }` |
 | `reserve(lines: { variantId, orderItemId, quantity }[], trx)` | ordering (checkout) | See UC-IN-1 |
-| `release(lines: { orderItemId, quantity }[], reason, trx)` | ordering | Releases `quantity` (partial or full). See UC-IN-2 |
+| `release(lines: { orderItemId, quantity }[], trx)` | ordering | Releases `quantity` (partial or full). See UC-IN-2. No reason parameter: ordering's seller-order history records why (IN-6) |
 | `commit(orderItemIds, trx)` | ordering (delivered) | See UC-IN-3 |
 | `listMovements(variantId, page) → Page<MovementDto>` | catalog | Seller stock history |
 
@@ -56,9 +56,20 @@ Consumed: none.
 
 | Code | HTTP | When |
 |---|---|---|
-| `INSUFFICIENT_STOCK` | 409 | Reserve short on one or more variants (details per variant) |
+| `INSUFFICIENT_STOCK` | 409 | Reserve short on one or more variants (details per variant). Also thrown by cart's soft stock check (spec 08, IN-4) |
 | `STOCK_ADJUSTMENT_INVALID` | 422 | Adjustment would make `on_hand` negative or below `reserved` |
 | `INVENTORY_ITEM_NOT_FOUND` | 500 (internal) | A variant has no stock row: a bug, never expected |
 
 ## 7. Open questions
 None.
+
+### 7.1 Clarifications (v1.0, Phase 3 plan, 2026-10-10)
+
+| # | Clarification | Where |
+|---|---|---|
+| IN-1 | Phase 3 builds `inventory_items`, `inventory_movements`, `createItem`, `adjust`, `getStockByVariantIds` and `listMovements`. `inventory_reservations` (with its FK to `order_items`) and `reserve` / `release` / `commit` land in Phase 5 (P3-Q2) | §1, §2 |
+| IN-2 | `createItem` doesn't emit `inventory.stock_status_changed`: catalog recomputes `in_stock` in the same transaction (P3-Q10) | §2 |
+| IN-3 | `listMovements` uses keyset pagination on `(created_at, id)` over `idx_inventory_movements_inventory_item_id_created_at_id` (database D-6, P3-Q8) | §2 |
+| IN-4 | `INSUFFICIENT_STOCK` and its factory `insufficientStock(shortLines)` (details shape in §2 `reserve` step 3) are added and exported in Phase 4, because cart's add/change check uses the same code; `reserve` reuses them in Phase 5 (P4-Q4, v1.1) | §6 |
+| IN-5 | Phase 5 adds `inventory_reservations` (FK to `order_items`, `ON DELETE RESTRICT`, no index on `inventory_item_id`: nothing looks reservations up by item) and `reserve` / `release` / `commit`. Callers lock in the order `orders` → `seller_orders` → `inventory_items` (by id) → `payments` (spec 09 OR-3, P5-Q3, P5-Q4, v1.2) | §1, §2 |
+| IN-6 | (a) `release` has no `reason` parameter: no table stores one, and ordering's seller-order history records why. (b) A movement's `quantity_delta` is the change in **sellable** stock: seller adjustment ±on_hand change, reserve −q, release +q, commit 0 (the drop shows in `on_hand_after`), so the deltas of an item always sum to its sellable stock. Reservation movements carry `reference_type = 'order_item'`, `reference_id` = the order line, and no actor. (c) Releasing more than is reserved, a line without a reservation, or the same line twice are invariant violations (500), not client errors (Phase 5 step 3, v1.3) | §2, UC-IN-2, UC-IN-3 |

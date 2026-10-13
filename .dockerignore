@@ -1,0 +1,17 @@
+.git
+.github
+.idea
+.vscode
+node_modules
+dist
+coverage
+test
+docs
+infra
+scripts
+eslint-rules
+.env
+.env.*
+.dev-keys
+*.md
+*.log
