@@ -72,3 +72,12 @@ The in-progress lock lives `IDEMPOTENCY_LOCK_TTL_SECONDS` (60 locally). If a req
 - **Misconfiguration (API8):** helmet headers (CSP, HSTS, nosniff, frame options, referrer policy), no `x-powered-by`, CORS allow-list, `trust proxy` from env, malformed JSON → `400 MALFORMED_JSON` without a stack, generic `500` for unknown errors, correlation ids validated.
 - **Unsafe consumption (API10):** webhook HMAC with a constant-time compare over the raw body, amount and currency checked, deduped per event, card data and signatures never stored (apart from F-1).
 - **Secrets:** no `.env`, key or certificate file ever committed; dev-only scripts refuse to run outside `NODE_ENV=development`; test routes are never mounted by `server.ts`.
+
+## Scanning (plan step 3, 2026-10-13)
+
+| Scan | Tool | Result |
+|---|---|---|
+| Image: OS and npm packages, high / critical with a fix | Trivy 0.74.0 (`aquasec/trivy`) | **First run:** 7 HIGH in npm's own bundled packages (`brace-expansion`, `ip-address`, `tar`, `undici` under `/usr/local/lib/node_modules/npm`) and 3 CRITICAL + 4 HIGH in Debian `perl-base` (`deb12u3`, fixed in `deb12u4`), all from the `node:24.21.0-bookworm-slim` base image, none in our dependencies. **Fixed:** the runtime stage applies Debian security updates and removes npm, npx, corepack and yarn (the containers only run `node`). **Now clean.** Runs in CI on every PR |
+| Configuration: Dockerfile (Terraform from step 4) | Trivy 0.74.0 `config` | Clean. Runs in CI on every PR (`node_modules` and `dist` skipped) |
+| Secrets in the git history | gitleaks v8.30.1, all refs | 88 commits, **no leaks**. One-off (P8-Q14); repeat before a production go-live |
+| Dependencies | `npm audit` | 0 vulnerabilities (already a CI step) |
