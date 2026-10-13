@@ -170,14 +170,16 @@ describe('lib/config per-process env schemas (P1-Q1)', () => {
     delete noMailpitUrl.MAILPIT_URL;
     expect(invalidKeys(() => loadEnv(workerEnvSchema, noMailpitUrl))).toEqual(['MAILPIT_URL']);
     expect(
-      invalidKeys(() => loadEnv(workerEnvSchema, testEnvInput({ NODE_ENV: 'production', ...KASHIER_TEST }))),
+      invalidKeys(() =>
+        loadEnv(workerEnvSchema, testEnvInput({ NODE_ENV: 'production', DB_SSL: 'true', ...KASHIER_TEST })),
+      ),
     ).toEqual(['EMAIL_PROVIDER']);
   });
 
   it('payments: fake only outside staging/production; kashier needs its keys and a host matching its mode', () => {
-    expect(invalidKeys(() => loadEnv(apiEnvSchema, testEnvInput({ NODE_ENV: 'staging' })))).toEqual([
-      'PAYMENT_GATEWAY',
-    ]);
+    expect(
+      invalidKeys(() => loadEnv(apiEnvSchema, testEnvInput({ NODE_ENV: 'staging', DB_SSL: 'true' }))),
+    ).toEqual(['PAYMENT_GATEWAY']);
     // The worker only reads session statuses: no secret key, merchant id or URLs needed (PA-13).
     expect(invalidKeys(() => loadEnv(workerEnvSchema, testEnvInput({ PAYMENT_GATEWAY: 'kashier' })))).toEqual(
       ['KASHIER_BASE_URL', 'KASHIER_MODE'],
@@ -205,6 +207,46 @@ describe('lib/config per-process env schemas (P1-Q1)', () => {
     expect(invalidKeys(() => loadEnv(apiEnvSchema, testEnvInput({ KASHIER_API_KEY: '' })))).toEqual([
       'KASHIER_API_KEY',
     ]);
+  });
+});
+
+describe('lib/config deployed-environment guards (P8 security review F-3)', () => {
+  const deployed = (nodeEnv: 'staging' | 'production', overrides: Record<string, string> = {}) =>
+    testEnvInput({
+      NODE_ENV: nodeEnv,
+      DB_SSL: 'true',
+      API_DOCS_ENABLED: 'false',
+      ...KASHIER_TEST,
+      ...overrides,
+    });
+
+  it('a deployed configuration with TLS, https links and no docs in production is valid', () => {
+    expect(() => loadEnv(apiEnvSchema, deployed('production'))).not.toThrow();
+    expect(() => loadEnv(apiEnvSchema, deployed('staging', { API_DOCS_ENABLED: 'true' }))).not.toThrow();
+  });
+
+  it('refuses database connections without TLS in staging and production, for every process', () => {
+    for (const nodeEnv of ['staging', 'production'] as const) {
+      const input = deployed(nodeEnv, { DB_SSL: 'false' });
+      expect(invalidKeys(() => loadEnv(apiEnvSchema, input))).toEqual(['DB_SSL']);
+      expect(invalidKeys(() => loadEnv(migrateEnvSchema, input))).toEqual(['DB_SSL']);
+      expect(invalidKeys(() => loadEnv(seedAdminEnvSchema, input))).toEqual(['DB_SSL']);
+    }
+    expect(() => loadEnv(apiEnvSchema, testEnvInput({ DB_SSL: 'false' }))).not.toThrow();
+  });
+
+  it('refuses the API docs in production and an http invite link once deployed', () => {
+    expect(
+      invalidKeys(() => loadEnv(apiEnvSchema, deployed('production', { API_DOCS_ENABLED: 'true' }))),
+    ).toEqual(['API_DOCS_ENABLED']);
+    const httpInvite = { INVITE_URL_BASE: 'http://app.nile.test/invite' };
+    expect(invalidKeys(() => loadEnv(apiEnvSchema, deployed('staging', httpInvite)))).toEqual([
+      'INVITE_URL_BASE',
+    ]);
+    expect(invalidKeys(() => loadEnv(seedAdminEnvSchema, deployed('production', httpInvite)))).toEqual([
+      'INVITE_URL_BASE',
+    ]);
+    expect(() => loadEnv(apiEnvSchema, testEnvInput(httpInvite))).not.toThrow();
   });
 });
 

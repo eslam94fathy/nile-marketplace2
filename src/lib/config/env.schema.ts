@@ -280,8 +280,23 @@ type Ctx = z.core.$RefinementCtx;
 const issue = (ctx: Ctx, key: string, message: string) =>
   ctx.addIssue({ code: 'custom', path: [key], message });
 
-function refinePool(env: { DB_POOL_MIN: number; DB_POOL_MAX: number }, ctx: Ctx): void {
+const isDeployed = (nodeEnv: string): boolean =>
+  nodeEnv === NodeEnv.STAGING || nodeEnv === NodeEnv.PRODUCTION;
+
+/** Pool bounds, and TLS to the database outside local development (RDS forces it, P8-Q9; review F-3). */
+function refinePool(
+  env: { DB_POOL_MIN: number; DB_POOL_MAX: number; DB_SSL: boolean; NODE_ENV: string },
+  ctx: Ctx,
+): void {
   if (env.DB_POOL_MIN > env.DB_POOL_MAX) issue(ctx, 'DB_POOL_MIN', 'must be <= DB_POOL_MAX');
+  if (isDeployed(env.NODE_ENV) && !env.DB_SSL) issue(ctx, 'DB_SSL', 'must be true in staging and production');
+}
+
+/** The invite link opens the app: an https app link once deployed (P1-Q6; review F-3). */
+function refineInvite(env: { INVITE_URL_BASE: string; NODE_ENV: string }, ctx: Ctx): void {
+  if (isDeployed(env.NODE_ENV) && !env.INVITE_URL_BASE.startsWith('https://')) {
+    issue(ctx, 'INVITE_URL_BASE', 'must be an https URL in staging and production');
+  }
 }
 
 function refineSecrets(
@@ -355,6 +370,7 @@ export const seedAdminEnvSchema = z
   .superRefine((env, ctx) => {
     refinePool(env, ctx);
     refineSecrets(env, ctx);
+    refineInvite(env, ctx);
   });
 
 export const apiEnvSchema = z
@@ -384,6 +400,11 @@ export const apiEnvSchema = z
     refinePool(env, ctx);
     refineSecrets(env, ctx);
     refinePayments(env, ctx, true);
+    refineInvite(env, ctx);
+    // P0-Q4: the API docs are never served in production (review F-3).
+    if (env.NODE_ENV === NodeEnv.PRODUCTION && env.API_DOCS_ENABLED) {
+      issue(ctx, 'API_DOCS_ENABLED', 'must be false in production');
+    }
     if (env.PAGINATION_DEFAULT_LIMIT > env.PAGINATION_MAX_LIMIT) {
       issue(ctx, 'PAGINATION_DEFAULT_LIMIT', 'must be <= PAGINATION_MAX_LIMIT');
     }
