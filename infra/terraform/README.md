@@ -56,6 +56,7 @@ docker run --rm -v "$PWD:/src" aquasec/trivy:0.74.0 config --exit-code 1 --sever
 
 - `.github/workflows/infra.yml`: on PRs touching `infra/`, the offline checks above. `plan` per environment with the read-only role is added in P9. `apply` is never run by CI.
 - `.github/workflows/deploy.yml` → `deploy-environment.yml` → `scripts/deploy/ecs-deploy.sh`: CI green on `main` → build the image once → staging (push to ECR, migrate task, roll api and worker, `/health/ready`) → production behind required reviewers, same image. **Off until P9**: needs the repository variable `DEPLOY_ENABLED = true`; production also `PRODUCTION_ENABLED = true` (go-live). Each GitHub environment (`staging`, `production`) needs the variables `AWS_REGION`, `AWS_DEPLOY_ROLE_ARN`, `ECR_REPOSITORY_URL`, `API_BASE_URL` and, from `terraform output deploy`, `ECS_CLUSTER`, `ECS_API_SERVICE`, `ECS_WORKER_SERVICE`, `ECS_API_FAMILY`, `ECS_WORKER_FAMILY`, `ECS_MIGRATE_FAMILY`, `ECS_SUBNET_IDS` (comma-separated), `ECS_SECURITY_GROUP_ID`.
+- `.github/workflows/rollback.yml` (by hand): one environment back to an earlier image by git SHA, without migrations (`docs/runbooks/deploy-and-rollback.md`). Off until P9, like the deploy.
 - Terraform owns the task definitions' env, secrets and sizes; the deploy only swaps the image (the services ignore `task_definition` in Terraform). A Terraform change reaches the tasks with the next deploy.
 
 ## Bootstrap (P9, once per account)

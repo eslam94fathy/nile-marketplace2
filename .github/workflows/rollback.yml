@@ -1,0 +1,63 @@
+# Rollback (docs/runbooks/deploy-and-rollback.md): roll one environment's api and worker back to an
+# earlier image, by git SHA, without running migrations (expand/contract keeps the older version
+# working on the newer schema, CLAUDE.md §6.1). The image must still be in that environment's ECR
+# (it keeps the last 30). Off until P9, like deploy.yml.
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: staging or production
+        type: choice
+        options: [staging, production]
+        required: true
+      sha:
+        description: Git SHA of the image to roll back to
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # The current script, whatever the image: it only swaps images.
+      - uses: actions/checkout@v5
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: The image is still in ECR
+        env:
+          SHA: ${{ inputs.sha }}
+          ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
+        run: aws ecr describe-images --repository-name "${ECR_REPOSITORY_URL#*/}" --image-ids "imageTag=$SHA" >/dev/null
+
+      - name: Roll the services back, check readiness
+        env:
+          SKIP_MIGRATIONS: 'true'
+          IMAGE: ${{ vars.ECR_REPOSITORY_URL }}:${{ inputs.sha }}
+          ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+          ECS_API_SERVICE: ${{ vars.ECS_API_SERVICE }}
+          ECS_WORKER_SERVICE: ${{ vars.ECS_WORKER_SERVICE }}
+          ECS_API_FAMILY: ${{ vars.ECS_API_FAMILY }}
+          ECS_WORKER_FAMILY: ${{ vars.ECS_WORKER_FAMILY }}
+          ECS_MIGRATE_FAMILY: ${{ vars.ECS_MIGRATE_FAMILY }}
+          ECS_SUBNET_IDS: ${{ vars.ECS_SUBNET_IDS }}
+          ECS_SECURITY_GROUP_ID: ${{ vars.ECS_SECURITY_GROUP_ID }}
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: bash scripts/deploy/ecs-deploy.sh
