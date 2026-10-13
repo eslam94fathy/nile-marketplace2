@@ -26,3 +26,6 @@ Thumbs.db
 
 # local dev keys (scripts/dev-env.js)
 .dev-keys/
+
+# load-test data: signed tokens (scripts/perf-seed.js)
+test/load/.data/
