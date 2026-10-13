@@ -489,6 +489,30 @@ describe('migrations on a real Postgres 18', () => {
         /\(inventory_item_id, created_at DESC, id DESC\)/,
       );
     });
+
+    // D-13 (P8 load baseline): the listing by price without a category sorted every visible product.
+    it('idx_products_min_price_id serves the price-sorted listing without a category, without a sort', async () => {
+      const [index] = (
+        await db.raw<{ rows: { definition: string }[] }>(
+          `SELECT pg_get_indexdef(i.indexrelid) AS definition
+             FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+            WHERE c.relname = 'idx_products_min_price_id' AND i.indisvalid`,
+        )
+      ).rows;
+      expect(index?.definition).toMatch(
+        /\(min_price, id\) WHERE.*status.*'active'.*seller_active.*deleted_at IS NULL/,
+      );
+      const plan = await db.transaction(async (trx) => {
+        await trx.raw('SET LOCAL enable_seqscan = off; SET LOCAL enable_bitmapscan = off');
+        const result = await trx.raw<{ rows: { 'QUERY PLAN': string }[] }>(
+          `EXPLAIN SELECT id FROM products WHERE status = 'active' AND seller_active AND deleted_at IS NULL
+             ORDER BY min_price, id LIMIT 21`,
+        );
+        return result.rows.map((row) => row['QUERY PLAN']).join('\n');
+      });
+      expect(plan).toContain('idx_products_min_price_id');
+      expect(plan).not.toContain('Sort');
+    });
   });
 
   describe('carts + cart_items (P4)', () => {

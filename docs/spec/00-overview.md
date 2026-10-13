@@ -259,6 +259,7 @@ The user accepted every recommendation (2026-10-08). Answers are logged in §9.1
 | D-10 | `02-database.md` §10 | `idx_shipments_created_at_desc_id`, `idx_shipments_agent_id_created_at_id`, retry index with `id`, `idx_delivery_agents_created_at_id`, `shipments.seller_order_cancelled_at`, FK `ON DELETE RESTRICT`, no index on `shipment_attempts.agent_id` | Admin and agent lists, a return after a late cancellation (P6-Q3, P6-Q5) | **Applied** (v1.10, approved 2026-10-12) |
 | D-11 | `02-database.md` §0 | Every timestamp a list cursor sorts on is `TIMESTAMPTZ(3)` (10 columns, one migration) | The cursor carries milliseconds; microsecond columns repeated or skipped rows across pages | **Applied** (v1.11, approved 2026-10-12) |
 | D-12 | `02-database.md` §0, §11 | Finance: cursor timestamps `TIMESTAMPTZ(3)`, `chk_finance_accounts_balance_non_negative`, enum CHECKs incl. `reference_type`, account / remittance / payout list indexes, `uq_payouts_payee_type_payee_id_external_reference`, FK `ON DELETE RESTRICT`, polymorphic ids and audit pointers documented | Admin lists, a DB guard for balances, the same transfer never recorded twice (P7-Q3, P7-Q8) | **Applied** (v1.12, approved 2026-10-13) |
+| D-13 | `02-database.md` §5 | `idx_products_min_price_id (min_price, id) WHERE VIS`, built concurrently | The price-sorted listing without a category sorted every visible product (P8 load baseline) | **Applied** (v1.13, approved 2026-10-13) |
 
 ## 9. Answered log (2026-10-07)
 
