@@ -1,6 +1,7 @@
 import { type DependencyContainer } from 'tsyringe';
 import { createCatalogHandlers } from './app/catalog';
 import { createDeliveryHandlers } from './app/delivery';
+import { createFinanceHandlers } from './app/finance';
 import { createNotificationHandlers } from './app/notifications';
 import { createOrderingHandlers } from './app/ordering';
 import { createPaymentsHandlers } from './app/payments';
@@ -17,5 +18,6 @@ export function createEventHandlers(container: DependencyContainer): EventHandle
     ...createPaymentsHandlers(container),
     ...createOrderingHandlers(container),
     ...createDeliveryHandlers(container),
+    ...createFinanceHandlers(container),
   ];
 }

@@ -3,6 +3,7 @@ import { registerCartModule } from './app/cart';
 import { registerCatalogModule, registerCatalogProjections } from './app/catalog';
 import { registerCustomersModule } from './app/customers';
 import { registerDeliveryModule, registerDeliveryWorker } from './app/delivery';
+import { registerFinanceWorker } from './app/finance';
 import { registerSellersModule } from './app/sellers';
 import { registerHealthModule } from './app/health';
 import { registerIdentityModule } from './app/identity';
@@ -72,5 +73,7 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   registerOrderingWorker(container);
   // delivery.seller-order-updates and the assignment retry job (spec 11 DE-13).
   registerDeliveryWorker(container);
+  // finance.ledger (spec 12 §1.2, FI-10).
+  registerFinanceWorker(container);
   return container;
 }

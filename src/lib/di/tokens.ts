@@ -158,6 +158,13 @@ export const TOKENS = {
   PaymentWebhookController: Symbol.for('PaymentWebhookController'),
   PaymentAdminController: Symbol.for('PaymentAdminController'),
 
+  // finance module
+  FinanceAccountRepository: Symbol.for('FinanceAccountRepository'),
+  LedgerEntryRepository: Symbol.for('LedgerEntryRepository'),
+  /** The only writer of balances (spec 12 §1.1). */
+  LedgerService: Symbol.for('LedgerService'),
+  LedgerBookingService: Symbol.for('LedgerBookingService'),
+
   // notifications module
   NotificationLogRepository: Symbol.for('NotificationLogRepository'),
   EmailNotificationService: Symbol.for('EmailNotificationService'),
