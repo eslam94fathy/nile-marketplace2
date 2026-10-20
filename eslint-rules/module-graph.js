@@ -10,8 +10,8 @@ const MODULE_GRAPH = {
   sellers: ['identity'],
   delivery: ['identity'],
   catalog: ['sellers', 'inventory', 'media'],
-  cart: ['catalog', 'customers', 'inventory', 'sellers'],
-  ordering: ['customers', 'cart', 'catalog', 'sellers', 'inventory', 'payments', 'delivery'],
+  cart: ['catalog', 'customers', 'inventory', 'sellers', 'media'],
+  ordering: ['customers', 'cart', 'catalog', 'sellers', 'inventory', 'payments', 'delivery', 'media'],
   finance: ['sellers', 'delivery'],
   // R2 (architecture v2.0 §14.2). Modules record audit rows through lib/audit, not by importing audit.
   audit: ['identity'],

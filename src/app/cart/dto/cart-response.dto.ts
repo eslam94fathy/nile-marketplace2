@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
 import { IsMoney } from '../../../lib/http';
+import { ImageDto, toImageDto } from '../../media';
 import { CartItemIssue } from '../enums';
 import { type CartLineView, type CartView } from '../model/cart-view.model';
 
@@ -56,6 +57,12 @@ export class CartItemDto {
   /** 0 when UNAVAILABLE, else min(sellable, 99). */
   @IsInt()
   availableQuantity!: number;
+
+  // Nullable: the variant's image (its own, else the product's primary), null when there is none.
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ImageDto)
+  image!: ImageDto | null;
 }
 
 export class CartSellerDto {
@@ -110,6 +117,7 @@ function toCartItemDto(line: CartLineView): CartItemDto {
     lineTotal: line.lineTotal.toString(),
     issue: line.issue,
     availableQuantity: line.availableQuantity,
+    image: line.image ? toImageDto(line.image) : null,
   };
 }
 

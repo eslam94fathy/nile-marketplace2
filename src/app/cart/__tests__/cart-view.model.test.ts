@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { type PurchasableVariant } from '../../catalog';
 import { type StockDto } from '../../inventory';
+import { type ImageView } from '../../media';
 import { CartItemIssue } from '../enums';
 import { type CartItem } from '../model/cart-item.model';
 import {
@@ -16,6 +17,7 @@ const variant = (
   sellerId: string,
   price: string,
   purchasable = true,
+  imageMediaId: string | null = null,
 ): PurchasableVariant => ({
   variantId,
   productId: `product-${variantId}`,
@@ -26,6 +28,7 @@ const variant = (
   sellerId,
   attributes: [{ attribute: 'Color', value: 'Black' }],
   purchasable,
+  imageMediaId,
 });
 const stock = (variantId: string, sellable: number): StockDto => ({
   variantId,
@@ -39,11 +42,13 @@ function lookups(
   variants: PurchasableVariant[],
   levels: StockDto[],
   names: Record<string, string> = { s1: 'Shop One', s2: 'Shop Two' },
+  images: ImageView[] = [],
 ): CartLookups {
   return {
     variants: new Map(variants.map((v) => [v.variantId, v])),
     stock: new Map(levels.map((l) => [l.variantId, l])),
     businessNames: new Map(Object.entries(names)),
+    images: new Map(images.map((image) => [image.id, image])),
   };
 }
 
@@ -128,6 +133,31 @@ describe('assembleCartView', () => {
     });
     expect(view.itemsTotal.toString()).toBe('10.00');
     expect(view.itemCount).toBe(1);
+  });
+
+  it('shows the variant image when media returned it, else null (spec 08 §8)', () => {
+    const image: ImageView = {
+      id: 'm1',
+      urls: { thumb: 'https://cdn/t', medium: 'https://cdn/m', large: 'https://cdn/l' },
+      width: 800,
+      height: 600,
+    };
+    const { view } = assembleCartView(
+      'cart-1',
+      [item('i1', 'v1', 1), item('i2', 'v2', 1), item('i3', 'v3', 1)],
+      lookups(
+        [
+          variant('v1', 's1', '10.00', true, 'm1'),
+          variant('v2', 's1', '10.00'),
+          // Not ready any more: left out rather than failing.
+          variant('v3', 's1', '10.00', true, 'm-gone'),
+        ],
+        [stock('v1', 5), stock('v2', 5), stock('v3', 5)],
+        undefined,
+        [image],
+      ),
+    );
+    expect(view.sellers[0]?.items.map((line) => line.image)).toEqual([image, null, null]);
   });
 
   it('a variant without a stock row is out of stock', () => {

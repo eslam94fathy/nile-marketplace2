@@ -18,6 +18,7 @@ const COLUMNS = [
   'quantity',
   'cancelled_quantity',
   'line_total',
+  'image_media_id',
 ] as const;
 
 interface OrderItemTable {
@@ -32,6 +33,7 @@ interface OrderItemTable {
   quantity: number;
   cancelled_quantity: number;
   line_total: string;
+  image_media_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -51,6 +53,7 @@ function toModel(row: OrderItemRow): OrderItem {
     quantity: row.quantity,
     cancelledQuantity: row.cancelled_quantity,
     lineTotal: Money.of(row.line_total),
+    imageMediaId: row.image_media_id,
   };
 }
 
@@ -81,6 +84,7 @@ export class OrderItemRepository {
           quantity: item.quantity,
           cancelled_quantity: 0,
           line_total: item.lineTotal.toString(),
+          image_media_id: item.imageMediaId,
         })),
       )
       .returning<OrderItemRow[]>(COLUMNS);

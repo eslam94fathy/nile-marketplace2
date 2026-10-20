@@ -49,6 +49,9 @@ import * as m20261020120001 from './20261020120001_create_admin_audit_log';
 import * as m20261020130001 from './20261020130001_create_media_objects';
 import * as m20261020140001 from './20261020140001_add_categories_image';
 import * as m20261020140002 from './20261020140002_create_product_images';
+import * as m20261020170202 from './20261020170202_add_order_items_image_media_id';
+import * as m20261020170204 from './20261020170204_validate_order_items_image_media_id_fk';
+import * as m20261020170206 from './20261020170206_add_order_items_image_media_id_index';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -103,5 +106,8 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261020130001_create_media_objects', module: m20261020130001 },
   { name: '20261020140001_add_categories_image', module: m20261020140001 },
   { name: '20261020140002_create_product_images', module: m20261020140002 },
+  { name: '20261020170202_add_order_items_image_media_id', module: m20261020170202 },
+  { name: '20261020170204_validate_order_items_image_media_id_fk', module: m20261020170204 },
+  { name: '20261020170206_add_order_items_image_media_id_index', module: m20261020170206 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

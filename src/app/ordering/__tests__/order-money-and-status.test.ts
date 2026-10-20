@@ -18,6 +18,7 @@ const line = (
   attributes: [],
   unitPrice: Money.of(price),
   quantity,
+  imageMediaId: null,
 });
 
 describe('computeCheckoutMoney (spec 09 §3.1 step 5)', () => {

@@ -312,6 +312,8 @@ export class CheckoutService {
         attributes: variant.attributes,
         unitPrice: Money.of(variant.price),
         quantity: line.quantity,
+        // Not claimed: catalog owns the claim, and media cleanup keeps an object this FK still uses.
+        imageMediaId: variant.imageMediaId,
       };
     });
     return {
@@ -361,6 +363,7 @@ export class CheckoutService {
           unitPrice: line.unitPrice,
           quantity: line.quantity,
           lineTotal: line.lineTotal,
+          imageMediaId: line.imageMediaId,
         })),
       ),
       trx,

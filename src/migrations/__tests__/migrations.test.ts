@@ -61,6 +61,9 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261020130001_create_media_objects',
       '20261020140001_add_categories_image',
       '20261020140002_create_product_images',
+      '20261020170202_add_order_items_image_media_id',
+      '20261020170204_validate_order_items_image_media_id_fk',
+      '20261020170206_add_order_items_image_media_id_index',
     ]);
   });
 

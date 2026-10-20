@@ -10,10 +10,16 @@ import {
   IsBoolean,
 } from 'class-validator';
 import { IsMoney, IsRate } from '../../../lib/http';
+import { ImageDto, toImageDto } from '../../media';
 import { PaymentMethod, PaymentStatus } from '../../payments';
 import { ActorRole, OrderStatus, SellerOrderCancelReason, SellerOrderStatus } from '../enums';
-import { type OrderDetail, type SellerOrderDetail, type SellerOrderView } from '../model/order-view.model';
-import { type OrderItem, type OrderListEntry, type StatusHistoryEntry } from '../model/order.model';
+import {
+  type OrderDetail,
+  type OrderItemView,
+  type SellerOrderDetail,
+  type SellerOrderView,
+} from '../model/order-view.model';
+import { type OrderListEntry, type StatusHistoryEntry } from '../model/order.model';
 
 /* Response DTOs for spec 09 §4 (decorators describe the OpenAPI shape only). */
 
@@ -58,6 +64,12 @@ export class OrderItemDto {
   /** unitPrice × (quantity − cancelledQuantity). */
   @IsMoney()
   lineTotal!: string;
+
+  // Nullable: the variant's image at checkout, null when it had none.
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ImageDto)
+  image!: ImageDto | null;
 }
 
 export class ShippingAddressDto {
@@ -389,7 +401,7 @@ export class AdminOrderDetailDto extends OrderDetailDto {
 
 const iso = (date: Date | null): string | null => date?.toISOString() ?? null;
 
-function toOrderItemDto(item: OrderItem): OrderItemDto {
+function toOrderItemDto(item: OrderItemView): OrderItemDto {
   return {
     id: item.id,
     productId: item.productId,
@@ -401,6 +413,7 @@ function toOrderItemDto(item: OrderItem): OrderItemDto {
     quantity: item.quantity,
     cancelledQuantity: item.cancelledQuantity,
     lineTotal: item.lineTotal.toString(),
+    image: item.image ? toImageDto(item.image) : null,
   };
 }
 

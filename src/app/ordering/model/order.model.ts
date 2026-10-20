@@ -84,6 +84,8 @@ export interface OrderItem {
   quantity: number;
   cancelledQuantity: number;
   lineTotal: Money;
+  /** The variant's image at checkout (spec 09 §8.3); null when it had none. */
+  imageMediaId: string | null;
 }
 
 /** Units still to deliver on a line (spec 09 §3.5). */

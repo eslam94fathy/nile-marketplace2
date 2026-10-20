@@ -93,3 +93,23 @@ export async function insertReadyMedia(
   if (!row) throw new Error('media insert returned no row');
   return row.id;
 }
+
+/**
+ * A claimed, ready image attached to a product straight in the database (spec 06 §8.1), for tests of
+ * the modules that read product images (cart, ordering). Returns the media id.
+ */
+export async function attachProductImage(
+  t: TestApp,
+  image: { productId: string; ownerUserId: string; position: number; variantId?: string },
+): Promise<string> {
+  const mediaId = await insertReadyMedia(t, image.ownerUserId, 'product_image');
+  await t.infra.db.knex('media_objects').where({ id: mediaId }).update({ claimed_at: new Date() });
+  await t.infra.db.knex('product_images').insert({
+    product_id: image.productId,
+    media_id: mediaId,
+    variant_id: image.variantId ?? null,
+    position: image.position,
+    alt_text: null,
+  });
+  return mediaId;
+}

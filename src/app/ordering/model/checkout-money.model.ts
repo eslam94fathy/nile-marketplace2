@@ -10,6 +10,7 @@ export interface PricedLine {
   attributes: { attribute: string; value: string }[];
   unitPrice: Money;
   quantity: number;
+  imageMediaId: string | null;
 }
 
 export interface SellerSplit {

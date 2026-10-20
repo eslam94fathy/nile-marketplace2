@@ -287,6 +287,7 @@ describe('catalog: public browse, search, detail (spec 06 §4.1, UC-CA-6)', () =
           { attribute: 'size', value: 'XL' },
         ],
         purchasable: true,
+        imageMediaId: null,
       });
       for (const id of ids.slice(1, 5)) expect(byId.get(id)?.purchasable, id).toBe(false);
       expect(await directory.getVariantsForPurchase([])).toEqual([]);

@@ -1,11 +1,12 @@
 import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '../../../lib/di';
 import { type PageMeta, type ParsedListQuery, toPage } from '../../../lib/http';
+import { type MediaService } from '../../media';
 import { type IPaymentDirectory } from '../../payments';
 import { type ISellerDirectory } from '../../sellers';
 import { orderNotFound, sellerOrderNotFound } from '../errors';
 import { isBilled } from '../model/order-status.model';
-import { type OrderDetail, type SellerOrderView } from '../model/order-view.model';
+import { type OrderDetail, type OrderItemView, type SellerOrderView } from '../model/order-view.model';
 import {
   type Order,
   type OrderItem,
@@ -20,7 +21,8 @@ import { type StatusHistoryRepository } from '../repository/status-history.repos
 
 /**
  * Order reads (spec 09 §4): customer, seller and admin views. Every view loads its related rows with
- * one batched query per table (G20, OR-9); business names come live from sellers.
+ * one batched query per table (G20, OR-9); business names come live from sellers, line images in one
+ * media read per view (spec 09 §8.3).
  */
 @injectable()
 export class OrderViewService {
@@ -31,6 +33,7 @@ export class OrderViewService {
     @inject(TOKENS.StatusHistoryRepository) private readonly history: StatusHistoryRepository,
     @inject(TOKENS.PaymentDirectory) private readonly payments: IPaymentDirectory,
     @inject(TOKENS.SellerDirectory) private readonly sellers: ISellerDirectory,
+    @inject(TOKENS.MediaService) private readonly media: MediaService,
   ) {}
 
   /** ORDER_NOT_FOUND for another customer's order: never tell them apart. */
@@ -78,7 +81,7 @@ export class OrderViewService {
     const sellerOrders = await this.sellerOrders.findByOrderIds([order.id]);
     const sellerOrderIds = sellerOrders.map((s) => s.id);
     const [items, sellerHistory, orderHistory, payments, names] = await Promise.all([
-      this.items.findBySellerOrderIds(sellerOrderIds),
+      this.items.findBySellerOrderIds(sellerOrderIds).then((rows) => this.withImages(rows)),
       this.history.listForSellerOrders(sellerOrderIds),
       this.history.listForOrders([order.id]),
       this.payments.getSummaries([order.id]),
@@ -127,7 +130,7 @@ export class OrderViewService {
   private async sellerViews(sellerOrders: readonly SellerOrder[]): Promise<SellerOrderView[]> {
     const [orders, items] = await Promise.all([
       this.orders.findByIds(sellerOrders.map((s) => s.orderId)),
-      this.items.findBySellerOrderIds(sellerOrders.map((s) => s.id)),
+      this.items.findBySellerOrderIds(sellerOrders.map((s) => s.id)).then((rows) => this.withImages(rows)),
     ]);
     const orderById = new Map(orders.map((o) => [o.id, o]));
     return sellerOrders.map((sellerOrder) => {
@@ -140,9 +143,20 @@ export class OrderViewService {
           paymentMethod: order.paymentMethod,
           dropoffGovernorate: { id: order.shipping.governorateId, name: order.shipping.governorateName },
         },
-        items: items.filter((item: OrderItem) => item.sellerOrderId === sellerOrder.id),
+        items: items.filter((item) => item.sellerOrderId === sellerOrder.id),
       };
     });
+  }
+
+  /** A snapshot image that is somehow no longer ready is left out rather than failing the view. */
+  private async withImages(items: readonly OrderItem[]): Promise<OrderItemView[]> {
+    const images = await this.media.getImages(
+      items.flatMap((item) => (item.imageMediaId === null ? [] : [item.imageMediaId])),
+    );
+    return items.map((item) => ({
+      ...item,
+      image: item.imageMediaId === null ? null : (images.get(item.imageMediaId) ?? null),
+    }));
   }
 
   private async businessNames(sellerOrders: readonly SellerOrder[]): Promise<Map<string, string>> {

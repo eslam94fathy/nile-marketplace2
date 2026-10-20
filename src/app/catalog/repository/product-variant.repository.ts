@@ -13,6 +13,7 @@ const VALUES = CATALOG_TABLES.VARIANT_ATTRIBUTE_VALUES;
 const ATTRIBUTES = CATALOG_TABLES.CATEGORY_ATTRIBUTES;
 const OPTIONS = CATALOG_TABLES.CATEGORY_ATTRIBUTE_OPTIONS;
 const CATEGORIES = CATALOG_TABLES.CATEGORIES;
+const IMAGES = CATALOG_TABLES.PRODUCT_IMAGES;
 
 interface PurchaseRow {
   variant_id: string;
@@ -24,6 +25,7 @@ interface PurchaseRow {
   price: string;
   seller_id: string;
   purchasable: boolean;
+  image_media_id: string | null;
   attributes: { attribute: string; value: string }[];
 }
 const COLUMNS = [
@@ -176,7 +178,8 @@ export class ProductVariantRepository {
 
   /**
    * What cart and ordering need, in one query (spec 06 §2): each variant with its product, its
-   * options (depth, then sort order) and `purchasable`. Deleted variants are included (not
+   * options (depth, then sort order), `purchasable` and its image (the lowest-position image tied to
+   * it, else position 0; uq_product_images_product_id_position). Deleted variants are included (not
    * purchasable); unknown ids are left out. Joins stay inside catalog's own tables.
    */
   async findForPurchase(variantIds: readonly string[], trx?: DbTransaction): Promise<PurchasableVariant[]> {
@@ -186,6 +189,10 @@ export class ProductVariantRepository {
               v.sku, v.price, v.seller_id,
               (v.status = ? AND v.deleted_at IS NULL
                  AND p.status = ? AND p.seller_active AND p.deleted_at IS NULL) AS purchasable,
+              (SELECT i.media_id FROM ${IMAGES} i
+                WHERE i.product_id = v.product_id AND (i.variant_id = v.id OR i.position = 0)
+                ORDER BY (i.variant_id = v.id) IS TRUE DESC, i.position
+                LIMIT 1) AS image_media_id,
               COALESCE((
                 SELECT json_agg(json_build_object('attribute', a.name, 'value', o.value)
                                 ORDER BY c.depth, a.sort_order, a.code)
@@ -210,6 +217,7 @@ export class ProductVariantRepository {
       sellerId: row.seller_id,
       attributes: row.attributes,
       purchasable: row.purchasable,
+      imageMediaId: row.image_media_id,
     }));
   }
 

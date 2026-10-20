@@ -3,7 +3,7 @@
  * per-seller split, snapshots, stored statuses and the money of each seller order.
  * Owns tables: orders, seller_orders, order_items, order_item_cancellations, order_status_history,
  * seller_order_status_history. No other module reads or writes them.
- * May call: customers, cart, catalog, sellers, inventory, payments, delivery. Nobody calls ordering
+ * May call: customers, cart, catalog, sellers, inventory, payments, delivery, media. Nobody calls ordering
  * (architecture §2): it has no public service API, only event contracts and its routes.
  */
 import { type Router } from 'express';
@@ -57,7 +57,7 @@ function registerOrderingCore(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.OrderLifecycleService, OrderLifecycleService);
 }
 
-/** api process. Needs customers, cart, catalog, sellers, inventory, payments and delivery registered first. */
+/** api process. Needs customers, cart, catalog, sellers, inventory, payments, delivery and media registered first. */
 export function registerOrderingModule(container: DependencyContainer): void {
   registerOrderingCore(container);
   container.registerSingleton(TOKENS.CheckoutService, CheckoutService);
