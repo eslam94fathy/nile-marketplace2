@@ -75,6 +75,10 @@ Exact versions are pinned at install (`save-exact=true`), using the latest stabl
 
 **Installed 2026-10-20 (R2-P1 step 2):** `@aws-sdk/*` **3.1146.0** (3.1147.0 was published 2026-10-06 22:58 UTC, under two weeks old on the install day), `sharp` 0.35.5, `@testcontainers/minio` 12.1.0. `sharp` loads in the runtime image with `npm ci --ignore-scripts` (prebuilt `@img/sharp-linux-x64`), and Trivy finds nothing HIGH / CRITICAL in it. MinIO image: `pgsty/minio:RELEASE.2026-08-04T00-00-00Z` (architecture v2.2 §14.9).
 
+**Installed 2026-10-20 (R2-P2 step 1):** `socket.io` 4.8.4, `@socket.io/redis-adapter` 8.3.0, `@socket.io/redis-emitter` 5.1.0, dev `socket.io-client` 4.8.4 (every candidate ≥ 2 weeks old; `npm audit` clean). `web-push` and its types are installed with step 6.
+
+**RT-7 compatibility check (2026-10-20, passed).** Two gateways on the classic `createAdapter` and a worker-style `Emitter`, all on the project's `ioredis` 6.0.0, against Redis 7.2, WebSocket transport only. Passed: an emit to a room reaches its sockets on both gateways and no others; a multi-room emit reaches a socket in two of the rooms once; JSON payloads round-trip (a `Date` arrives as an ISO string, UTF-8 intact); a gateway's room emit reaches the other gateway; `emitter.in(room).disconnectSockets(true)` closes exactly that room's sockets on both gateways (spec 15 `user.suspended`); `fetchSockets` sees remote sockets; after a dropped Redis connection, ioredis queues the publish and delivers it on reconnect. **One hazard found:** the emitter calls `redisClient.publish(…)` and drops the promise (5 call sites in 5.1.0, and `publish` is the only method it calls), so a publish on a closed connection is an **unhandled rejection**, which our `unhandledRejection` handler turns into a worker shutdown. `lib/realtime` therefore hands the emitter a client whose `publish` catches the rejection, logs a `warn` and drops the message, which is the RT-3 behaviour (drop on Redis down); verified in the same check. No in-house emitter is needed.
+
 ---
 
 ## 3. Rules for every R2 phase
