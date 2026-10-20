@@ -153,7 +153,8 @@ interface DashboardDto {
 ### 3.4 Product block (catalog, BO-6)
 An admin can take a product off the shop (counterfeit, prohibited goods), whatever its status.
 - New columns `products.admin_blocked_at TIMESTAMPTZ NULL`, `admin_block_reason VARCHAR(500) NULL` (`CHECK` both null or both set).
-- A blocked product is not publicly visible (the visibility predicate gains `admin_blocked_at IS NULL`; the partial public list indexes are rebuilt with it, database v2.0), can't be bought (`getVariantsForPurchase` → not purchasable, so cart shows an issue and checkout answers `CART_HAS_ISSUES`), and the seller can't change its status (`409 PRODUCT_BLOCKED`). The seller sees `adminBlocked: true` and the reason.
+- A block also sets `status = 'inactive'` (database DB-Q8, 2026-10-20), so the product leaves the shop through the existing visibility rule and no public index changes. It can't be bought (`getVariantsForPurchase` → not purchasable, so cart shows an issue and checkout answers `CART_HAS_ISSUES`), and the seller can't change its status while blocked (`409 PRODUCT_BLOCKED`). The seller sees `adminBlocked: true` and the reason.
+- **Unblock** clears the two columns and leaves the product `inactive`; the seller re-activates it.
 - Open orders of the product continue (like Q-36).
 - Endpoints (auth: admin): `POST /admin/products/:productId/block` (`reason str(3..500)`) and `POST /admin/products/:productId/unblock` → `200` admin product view (`GET /admin/products/:productId`, new: the seller product detail + seller id). Errors: `PRODUCT_NOT_FOUND` 404, `PRODUCT_BLOCK_INVALID_STATUS` 409 (block a blocked one, unblock an unblocked one).
 - Each writes an audit row and deletes the product-detail cache after commit (CA-8). The seller is notified in-app (`orders` category, BO-8).

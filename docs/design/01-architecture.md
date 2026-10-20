@@ -1,7 +1,7 @@
 # System Design 01 — Architecture (Release 1)
 
 Status: **v1.10 APPROVED (2026-10-13).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). v1.4: catalog cache keys and TTLs (§8), "newest" sorts on `published_at` (§9) (Phase 3). v1.5: typo search matches words (§9, P3-O1). v1.6: edge `cart → customers` (§2, A-4, Phase 4). v1.7: checkout inserts the order rows before reserving stock (§7.1, A-3); one lock order across ordering, inventory and payments (§3.1); order jobs handle one order per transaction (§6); Kashier sessions and webhook signature (§7.2) (Phase 5). v1.8: the expiry job abandons no session (§6, spec 10 PA-11). v1.9: region `eu-central-1` (SD-3d), sizes, RabbitMQ 4.2, TLS to the data stores, secrets, network and egress IPs (K-7), deploy pipeline, alerting (§12.1, §13, Phase 8). v1.10: suspended-user deny entry in Redis (§8, §10, spec 03 I-11). Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-20):** §14 adds Release 2 (realtime process, media storage and CDN, new modules and edges, lock order, jobs, security, capacity, hosting, new dependencies). Folded into §1–§13 when approved. Open questions in §14.11 (A-5…A-10).
+**v2.0 DRAFT (2026-10-20):** §14 adds Release 2 (realtime process, media storage and CDN, new modules and edges, lock order, jobs, security, capacity, hosting, new dependencies). Folded into §1–§13 when approved. §14.11 A-5…A-10 answered 2026-10-20 (every recommendation accepted).
 Inputs: `CLAUDE.md` (engineering rules), `docs/spec/00-overview.md` v1.0 (business). Schema: `02-database.md`.
 
 ---
@@ -244,6 +244,7 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 | SD-10 | Human-readable `order_number` (`NM-` + sequence) |
 | SD-11 | JWT signed with **RS256** (key pair) |
 | SD-3d | Region **`eu-central-1`** (Frankfurt): no residency requirement, ~50–60 ms from Cairo, every service we need. RDS PostgreSQL 18 and Amazon MQ RabbitMQ 4.2 are checked there with the AWS CLI before the first apply; `me-central-1` (UAE) is the fallback if a check fails (P8-Q2, 2026-10-13) |
+| A-5…A-10 | Release 2 (2026-10-20, §14.11): the web app is hosted outside this repository by the web team · images processed in the worker (`media.processing` prefetch 1, prod worker 1 vCPU / 2 GB) · the existing ALB serves `/realtime*`, idle timeout 120 s · CDN on `media.<domain>` (ACM in `us-east-1`) · the §14.10 dependencies approved · MinIO through Testcontainers in integration tests, an in-memory storage fake in unit tests |
 | SD-12 | Phase 8 (P8-Q3…Q15, 2026-10-13): staging and prod written over the same Terraform modules in Phase 8 (no AWS needed), **staging applied in Phase 9** (staging deploy), prod at a separate go-live; two AWS accounts in one Organization; the sizes, broker version, TLS, secrets, network, pipeline and alerting in §13 |
 
 ### 12.2 Open
@@ -312,7 +313,7 @@ Region: **`eu-central-1`** (SD-3d).
 
 ## 14. Release 2 [v2.0 DRAFT, 2026-10-20]
 
-Inputs: `docs/spec/00-overview.md` v2.0 draft §10 (answers §10.8–§10.11), specs 01–20 Release 2 sections. §1–§13 still describe Release 1; this section is folded into them when approved. Open questions in §14.11 (A-5…A-10).
+Inputs: `docs/spec/00-overview.md` v2.0 draft §10 (answers §10.8–§10.11), specs 01–20 Release 2 sections. §1–§13 still describe Release 1; this section is folded into them when approved. Decisions in §14.11 (A-5…A-10, answered 2026-10-20).
 
 ### 14.1 Runtime topology
 ```
@@ -436,7 +437,9 @@ Ratings live on the product and seller rows (read fresh), so no rating is cached
 
 No cookie library: the api reads one cookie, parsed by a small helper in `lib/http` (the `cookie` header is already redacted in logs). Exact versions are pinned in the R2 implementation plan.
 
-### 14.11 Open questions
+### 14.11 Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in §12.1 (A-5…A-10).
 
 | # | Topic | Options / recommendation |
 |---|---|---|

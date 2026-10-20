@@ -1,7 +1,7 @@
 # System Design 02 — Database Schema (Release 1)
 
 Status: **v1.13 APPROVED (2026-10-13).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). v1.5: public product listings sort on `published_at` (D-5); `id` tie-break on the stock-history index (D-6). v1.6: `idx_products_category_id` for category usage checks (D-7). v1.7: cart FK `ON DELETE` behaviour and why `cart_items.variant_id` has no index (§7, P4-Q11). v1.8: ordering/payments indexes, Kashier session columns, refund reason `amount_mismatch`, FK behaviour and unindexed FKs (§6, §8, §9, D-8, Phase 5). v1.9: `inventory_reservations.quantity` is what is still reserved, `>= 0`, and 0 exactly when `released` (§6, D-9). v1.10: shipment snapshots, the cancelled-after-pickup marker and the delivery list indexes (§10, D-2, D-3, D-10, Phase 6). v1.11: every timestamp a list cursor sorts on is `TIMESTAMPTZ(3)` (§0, D-11). v1.12: finance enum CHECKs, the non-negative balance guard, list indexes, FK behaviour and the duplicate-payout guard (§0, §11, D-12, Phase 7). v1.13: `idx_products_min_price_id` for the price-sorted listing without a category (§5, D-13, Phase 8 load baseline). Changes from now on need explicit approval and a version bump. Decisions: §13.
-**v2.0 DRAFT (2026-10-20):** §14 adds the Release 2 schema (new tables of media, support, reviews, returns, promotions, audit; columns and indexes on existing tables; migration rules). Folded into §1–§13 when approved. Open questions in §14.15 (DB-Q7…DB-Q12).
+**v2.0 DRAFT (2026-10-20):** §14 adds the Release 2 schema (new tables of media, support, reviews, returns, promotions, audit; columns and indexes on existing tables; migration rules). Folded into §1–§13 when approved. §14.15 DB-Q7…DB-Q12 answered 2026-10-20 (every recommendation accepted).
 Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §6. Business rules: `docs/spec/00-overview.md` v1.0.
 
 ---
@@ -566,6 +566,7 @@ Index: `idx_processed_events_processed_at`: the cleanup job.
 | D-11 | Every timestamp a list cursor sorts on is `TIMESTAMPTZ(3)` (§0): the cursor carries a JS `Date`, so microseconds repeated rows on ascending pages and skipped same-millisecond rows on descending ones. Migration `20261012140001` (Phase 6 implementation, 2026-10-12) |
 | D-12 | Phase 7 (P7-Q3, P7-Q8, 2026-10-13): finance cursor timestamps `TIMESTAMPTZ(3)`; `chk_finance_accounts_balance_non_negative` (every type but `platform_delivery_revenue`); CHECKs on every finance enum column, including the new `reference_type`; `idx_finance_accounts_balance_id`, `idx_finance_accounts_updated_at_id`; `id` tie-break on the remittance and payout payee indexes; `idx_cod_remittances_created_at_id`, `idx_payouts_created_at_id`; `uq_payouts_payee_type_payee_id_external_reference`; FKs `ON DELETE RESTRICT`, polymorphic `owner_id` / `payee_id` without FK, no index on the `*_by_user_id` audit pointers |
 | D-13 | `idx_products_min_price_id (min_price, id) WHERE VIS`, built concurrently: the public listing sorted by price without a category read and sorted every visible product (144 ms idle, ~300 ms under load on 100k products), found by the P8 load baseline (2026-10-13) |
+| DB-Q7…DB-Q12 | Release 2 (2026-10-20, §14.15): new `NOT NULL` columns via `ADD COLUMN … DEFAULT v` + `DROP DEFAULT` in one migration · an admin block sets `status = 'inactive'` and locks the status, VIS unchanged (spec 20 §3.4 amended) · partial index on `order_items.image_media_id` · rating sort indexed globally only, per-category after measuring · encrypted payout details as `TEXT` with a length CHECK · no holds for seller orders delivered before R2 |
 
 No open schema questions.
 
@@ -573,7 +574,7 @@ No open schema questions.
 
 ## 14. Release 2 schema [v2.0 DRAFT, 2026-10-20]
 
-Inputs: specs 01–20 Release 2 sections, architecture v2.0 draft §14. The conventions of §0 apply unchanged. §1–§12 still describe Release 1; this section is folded into them when approved. Open questions in §14.15 (DB-Q7…DB-Q12).
+Inputs: specs 01–20 Release 2 sections, architecture v2.0 draft §14. The conventions of §0 apply unchanged. §1–§12 still describe Release 1; this section is folded into them when approved. Decisions in §14.15 (DB-Q7…DB-Q12, answered 2026-10-20).
 
 ### 14.1 Ownership additions (§1)
 | Module | Tables |
@@ -696,7 +697,9 @@ std columns · `product_id` fk · `media_id` fk → media_objects (`uq_product_i
 ### 14.14 audit
 `admin_audit_log` as spec 20 §2.1, with its three indexes and `trg_admin_audit_log_no_update` (`BEFORE UPDATE … RAISE EXCEPTION`). The trigger function lives in the same migration; its `down` drops both.
 
-### 14.15 Open questions
+### 14.15 Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in §13 (DB-Q7…DB-Q12).
 
 | # | Topic | Options / recommendation |
 |---|---|---|

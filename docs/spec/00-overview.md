@@ -616,3 +616,22 @@ The user accepted every recommendation in specs 09 §8.9, 10 §8.7, 11 §8.6, 12
 | FI-13 | No holds for seller orders delivered before R2 |
 | FI-14 | Coupon cost in `platform_promotions` |
 | FI-15 | A refund event before the return booking is retried |
+
+### 10.12 Answered log: Release 2 design questions (2026-10-20)
+
+The user accepted every recommendation in architecture v2.0 §14.11 and database v2.0 §14.15.
+
+| Q | Answer |
+|---|---|
+| A-5 | The web app is hosted outside this repository by the web team |
+| A-6 | Images processed in the worker (prefetch 1, prod worker 1 vCPU / 2 GB) |
+| A-7 | The existing ALB serves `/realtime*`; idle timeout 120 s |
+| A-8 | CDN on `media.<domain>` |
+| A-9 | New dependencies of architecture §14.10 approved |
+| A-10 | MinIO through Testcontainers; in-memory storage fake in unit tests |
+| DB-Q7 | New `NOT NULL` columns via a temporary default dropped in the same migration |
+| DB-Q8 | An admin block sets the product `inactive` and locks its status; unblock leaves it inactive (spec 20 §3.4 amended) |
+| DB-Q9 | Partial index on `order_items.image_media_id` |
+| DB-Q10 | Rating sort indexed globally; per-category index only after measuring |
+| DB-Q11 | Encrypted payout details stored as `TEXT` with a length CHECK |
+| DB-Q12 | No holds for seller orders delivered before R2 |
