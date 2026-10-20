@@ -178,7 +178,7 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | NO-11 | `promotions` category | **Rec:** created now (preferences exist, off by default) with no sender in R2; campaign sending is a later release · or leave the category out until there is a sender |
 
 ### 8.8 Additions from specs 17 and 20 [2026-10-20]
-Rows added to the §8.2 mapping, subject to RV-8 and BO-8:
+Rows added to the §8.2 mapping (RV-8 and BO-8 accepted 2026-10-20):
 
 | Event | Recipient | Category | Type | Text (title · body) |
 |---|---|---|---|---|
@@ -186,3 +186,17 @@ Rows added to the §8.2 mapping, subject to RV-8 and BO-8:
 | `review.replied` | the reviewer | orders | `review_replied` | "Seller replied" · "The seller replied to your review." |
 | `product.blocked` | the seller | orders | `product_blocked` | "Product blocked" · "A product was blocked by the platform." |
 | `seller_order.cancelled` (`admin_cancelled`) | customer and seller | orders | `seller_order_cancelled` | unchanged §8.2 row; the seller now also receives it because an admin, not the seller, cancelled |
+
+### 8.9 Additions from specs 10 and 18 [2026-10-20]
+Subject to RE-9 and PA-26. All under `orders`:
+
+| Event | Recipient | Type | Text (title · body) |
+|---|---|---|---|
+| `return.status_changed` → `requested` | seller | `return_requested` | "Return requested" · "A return was requested on order #{n}." |
+| → `approved` | customer | `return_approved` | "Return approved" · "Your return {returnNumber} was approved. An agent will pick it up." |
+| → `rejected` | customer | `return_rejected` | "Return rejected" · "Your return {returnNumber} was rejected. You can escalate it." |
+| → `picked_up` | customer | `return_picked_up` | "Return picked up" · "Your return {returnNumber} is on its way to the seller." |
+| → `received` | seller | `return_received` | "Return arrived" · "Return {returnNumber} was delivered to you. Please inspect it." |
+| → `completed` | customer | `return_completed` | "Return accepted" · "Return {returnNumber} is complete. Your refund is on its way." |
+| → `refused` | customer, seller | `return_refused` | "Return closed" · "Return {returnNumber} was closed without a refund." |
+| `payment.refunded`, `payment.refund_recorded` | customer | `refund_issued` | "Refund issued" · "Your refund for order #{n} was issued." |

@@ -546,3 +546,32 @@ The user accepted every recommendation in the open-question tables of specs 03 �
 | SU-4 | Open-ticket limit is a soft check; a small overshoot is accepted |
 | SU-5 | Assign, resolve and close are audited; messages and notes are not |
 | SU-6 | Tickets kept indefinitely in R2 |
+
+### 10.10 Answered log: Release 2 spec questions, second batch (2026-10-20)
+
+The user accepted every recommendation in specs 04 §8.6, 09 §8.6, 17 §7 and 20 §7.
+
+| Q | Answer |
+|---|---|
+| RV-1 | One live review per customer and product, based on any delivered item of it |
+| RV-2 | A review stays after the item is returned |
+| RV-3 | Up to 4 public images per review |
+| RV-4 | The author may delete any time (soft delete) and write a new one while the window is open |
+| RV-5 | One final seller reply; an admin may hide it |
+| RV-6 | Reviewer shown as first name + last initial |
+| RV-7 | No user reports of reviews in R2 |
+| RV-8 | In-app + push under `orders`: the seller on a new review, the reviewer on a reply |
+| WL-1 | `GET /me/wishlist/product-ids` once per session; product endpoints stay anonymous |
+| WL-2 | Unavailable products stay in the wishlist and count toward the 200 |
+| WL-3 | No wishlist alerts in R2 |
+| OR-17 | Admin whole-order cancel is all or nothing (`409 ORDER_NOT_CANCELLABLE` names the blockers) |
+| OR-18 | Admin cancel reason: required free text 3..500 |
+| OR-19 | The customer sees `admin_cancelled` only; the text stays internal |
+| BO-1 | Table-less `backoffice` module composes the dashboard and directory |
+| BO-2 | Trigger rejects `UPDATE` on the audit log; `DELETE` only by the retention job |
+| BO-3 | Admin reads are not audited in R2 |
+| BO-4 | Every admin may read the audit log |
+| BO-5 | Dashboard days are `Africa/Cairo` business days |
+| BO-6 | Admin product block is in R2 |
+| BO-7 | Placed and delivered GMV both shown; returns reduce delivered GMV on the day received |
+| BO-8 | The seller is notified in-app + push when a product is blocked |

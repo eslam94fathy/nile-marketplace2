@@ -1,7 +1,7 @@
 # Spec 09 — ordering
 
 Status: **v1.5 APPROVED (2026-10-13).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: `amountCancelled` when the last units are cancelled (OR-12); what the order totals count (OR-13). v1.2: shipment events that overtake their predecessor are retried (OR-14). v1.3: the expiry job abandons nothing and waits on a payment in flight (OR-6 as amended by spec 10 PA-11, PA-13). v1.4: `seller_order.items_cancelled` carries `previousStatus` (OR-15). v1.5: one open Kashier payment per customer (OR-16, Phase 8 security review F-2). Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 pieces other R2 specs rely on: a public API (ordering is now called by other modules), `seller_order.accepted`, the order-item image snapshot and admin cancellation (S-9 for R2). Returns (spec 18) and coupons (spec 19) add their parts in the same version. Folded into §1–§7 when approved. Open questions in §8.6 (OR-17…OR-19).
+**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 pieces other R2 specs rely on: a public API (ordering is now called by other modules), `seller_order.accepted`, the order-item image snapshot and admin cancellation (S-9 for R2). §8.7 (returns, spec 18) and §8.8 (coupons, spec 19) added 2026-10-20. Folded into §1–§7 when approved. §8.6 OR-17…OR-19 answered 2026-10-20. Open questions in §8.9 (OR-20…OR-22).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -310,12 +310,73 @@ The customer sees the seller order as cancelled with `cancelReason = admin_cance
 New error code: `ORDER_NOT_CANCELLABLE` 409 (whole-order admin cancel with a seller order past `ready_for_pickup`, or nothing open).
 
 ### 8.5 Following parts of v2.0
-Returns (spec 18: `returned_quantity` per item, return-aware totals) and coupons (spec 19: discount snapshots per seller order and item) extend this section when those specs are written.
+Returns are in §8.7, coupons in §8.8.
 
-### 8.6 Open questions
+### 8.6 Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.10.
 
 | # | Topic | Options / recommendation |
 |---|---|---|
 | OR-17 | Admin whole-order cancel when one seller order is already picked up | **Rec:** all or nothing: `409 ORDER_NOT_CANCELLABLE` naming the blocking seller orders; the admin cancels the others one by one if that is what they want · or cancel what can be cancelled and report the rest |
 | OR-18 | Admin cancel reason | **Rec:** required free text (3..500), stored in the history and the audit log · or an enum of reasons plus an optional note |
 | OR-19 | What the customer sees | **Rec:** `cancelReason = admin_cancelled` only, the free text stays internal (it may mention fraud checks or the seller) · or show the admin's text to the customer |
+
+### 8.7 Returns (spec 18)
+
+#### Tables and columns
+- `order_items.returned_quantity INT NOT NULL` (existing rows filled with 0 by the migration; no DB default, G13). `CHECK (cancelled_quantity + returned_quantity <= quantity)`.
+- New table `order_item_returns` (like `order_item_cancellations`): `return_id` (no FK: returns' table, a cross-module FK is allowed but returns rows are written after this one in the same transaction, so the FK is added `DEFERRABLE INITIALLY DEFERRED`, database v2.0), `order_item_id` (FK `RESTRICT`), `quantity`, `subtotal_amount`, `discount_amount`, `paid_amount`, `commission_amount`, `created_at`.
+- `seller_orders` gains `returned_subtotal`, `returned_paid`, `returned_commission`, `returned_seller_net` (`NUMERIC(12,2) NOT NULL`, filled with 0). A seller order stays `delivered`; its delivered amounts stay as booked, and the returned sums sit next to them.
+
+#### Public API additions
+| Method | Caller | Notes |
+|---|---|---|
+| `getReturnableItems(customerId, sellerOrderId) → ReturnableSellerOrder \| null` | returns | `{ sellerOrderId, orderId, orderNumber, status, deliveredAt, paymentMethod, dropoffGovernorateId, items: { orderItemId, productName, attributes, imageMediaId, returnable, paidUnitAmount }[] }`. `returnable = quantity − cancelled − returned`. `paidUnitAmount` is indicative (the exact share for `k` units comes from the rule below) |
+| `quoteReturn(sellerOrderId, lines) → ReturnAmounts` | returns (request estimate) | Reads only; same rule as `recordReturn` |
+| `getReturnLogistics(sellerOrderId) → { pickup, dropoff }` | returns (approval) | `pickup` = the order's drop-off snapshot (the customer), `dropoff` = the seller order's pickup snapshot + live business name |
+| `recordReturn({ sellerOrderId, returnId, lines: { orderItemId, quantity }[] }, trx) → ReturnAmounts` | returns (UC-RE-7) | Locks the order, then the seller order (§1.2). Seller order must be `delivered`; each `quantity <= returnable` → else `409 RETURN_QUANTITY_INVALID` (returns' code, raised here). Inserts `order_item_returns`, bumps `returned_quantity` and the seller order's `returned_*` sums. No outbox event (returns publishes `return.completed`) |
+
+#### Amount rule (exact, no rounding drift)
+Every amount of a line is computed over the units still **kept** (`quantity − cancelled − returned`), and an event's share is the difference between the value before and after it:
+- line discount kept = `round(discount_original × kept / quantity)` (§8.8)
+- `subtotal` share = `unit_price × k`; `paid` share = subtotal share − (discount kept before − discount kept after)
+- commission on the seller order's kept base: platform-funded or no coupon → base = kept subtotal; seller-funded → base = kept paid subtotal; `commission_kept = round(base × commission_rate)`; `commissionReversed` = before − after
+- `sellerNetReversed` = (platform-funded or no coupon ? subtotal share : paid share) − `commissionReversed`
+- `platformDiscountReversed` = the discount share if the coupon is platform-funded, else 0
+
+`ReturnAmounts = { itemsSubtotal, itemsPaid, commissionReversed, sellerNetReversed, platformDiscountReversed }`. So the reversals of several returns of one seller order add up exactly to what was booked at delivery.
+
+#### Read changes
+`OrderItemDto` gains `returnedQuantity`; seller order views gain `returnedPaid` (customer) and `returnedSubtotal`, `returnedCommission`, `returnedSellerNet` (seller, admin). `itemCount` (OR-9) counts kept units.
+
+### 8.8 Coupons (spec 19)
+
+#### Checkout (UC-OR-1 changes)
+- Body gains `couponCode opt str(4..32)`.
+- Inside the transaction, after step 4: `promotions.quote(code, customerId, lines)` (reads only) → the discount per line. Its errors abort the checkout (`422` coupon codes).
+- Step 5 money: per line `discount_original`; per seller order `subtotal` (undiscounted), `discount_amount`, `discount_funding`; commission and net per §8.7 (R-17: platform-funded → `round(subtotal × rate)`, net = subtotal − commission; seller-funded → `round((subtotal − discount) × rate)`, net = subtotal − discount − commission); `items_total = Σ (subtotal − discount)` of the seller orders that count (OR-13); `discount_total`; `total = items_total + delivery_fee`. `expectedTotal` is compared with this total (S-8).
+- After step 8 (`payments.createForOrder`): `promotions.redeem(…, trx)` (spec 19 UC-PR-2). Lock order: `carts → orders → seller_orders → inventory_items → payments → coupons` (OR-3 extended).
+- Close step (§3.9): when the order closes `cancelled`, `promotions.release(orderId, trx)` (R-18), still the last lock.
+
+#### Columns
+- `orders`: `coupon_id` (nullable FK → `coupons`, `RESTRICT`; `null` = no coupon), `coupon_code VARCHAR(32) NULL` (snapshot), `discount_total NUMERIC(12,2) NOT NULL` (`CHECK >= 0`; `coupon_id IS NULL ⇒ discount_total = 0`).
+- `seller_orders`: `discount_amount NUMERIC(12,2) NOT NULL`, `discount_funding VARCHAR(10) NULL` (`CHECK` set ⇔ `discount_amount > 0`).
+- `order_items`: `discount_original NUMERIC(12,2) NOT NULL` (`CHECK <= unit_price × quantity`), `discount_amount NUMERIC(12,2) NOT NULL` (the kept share, rule §8.7). Existing rows are filled with 0.
+
+#### Cancellations with a coupon (R-18)
+Partial and whole cancellations keep the redemption. The cancelled units' discount share simply goes away with them: `amountCancelled` and the line amounts in the events are **paid** amounts (after discount), so the Kashier refund and the COD reduction are what the customer actually paid for those units.
+
+#### Event payload changes (spec 02 §6.5)
+Amounts that payments and delivery treat as customer money are paid amounts: `codItemsAmount`, `amountCancelled`, `lines[].amount`, `seller_order.returned.subtotal`, `order.closed.deliveredItemsTotal`. `seller_order.items_cancelled` gains `newPaidSubtotal` (delivery uses it for the COD amount). `seller_order.delivered` gains `discountAmount`, `discountFunding`, `platformDiscount`. Without a coupon every paid amount equals the R1 amount, so R1 consumers keep working; they switch to the new fields before coupons ship.
+
+#### Read changes
+`OrderDetailDto` gains `coupon: { code, discountTotal } | null`; seller orders gain `discountAmount`, `discountFunding`; `OrderItemDto` gains `discountAmount`, `paidTotal`. The seller sees `discountAmount` and `discountFunding` on `SellerOrderDto` (PR-7).
+
+### 8.9 Open questions
+
+| # | Topic | Options / recommendation |
+|---|---|---|
+| OR-20 | Where return amounts are computed | **Rec:** in ordering (`quoteReturn` / `recordReturn`), which owns every money snapshot; returns only stores and forwards them · or in returns from snapshot data ordering hands over |
+| OR-21 | Seller-order status after a return | **Rec:** stays `delivered`; returned quantities and sums sit next to the delivered amounts · or a new status `partially_returned` / `returned` |
+| OR-22 | Event semantics with coupons | **Rec:** the existing customer-money fields carry paid amounts (equal to R1 values without a coupon), new fields for the undiscounted parts, version stays 1, consumers deployed first · or version-2 events for every changed payload |

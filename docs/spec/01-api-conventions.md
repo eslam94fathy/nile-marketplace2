@@ -4,7 +4,7 @@ Status: **v1.3 APPROVED (2026-10-10).** Approved by the user. v1.1: passwords ar
 **v1.4 DRAFT (2026-10-19):** §9 adds the Release 2 shared pieces (image shape, new rate-limit classes, realtime envelope, web client). Folded into §1–§8 when approved.
 Inputs: `CLAUDE.md` §7–§10, `docs/design/01-architecture.md` v1.0, `docs/design/02-database.md` v1.0.
 
-Module specs: `03-identity.md` · `04-customers.md` · `05-sellers.md` · `06-catalog.md` · `07-inventory.md` · `08-cart.md` · `09-ordering.md` · `10-payments.md` · `11-delivery.md` · `12-finance.md` · `13-notifications.md`. Release 2 (drafts): `14-media.md` · `15-realtime.md` · `16-support.md` · `17-reviews.md` · `20-backoffice.md` (specs 18 returns and 19 coupons follow). Events: `02-events.md`.
+Module specs: `03-identity.md` · `04-customers.md` · `05-sellers.md` · `06-catalog.md` · `07-inventory.md` · `08-cart.md` · `09-ordering.md` · `10-payments.md` · `11-delivery.md` · `12-finance.md` · `13-notifications.md`. Release 2 (drafts): `14-media.md` · `15-realtime.md` · `16-support.md` · `17-reviews.md` · `18-returns.md` · `19-promotions.md` · `20-backoffice.md`. Events: `02-events.md`.
 
 ---
 

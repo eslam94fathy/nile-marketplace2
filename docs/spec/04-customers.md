@@ -1,7 +1,7 @@
 # Spec 04 — customers
 
 Status: **v1.0 APPROVED (2026-10-09).** Approved by the user with the Phase 2 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 wishlist (R-12), reviewer display names (spec 17 RV-6) and the user-id lookup for notifications. Folded into §1–§7 when approved. Open questions in §8.6 (WL-1…WL-3).
+**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 wishlist (R-12), reviewer display names (spec 17 RV-6) and the user-id lookup for notifications. Folded into §1–§7 when approved. §8.6 WL-1…WL-3 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -170,7 +170,9 @@ interface WishlistItemDto {
 - `WISHLIST_LIMIT_REACHED` 422: over `WISHLIST_MAX_ITEMS`.
 - Config: api `WISHLIST_MAX_ITEMS` (no default).
 
-### 8.6 Open questions
+### 8.6 Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.10.
 
 | # | Topic | Options / recommendation |
 |---|---|---|

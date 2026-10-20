@@ -1,6 +1,7 @@
 # Spec 10 — payments
 
 Status: **v1.4 APPROVED (2026-10-13).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: what Kashier's test environment showed (PA-11…PA-17: no abandon, one open session per order, status mapping, config). v1.2: the worker holds no Kashier secret (PA-18); the webhook answers in the standard envelope (PA-19). v1.3: flagged refunds never exceed what was collected (PA-20). v1.4: the signed fields must cover what we read (PA-21, Phase 8 security review F-1). Changes from now on need explicit approval and a version bump.
+**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 automated Kashier refunds and COD customer refunds (R-15, spec 18). Folded into §1–§7 when approved. Open questions in §8.7 (PA-22…PA-26).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -133,3 +134,59 @@ Consumed: `seller_order.items_cancelled`, `seller_order.cancelled`, `seller_orde
 | PA-19 | The webhook answers `200` in the standard success envelope (CLAUDE.md §7); Kashier only reads the status code (Phase 5 step 10, v1.2) | §4.1 |
 | PA-20 | Flagged refunds never exceed what was collected: each refund row of UC-PA-3 is capped at `collected_amount − Σ refunds already flagged` (pending or recorded); nothing left → skipped with `info REFUND_ALREADY_COVERED`, partly capped → `warn REFUND_CAPPED`. Found in Phase 5 step 11: a success webhook after expiry flags the full amount (SD-5), and the expiry's own `seller_order.cancelled` / `order.closed`, consumed afterwards, saw a `paid` payment and flagged it again (v1.3) | UC-PA-3 |
 | PA-21 | A webhook is verified only if `data.signatureKeys` contains every field we read: `merchantOrderId`, `status`, `amount`, `currency`, `transactionId`. Otherwise it is treated as an invalid signature (`401`, nothing stored, PA-7), because an unsigned field could have been changed. Confirmed against a real Kashier test webhook in Phase 9 (Phase 8 security review F-1, v1.4) | UC-PA-1 |
+
+---
+
+## 8. Release 2: automated refunds and customer refunds [v2.0 DRAFT, 2026-10-20]
+
+### 8.1 What changes
+- **Every Kashier refund flag is refunded automatically** through Kashier's refund API (R-15), not only returns: cancellations, item cancellations, failed deliveries, late payments, amount mismatches, the all-cancelled fee (PA-22). The admin "record manual refund" flow stays as the fallback.
+- **COD customer refunds** (returns only): an admin pays the customer outside the system (mobile wallet or InstaPay, spec 18 RE-8) and records it, reusing UC-PA-4.
+- New `RefundReason` `return`. New refund columns: `return_id` (nullable), `method` (`kashier_auto, manual`), `attempt_count`, `next_attempt_at`, `last_error VARCHAR(500)` (redacted provider text, N-2 rule), `payout_details_encrypted` (COD only; AES-256-GCM, S-1 key), `succeeded_at`.
+- `RefundStatus`: `pending_auto, processing, succeeded` (new) + `pending_manual, recorded`.
+- `PaymentStatus` (Kashier): `partially_refunded`, `refunded` replace `partially_refunded_manually`, `refunded_manually` (PA-23): expand/contract migration (add the values, backfill, drop the old ones in a later release). How a refund was done is on the refund row. COD payments keep their status; `refunded_amount` tracks refunds.
+
+### 8.2 UC-PA-5 Flag refunds (consumer `payments.order-adjustments`)
+- The UC-PA-3 Kashier rows are created as `pending_auto`, `method = kashier_auto`, `next_attempt_at = now()` (PA-20 cap unchanged).
+- `return.completed` (new binding): `refundAmount > 0` →
+  - Kashier: a `pending_auto` row, reason `return`, `return_id`.
+  - COD: a `pending_manual` row, reason `return`, `method = manual`, `payout_details_encrypted` from the payload.
+  - Capped by PA-20 (refunds never exceed `collected_amount`).
+
+### 8.3 UC-PA-6 Refund job (worker, advisory-locked, every `JOB_PAYMENT_REFUND_INTERVAL_MS`)
+Candidates `pending_auto` with `next_attempt_at <= now()`, read without locks, up to `PAYMENT_REFUND_BATCH_SIZE`. Per refund:
+1. Short transaction: lock the refund `FOR UPDATE SKIP LOCKED`, still `pending_auto` → `processing`, `attempt_count + 1`. Commit.
+2. Outside any transaction: the gateway's `refund({ transactionRef, amount, reference: refundId })` (`pkg/payments`, Kashier refund API, field names verified on the test environment in R2-P6 as in K-1…K-7).
+3. Results:
+   - **Success** → one transaction: `succeeded`, `provider_refund_ref`, `succeeded_at`; payment row `FOR UPDATE`, `refunded_amount += amount`, status `partially_refunded` / `refunded`; outbox `payment.refunded`.
+   - **Transient** (timeout, 5xx, 429) → `pending_auto`, `next_attempt_at` by backoff (1 min, 5 min, 30 min, 2 h, 6 h); after `PAYMENT_REFUND_MAX_ATTEMPTS` (5) → `pending_manual` + `error PAYMENT_REFUND_GAVE_UP`.
+   - **Permanent** (4xx, e.g. already refunded or over the captured amount) → `pending_manual` + `error PAYMENT_REFUND_REJECTED`.
+4. **Outcome unknown** (timeout after sending, or a crash leaving the row `processing` for over `PAYMENT_REFUND_STUCK_MINUTES`, 10): never re-send blindly. The job first reads the transaction's refunds from Kashier and matches our `reference` (or amount + time if Kashier doesn't echo it). Found → success; not found → back to `pending_auto`; can't tell → `pending_manual` + `warn PAYMENT_REFUND_OUTCOME_UNKNOWN` (PA-24).
+
+### 8.4 Admin queue
+- `GET /admin/payments/refunds` now lists every status; the work queue is `status = pending_manual`.
+- `GET /admin/payments/refunds/:refundId` (new) returns the refund with the **decrypted** COD payout details (`{ method, walletNumber | instapayAddress }`); the list never includes them, and they are never logged (redaction keys `walletNumber`, `instapayAddress`).
+- `POST /admin/payments/refunds/:refundId/record` works for any `pending_manual` refund (Kashier fallback or COD), body `providerRefundRef str(1..100)` (the Kashier dashboard reference or the wallet / InstaPay transfer reference). Audit row as before (spec 20).
+- `POST /admin/payments/refunds/:refundId/retry` (new): `pending_manual` Kashier refund → `pending_auto`, `next_attempt_at = now()`, `attempt_count` reset (after the admin fixed the cause). Audit row `payment_refund.retried`.
+
+### 8.5 Public API additions
+| Method | Caller | Notes |
+|---|---|---|
+| `getRefundsByReturnIds(returnIds) → Map<returnId, { status, amount, refundedAt }>` | returns (views) | Batched; `status` mapped to `pending` (pending_auto), `processing`, `succeeded` (succeeded / recorded), `manual` (pending_manual) |
+| `getSummaries` | ordering | Gains `refunds: { amount, status, reason, at }[]` for the order detail |
+
+### 8.6 Events and config
+- New event `payment.refunded` `{ paymentId, orderId, refundId, returnId: string | null, reason, amount, newPaymentStatus }` → finance (`finance.ledger`, returns only), notifications (customer), realtime.
+- `payment.refund_recorded` gains `reason`, `returnId`; `newPaymentStatus` uses the new values for Kashier and is `null` for COD.
+- Worker env (reverses PA-18, PA-25): `KASHIER_SECRET_KEY`, `KASHIER_MERCHANT_ID` (refunds need the secret key), `JOB_PAYMENT_REFUND_INTERVAL_MS`, `PAYMENT_REFUND_BATCH_SIZE`, `PAYMENT_REFUND_MAX_ATTEMPTS`, `PAYMENT_REFUND_STUCK_MINUTES`, and the S-1 key (already there). The worker's egress uses the same NAT IPs Kashier allow-lists (K-7). No defaults.
+- New error codes: `REFUND_NOT_RETRYABLE` 409 (retry of a refund that isn't a `pending_manual` Kashier refund).
+
+### 8.7 Open questions
+
+| # | Topic | Options / recommendation |
+|---|---|---|
+| PA-22 | Scope of automated refunds | **Rec:** every Kashier refund flag (cancellations included), as CLAUDE.md §15 promised for R2 · or returns only, cancellations stay manual |
+| PA-23 | Payment status names | **Rec:** `partially_refunded` / `refunded` for any path, with an expand/contract migration of the `_manually` values; the refund row says how · or keep `_manually` and add `_auto` variants |
+| PA-24 | Unknown outcome of a refund call | **Rec:** never re-send without first reading Kashier's refunds of the transaction; undecidable → manual queue · or re-send relying on Kashier to refuse a duplicate |
+| PA-25 | Where refunds run | **Rec:** the worker (jobs belong there), which now holds the Kashier secret key · or the api process (keeps PA-18, but runs a background loop in the api) |
+| PA-26 | Customer notification on refund | **Rec:** in-app + push (`orders`) when a refund succeeds or is recorded ("Your refund for order #{n} was issued") · or none |

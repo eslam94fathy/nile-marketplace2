@@ -1,6 +1,6 @@
 # Spec 17 — reviews
 
-Status: **v1.0 DRAFT (2026-10-20).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.4 (reviews, ratings), R-10, R-11, `14-media.md` (review images). Open questions in §7 (RV-1…RV-8) must be answered before approval. The wishlist (R-12) is in spec 04 §8, the rating projections in spec 05 §8 and spec 06 §9.
+Status: **v1.0 DRAFT (2026-10-20).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.4 (reviews, ratings), R-10, R-11, `14-media.md` (review images). §7 RV-1…RV-8 answered 2026-10-20 (every recommendation accepted). The wishlist (R-12) is in spec 04 §8, the rating projections in spec 05 §8 and spec 06 §9.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -175,7 +175,9 @@ Consumed: none.
 
 Config: api `REVIEW_WINDOW_DAYS`, `REVIEW_EDIT_WINDOW_DAYS`. No defaults. The worker needs none.
 
-## 7. Open questions
+## 7. Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.10.
 
 | # | Topic | Options / recommendation |
 |---|---|---|

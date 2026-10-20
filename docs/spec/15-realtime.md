@@ -134,3 +134,14 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | RT-5 | Inbound signal limits | **Rec:** 5 signals / s per socket; no per-user connection cap (handshake rate limit + 4 KB buffer); revisit after the R2-P8 socket load test · or a Redis-counted cap of N sockets per user |
 | RT-6 | Socket contract docs | **Rec:** a hand-written `docs/realtime.md` (AsyncAPI is heavy for 12 messages), with message payload types exported from `src/app/realtime/messages.ts` and type-checked against it · or AsyncAPI 3 |
 | RT-7 | Redis adapter flavour | **Rec:** the classic pub/sub `createAdapter` (single-shard ElastiCache, works with `@socket.io/redis-emitter`); compatibility verified in R2-P2 · or the sharded adapter (Redis 7 `SPUBLISH`; check emitter support first) |
+
+
+## 8. Additions from specs 10, 17, 18 [2026-10-20]
+
+| Message `type` | `data` | Rooms | From event |
+|---|---|---|---|
+| `return.updated` | `{ returnId, sellerOrderId, orderId, status }` | `customer:<id>`, `seller:<id>`; `admins` for `escalated` / `disputed` | `return.status_changed`, `return_shipment.*` (re-read status) |
+| `shipment.updated` | as §3.1, plus `kind` | `agent:<id>` | `return_shipment.*` |
+| `payment.updated` | as §3.1 | `customer:<id>` | `payment.refunded`, `payment.refund_recorded` |
+
+No re-read for returns: `return.status_changed` carries the customer and seller ids, and the message uses the payload's `to` status. That is safe because the client refetches the return on every message.

@@ -1,7 +1,7 @@
 # Spec 02 — Domain Events Catalogue (Release 1)
 
 Status: **v1.1 APPROVED (2026-10-12).** v1.0 approved by the user 2026-10-08. v1.1: `seller_order.items_cancelled` carries `previousStatus` (E-8). It replaces the event list in `00-overview.md` §7 and the event names in `01-architecture.md` §3/§5 (differences in §5 below). Changes from now on need explicit approval and a version bump.
-**v1.2 DRAFT (2026-10-19):** §6 adds the Release 2 events of specs 03, 09, 13, 14, 15, 16; §6.4 (2026-10-20) those of specs 06, 17, 20 (specs 18, 19 add theirs). Folded into §2–§3 when approved.
+**v1.2 DRAFT (2026-10-19):** §6 adds the Release 2 events of specs 03, 09, 13, 14, 15, 16; §6.4 (2026-10-20) those of specs 06, 17, 20; §6.5 those of specs 09 §8.7–8.8, 10, 11, 18, 19. Folded into §2–§3 when approved.
 Contracts live in `src/lib/events/contracts/` (architecture §2), one file per event: name constant + payload type + version.
 
 ---
@@ -324,3 +324,26 @@ New queues:
 
 - `seller_order.cancelled.reason` gains the value `admin_cancelled` (spec 09 §8.4). Additive, still version 1. Payments and delivery treat it exactly like `seller_cancelled`; their payload parsers must accept the new value before ordering ships it (R2 deploy order: consumers first).
 - New queue `sellers.rating-projection` (binding `review.rating_changed`). `catalog.listing-projections` adds the binding `review.rating_changed`.
+
+### 6.5 Returns, refunds, coupons [2026-10-20]
+
+| Event | Publisher | Aggregate | Consumers (queue) |
+|---|---|---|---|
+| `return.status_changed` | returns | return_request | realtime, notifications, delivery (`delivery.return-updates`) |
+| `return.approved` | returns | return_request | delivery (`delivery.return-updates`) |
+| `return.completed` | returns | return_request | payments (`payments.order-adjustments`), finance (`finance.ledger`) |
+| `return_shipment.picked_up` | delivery | shipment | returns (`returns.shipment-updates`), realtime |
+| `return_shipment.delivered` | delivery | shipment | returns, realtime |
+| `return_shipment.failed` | delivery | shipment | returns, realtime |
+| `payment.refunded` | payments | payment | finance, notifications, realtime |
+
+Payloads are in spec 18 §5, spec 11 §8.2 and spec 10 §8.6. `return.completed.refundPayoutEncrypted` is encrypted with the S-1 key like the secret email variables (§3.1).
+
+Changed payloads (additive, still version 1; consumers deployed before the publisher, spec 09 OR-22):
+- `shipment.assigned` += `kind`, `returnId`.
+- `seller_order.items_cancelled` += `newPaidSubtotal`; `lines[].amount` and `amountCancelled` are paid amounts.
+- `seller_order.cancelled.amountCancelled`, `seller_order.ready_for_pickup.codItemsAmount`, `seller_order.returned.subtotal`, `order.closed.deliveredItemsTotal` are paid amounts.
+- `seller_order.delivered` += `discountAmount`, `discountFunding: 'platform' | 'seller' | null`, `platformDiscount`.
+- `payment.refund_recorded` += `reason`, `returnId`, `customerId`; `newPaymentStatus` per spec 10 §8.6. `payment.refunded` carries `customerId` too.
+
+New queues: `returns.shipment-updates`, `delivery.return-updates`. `payments.order-adjustments` and `finance.ledger` bind `return.completed`; `finance.ledger` binds `payment.refunded`, `payment.refund_recorded`.

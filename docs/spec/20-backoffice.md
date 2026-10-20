@@ -1,6 +1,6 @@
 # Spec 20 — back-office and audit
 
-Status: **v1.0 DRAFT (2026-10-20).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.4 (admin back-office and audit), R-19, S-9 (answered for R2), spec 09 v2.0 §8.4 (admin cancellation), spec 16 SU-5. Open questions in §7 (BO-1…BO-8) must be answered before approval.
+Status: **v1.0 DRAFT (2026-10-20).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.4 (admin back-office and audit), R-19, S-9 (answered for R2), spec 09 v2.0 §8.4 (admin cancellation), spec 16 SU-5. §7 BO-1…BO-8 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -74,7 +74,16 @@ type AuditValue = string | number | boolean | null;   // money and rates as stri
 | support | assign · resolve · close (SU-5) | `support_ticket.assigned` · `.resolved` · `.closed` | `assignedAdminUserId`, `status` |
 | reviews | hide · unhide, reply hide · unhide | `review.hidden` · `review.unhidden` · `review_reply.hidden` · `review_reply.unhidden` | `status` / `hidden`; reason |
 
-Specs 18 (returns: admin decisions on escalations, COD refund recording) and 19 (coupons: create, update, deactivate) add their rows. Admin **reads** are not audited (BO-3). Admin support messages and notes are not audited (SU-5).
+Added 2026-10-20 from specs 10, 18, 19:
+
+| Module | Endpoint | `action` | Fields / reason |
+|---|---|---|---|
+| returns | `POST /admin/returns/:id/decide` | `return.admin_decided` | `status`; note |
+| returns | `POST /admin/returns/:id/resolve-dispute` | `return.dispute_resolved` | `status`, `decision`; note |
+| payments | `POST /admin/payments/refunds/:id/retry` | `payment_refund.retried` | `status` |
+| promotions | `POST /admin/coupons` · `PATCH /admin/coupons/:id` | `coupon.created` · `coupon.updated` | every coupon field except counters |
+
+`target_type` gains `return_request`, `coupon`. The COD refund recording uses the existing `payment_refund.recorded` row; payout details are never in `changes`. Admin **reads** are not audited (BO-3). Admin support messages and notes are not audited (SU-5).
 
 ### 2.4 Retention job (worker, advisory-locked, every `JOB_AUDIT_RETENTION_INTERVAL_MS`)
 Deletes rows with `created_at < now() − AUDIT_RETENTION_DAYS` (730, R-19) in batches of `AUDIT_RETENTION_BATCH_SIZE` (`DELETE … WHERE id IN (SELECT id … ORDER BY created_at LIMIT ?)`), one short transaction per batch, until a batch is smaller than the limit.
@@ -168,7 +177,9 @@ Consumed: none.
 Log codes: `AUDIT_FIELD_DROPPED` (warn).
 Config, no defaults: worker `AUDIT_RETENTION_DAYS`, `JOB_AUDIT_RETENTION_INTERVAL_MS`, `AUDIT_RETENTION_BATCH_SIZE`; api `DASHBOARD_CACHE_TTL_SECONDS`.
 
-## 7. Open questions
+## 7. Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.10.
 
 | # | Topic | Options / recommendation |
 |---|---|---|
