@@ -1,6 +1,7 @@
 # Spec 02 — Domain Events Catalogue (Release 1)
 
 Status: **v1.1 APPROVED (2026-10-12).** v1.0 approved by the user 2026-10-08. v1.1: `seller_order.items_cancelled` carries `previousStatus` (E-8). It replaces the event list in `00-overview.md` §7 and the event names in `01-architecture.md` §3/§5 (differences in §5 below). Changes from now on need explicit approval and a version bump.
+**v1.2 DRAFT (2026-10-19):** §6 adds the Release 2 events of specs 03, 09, 13, 14, 15, 16 (later R2 specs add theirs). Folded into §2–§3 when approved.
 Contracts live in `src/lib/events/contracts/` (architecture §2), one file per event: name constant + payload type + version.
 
 ---
@@ -222,3 +223,76 @@ last seller order terminal ─► order.closed ─► finance: platform delivery
 | E-6 | Architecture §5: `finance.ledger` ← `seller_order.cancelled`, `payment.refund_recorded` | `finance.ledger` ← `seller_order.delivered`, `order.closed` only | Nothing is booked in the ledger before delivery, so cancellations and refunds of undelivered orders have no ledger effect in R1 |
 | E-7 | – | New: `notification.email_requested`, `inventory.stock_status_changed`, `order.closed`, `payout.recorded` | `notification.email_requested` and `inventory.stock_status_changed` were already in architecture §3. `order.closed` drives the fee rules (Q-28) |
 | E-8 | – | `seller_order.items_cancelled.previousStatus` (additive, still version 1; approved 2026-10-12) | Items can be cancelled while `ready_for_pickup`. If the event overtakes `seller_order.ready_for_pickup`, delivery must retry it instead of acking, or the shipment keeps the old COD amount (spec 11 DE-15) |
+
+---
+
+## 6. Release 2 events [v1.2 DRAFT, 2026-10-19]
+
+### 6.1 New events
+
+| Event | Publisher | Aggregate | Consumers (queue) |
+|---|---|---|---|
+| `user.suspended` | identity | user | realtime (`realtime.fanout`), notifications (`notifications.user-events`) |
+| `user.sessions_revoked` | identity | user | notifications (`notifications.user-events`) |
+| `seller_order.accepted` | ordering | seller_order | realtime, notifications |
+| `media.uploaded` | media | media_object | media (`media.processing`) |
+| `media.ready` | media | media_object | realtime |
+| `media.failed` | media | media_object | realtime |
+| `support.ticket_opened` | support | support_ticket | realtime |
+| `support.message_created` | support | support_ticket | realtime, notifications |
+| `support.ticket_assigned` | support | support_ticket | realtime |
+| `support.ticket_status_changed` | support | support_ticket | realtime, notifications |
+| `notification.push_requested` | notifications | user_notification | notifications (`notifications.push`) |
+
+Existing events gain consumers. `order.placed`, `order.closed`, every `seller_order.*`, `payment.paid` / `failed` / `expired` and `shipment.*` now also go to `realtime.fanout` and, per spec 13 §8.2, to `notifications.user-events`. No publisher changes, as §2 intended ("R2 consumers can bind to them without a publisher change").
+
+New queues:
+
+| Queue | Binding keys |
+|---|---|
+| `media.processing` | `media.uploaded` |
+| `realtime.fanout` | spec 15 §5 list |
+| `notifications.user-events` | spec 13 §8.2 events, `user.suspended`, `user.sessions_revoked` |
+| `notifications.push` | `notification.push_requested` |
+
+### 6.2 Payloads (all `version: 1`)
+```ts
+// identity
+// user.suspended
+{ userId: string; role: UserRole; suspendedAt: string }
+// user.sessions_revoked
+{ userId: string; reason: 'password_reset'; revokedAt: string }
+
+// ordering: the seller accepted; nothing else changes (no money or stock effect)
+// seller_order.accepted
+{ sellerOrderId: string; orderId: string; orderNumber: string; sellerId: string; customerId: string; acceptedAt: string }
+
+// media
+// media.uploaded
+{ mediaId: string; purpose: MediaPurpose; ownerUserId: string }
+// media.ready
+{ mediaId: string; purpose: MediaPurpose; ownerUserId: string }
+// media.failed
+{ mediaId: string; purpose: MediaPurpose; ownerUserId: string; reason: MediaFailureReason }
+
+// support
+// support.ticket_opened
+{ ticketId: string; ticketNumber: string; openerUserId: string; openerRole: 'customer' | 'seller'; category: TicketCategory }
+// support.message_created
+{ ticketId: string; ticketNumber: string; messageId: string; kind: 'message' | 'internal_note' | 'system';
+  senderRole: 'customer' | 'seller' | 'admin' | 'system'; openerUserId: string; assignedAdminUserId: string | null }
+// support.ticket_assigned
+{ ticketId: string; openerUserId: string; assignedAdminUserId: string | null; previousAdminUserId: string | null }
+// support.ticket_status_changed
+{ ticketId: string; ticketNumber: string; openerUserId: string; from: TicketStatus; to: TicketStatus;
+  actor: 'admin' | 'customer' | 'seller' | 'system' }
+
+// notifications (internal)
+// notification.push_requested
+{ notificationId: string; userId: string }
+```
+
+### 6.3 Recipient resolution
+`order.placed` and the `seller_order.*` / `shipment.*` payloads don't always name the user to notify. For example, `order.placed` lists `sellerOrderIds` but not their sellers, and the shipment events carry no customer.
+- Realtime and notifications resolve recipients through a new batched ordering method, `getNotificationParties(sellerOrderIds | orderIds)` → `{ orderId, orderNumber, customerId, sellerOrders: { sellerOrderId, sellerId, status }[] }` (spec 09 v2.0), plus the profile → user id lookups of customers, sellers and delivery.
+- This follows the §1 rule: re-read, don't trust the payload, so out-of-order events still show the current status.

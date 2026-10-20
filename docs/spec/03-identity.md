@@ -1,6 +1,7 @@
 # Spec 03 — identity
 
 Status: **v1.4 APPROVED (2026-10-13).** Approved by the user. v1.1: Phase 1 implementation clarifications (§7.1, I-1…I-9). v1.2: §4.11 index reference (DB-Q6). v1.3: `hashPassword` + `createPendingUser(passwordHash)` (§2, I-10, P2-Q2). v1.4: a suspension also blocks the access tokens already issued (I-11, Phase 8 security review F-4). Changes from now on need explicit approval and a version bump.
+**v2.0 DRAFT (2026-10-19):** §8 adds the Release 2 web-client token transport (R-21) and the `user.suspended` / `user.sessions_revoked` events (specs 13, 15). Folded into §1–§7 when approved.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -226,3 +227,41 @@ Choices made where the text above was silent, accepted by the user when Phase 1 
 | I-9 | The suspend `reason` is kept only in the `USER_SUSPENDED` audit log line (no column) | §4.13 |
 | I-10 | Self-registration hashes the password through `hashPassword` before the profile module opens its transaction; `createPendingUser` takes the hash (v1.3, Phase 2, P2-Q2) | §2 |
 | I-11 | Every suspension (`setUserStatus` and the admin endpoint) also writes the Redis deny entry `auth:suspended:<userId>` after the commit, with a TTL of `ACCESS_TOKEN_TTL_MINUTES`; reactivation deletes it. `authenticate` checks it on every authenticated request and answers `401 UNAUTHENTICATED`, so a suspended user's access tokens stop working at once instead of at expiry. Redis down: the check fails open with a `warn` (Redis is not a source of truth, architecture §8); a failed write is logged and the tokens still expire (Phase 8 security review F-4, v1.4) | §2, §4.13 |
+
+---
+
+## 8. Release 2: web token transport and session events [v2.0 DRAFT, 2026-10-19]
+
+### 8.1 Refresh token in a cookie for the web client (R-21, CLAUDE.md §10 amendment)
+The access token is unchanged: the web client holds it **in memory only** and sends `Authorization: Bearer`. Only the refresh token's transport changes, and only when the client asks for it.
+
+- **Opt-in:** the token-issuing endpoints accept the request header `X-Nile-Client: web`:
+  - `POST /auth/email/verify`, `POST /auth/login`, `POST /auth/invite/accept`, `POST /auth/refresh`
+  - with the header, the response sets the cookie and `AuthTokensDto.refreshToken` is `null` (`refreshTokenExpiresAt` stays)
+  - without the header, behaviour is exactly as in R1 (body transport for native clients)
+- **Cookie:** `__Secure-nile_rt=<token>; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth; Max-Age=<REFRESH_TOKEN_TTL>`. Name and path are constants in `lib/auth`.
+- **Reading it:**
+  - `POST /auth/refresh`, `POST /auth/logout` and `POST /auth/password/change` take the refresh token from the body **or** from the cookie.
+  - From the cookie, the request must carry `X-Nile-Client: web`, else `400 VALIDATION_FAILED`. A custom header forces a CORS preflight, so a cross-site form or link can't trigger the call. Together with `SameSite=Strict` and the Origin allow-list, this closes CSRF.
+  - Both a body token and a cookie → `400 VALIDATION_FAILED`.
+- **Logout** and every `INVALID_REFRESH_TOKEN` answer clear the cookie (`Max-Age=0`).
+- **CORS:** `credentials: true` for the exact origins in `CORS_ALLOWED_ORIGINS` (never `*`). `Access-Control-Allow-Headers` lists `Authorization, Content-Type, Idempotency-Key, X-Correlation-Id, X-Nile-Client`.
+- **Same-site requirement:** `SameSite=Strict` needs the web app and the api on the same registrable domain (e.g. `app.<domain>` and `api.<domain>`) (IW-1).
+- **Several tabs:** rotation plus reuse detection (UC-ID-4) means two tabs refreshing at once would revoke the family. The web client serialises refreshes across tabs with the Web Locks API (`navigator.locks`) and shares the new access token over a `BroadcastChannel`. There is no server-side grace window (IW-2).
+- The OpenAPI spec documents the header and the cookie on each endpoint. Logs never contain the cookie (`cookie` and `set-cookie` are already redaction keys in `lib/logger/serialize.ts`).
+
+### 8.2 New events
+Both are written to the outbox in the same transaction as the change. The I-11 Redis deny entry stays as it is.
+
+| Event | When | Payload | Consumers |
+|---|---|---|---|
+| `user.suspended` | `setUserStatus(…, 'suspended')` and the admin suspend endpoint | `{ userId, role, suspendedAt }` | realtime (disconnect sockets, spec 15), notifications (delete push subscriptions, spec 13 NO-8) |
+| `user.sessions_revoked` | Password reset (UC-ID-6), which revokes every session | `{ userId, reason: 'password_reset', revokedAt }` | notifications (delete push subscriptions) |
+
+### 8.3 Open questions
+
+| # | Topic | Options / recommendation |
+|---|---|---|
+| IW-1 | Web app and api domains | **Rec:** `app.<domain>` (web) and `api.<domain>` (api, already planned), same registrable domain, so `SameSite=Strict` works · or serve the web app and the api on one host (`<domain>` + `/api`) |
+| IW-2 | Concurrent refresh from several tabs | **Rec:** the client serialises (Web Locks + BroadcastChannel); no server change · or a short grace window (e.g. 10 s) in which the just-replaced token returns the same new pair (weakens reuse detection) |
+| IW-3 | Opt-in signal | **Rec:** header `X-Nile-Client: web` (also the CSRF guard) · or a body field `tokenTransport: 'cookie'` |

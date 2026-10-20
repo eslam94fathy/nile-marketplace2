@@ -1,6 +1,7 @@
 # Spec 01 — API Conventions (shared by all module specs)
 
 Status: **v1.3 APPROVED (2026-10-10).** Approved by the user. v1.1: passwords are never trimmed; `opt` implemented by a shared `Optional()` decorator (Phase 1). v1.2: `GOVERNORATE_NOT_FOUND` is a common code (§6, P2-Q7). v1.3: an unmapped restrict violation (`23001`) is a `CONFLICT` too (§6, P3-Q11). Changes from now on need explicit approval and a version bump.
+**v1.4 DRAFT (2026-10-19):** §9 adds the Release 2 shared pieces (image shape, new rate-limit classes, realtime envelope, web client). Folded into §1–§8 when approved.
 Inputs: `CLAUDE.md` §7–§10, `docs/design/01-architecture.md` v1.0, `docs/design/02-database.md` v1.0.
 
 Module specs: `03-identity.md` · `04-customers.md` · `05-sellers.md` · `06-catalog.md` · `07-inventory.md` · `08-cart.md` · `09-ordering.md` · `10-payments.md` · `11-delivery.md` · `12-finance.md` · `13-notifications.md`. Events: `02-events.md`.
@@ -123,3 +124,40 @@ Module error codes are **globally unique** and listed in each module spec. A cod
 - `ActorRole` (histories): `customer, seller, admin, delivery_agent, system`
 - `PaymentMethod`: `cod, kashier`
 - Money: the `Money` value object (EGP, `decimal.js`, `ROUND_HALF_UP`), serialised as a string with 2 decimals (`"150.00"`).
+
+---
+
+## 9. Release 2 additions [v1.4 DRAFT, 2026-10-19]
+
+### 9.1 Shared image shape
+Every response that shows an image uses the media module's `ImageDto` (spec 14 §2). Owning modules add their own fields, such as `position` or `altText`.
+```ts
+interface ImageDto { id: string; urls: { thumb: string; medium: string; large: string }; width: number; height: number }
+```
+- Public images are CDN URLs that never change.
+- Private images (support attachments, return photos) are presigned URLs that expire after `MEDIA_PRIVATE_URL_TTL_SECONDS`. Clients must not store them; they refetch the resource instead.
+
+Body fields that reference media are `uuid` (`mediaId`, `attachmentMediaIds`), and the owning module checks them with `media.claim`.
+
+### 9.2 New rate-limit classes (§7)
+
+| Class | Key | Applies to |
+|---|---|---|
+| `upload` | user id | `POST /media/uploads`, `POST /media/uploads/:id/complete` (spec 14 ME-6) |
+| `support-message` | user id | ticket open, message post (spec 16) |
+| `realtime-connect` | IP, then user id | socket handshakes (spec 15) |
+
+Values come from env, with no defaults, like the R1 classes.
+
+### 9.3 Realtime envelope
+The socket (spec 15) sends `{ type, eventId, occurredAt, data }`.
+- `type` comes from the realtime message catalogue.
+- `eventId` is the source domain event id; clients use it to drop duplicates.
+- `data` holds ids and statuses only, using the same enum values as the REST API.
+
+Connect errors and acks use the error codes of §6.
+
+### 9.4 Web client (R-4, R-21)
+- **Tokens:** the refresh token may travel in an `HttpOnly` cookie when the client sends `X-Nile-Client: web` (spec 03 §8.1). The access token is unchanged: `Authorization: Bearer`.
+- **CORS:** credentials are allowed for the exact origins in `CORS_ALLOWED_ORIGINS`. `X-Nile-Client` and `Idempotency-Key` are allowed request headers. `Retry-After`, `Idempotent-Replayed` and `X-Correlation-Id` are exposed response headers.
+- **Kashier:** `KASHIER_REDIRECT_URL` and `INVITE_URL_BASE` point at web routes now; P1-Q6 and P5-Q14 had assumed app links agreed with the mobile team.
