@@ -26,6 +26,8 @@ export * from './payout-recorded.event';
 export * from './media-uploaded.event';
 export * from './media-ready.event';
 export * from './media-failed.event';
+export * from './user-suspended.event';
+export * from './user-sessions-revoked.event';
 
 import { CodRemittanceConfirmed } from './cod-remittance-confirmed.event';
 import { InventoryStockStatusChanged } from './inventory-stock-status-changed.event';
@@ -52,6 +54,8 @@ import { ShipmentAttemptFailed } from './shipment-attempt-failed.event';
 import { ShipmentDelivered } from './shipment-delivered.event';
 import { ShipmentOutForDelivery } from './shipment-out-for-delivery.event';
 import { ShipmentPickedUp } from './shipment-picked-up.event';
+import { UserSessionsRevoked } from './user-sessions-revoked.event';
+import { UserSuspended } from './user-suspended.event';
 
 export const ALL_EVENT_CONTRACTS = [
   NotificationEmailRequested,
@@ -79,4 +83,6 @@ export const ALL_EVENT_CONTRACTS = [
   MediaUploaded,
   MediaReady,
   MediaFailed,
+  UserSuspended,
+  UserSessionsRevoked,
 ] as const;

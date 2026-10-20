@@ -1,8 +1,10 @@
 import { inject, injectable } from 'tsyringe';
 import { type IAuditRecorder } from '../../../lib/audit';
 import { type ISuspendedUsers, UserRole } from '../../../lib/auth';
+import { type IClock } from '../../../lib/clock';
 import { afterCommit, type DbTransaction, type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
+import { type IOutbox, UserSuspended } from '../../../lib/events';
 import { type PageMeta, type ParsedListQuery, toPage } from '../../../lib/http';
 import { type ILogger } from '../../../lib/logger';
 import { UserStatus } from '../enums';
@@ -43,6 +45,8 @@ export class UserAdminService {
     @inject(TOKENS.TransactionRunner) private readonly transactions: ITransactionRunner,
     @inject(TOKENS.Logger) private readonly logger: ILogger,
     @inject(TOKENS.SuspendedUsers) private readonly suspendedUsers: ISuspendedUsers,
+    @inject(TOKENS.Outbox) private readonly outbox: IOutbox,
+    @inject(TOKENS.Clock) private readonly clock: IClock,
     @inject(TOKENS.AuditRecorder) private readonly audit: IAuditRecorder,
   ) {}
 
@@ -123,7 +127,10 @@ export class UserAdminService {
     }
   }
 
-  /** Suspending revokes every session (spec 03 §2). Conditional update: no read-then-write race. */
+  /**
+   * Suspending revokes every session (spec 03 §2) and publishes `user.suspended` (§8.2), for the admin
+   * endpoint and `setUserStatus` alike. Conditional update: no read-then-write race.
+   */
   async changeStatus(
     userId: string,
     to: TargetStatus,
@@ -137,7 +144,14 @@ export class UserAdminService {
 
     const updated = await this.users.transitionStatus(user.id, TRANSITION_FROM[to], to, trx);
     if (!updated) throw userInvalidStatusTransition();
-    if (to === UserStatus.SUSPENDED) await this.tokens.revokeAllSessions(user.id, trx);
+    if (to === UserStatus.SUSPENDED) {
+      await this.tokens.revokeAllSessions(user.id, trx);
+      await this.outbox.add(trx, {
+        contract: UserSuspended,
+        aggregateId: user.id,
+        payload: { userId: user.id, role: user.role, suspendedAt: this.clock.now().toISOString() },
+      });
+    }
 
     this.logger.info(to === UserStatus.SUSPENDED ? 'user suspended' : 'user reactivated', {
       event: to === UserStatus.SUSPENDED ? 'USER_SUSPENDED' : 'USER_REACTIVATED',

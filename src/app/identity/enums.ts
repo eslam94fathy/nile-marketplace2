@@ -17,3 +17,9 @@ export type VerificationPurpose = (typeof VerificationPurpose)[keyof typeof Veri
 /** OTP purposes (6-digit codes); invites use long random tokens instead. */
 export type OtpPurpose =
   typeof VerificationPurpose.EMAIL_VERIFICATION | typeof VerificationPurpose.PASSWORD_RESET;
+
+/** Why every session of a user was revoked (`user.sessions_revoked`, spec 03 §8.2). */
+export const SessionsRevokedReason = {
+  PASSWORD_RESET: 'password_reset',
+} as const;
+export type SessionsRevokedReason = (typeof SessionsRevokedReason)[keyof typeof SessionsRevokedReason];

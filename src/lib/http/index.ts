@@ -22,3 +22,4 @@ export {
 } from './openapi/openapi-registry';
 export { createDocsRouter, OPENAPI_JSON_PATH } from './openapi/docs-router';
 export { recordMountPath, routeTemplate, requestPath } from './route-template';
+export { readCookie } from './cookies';

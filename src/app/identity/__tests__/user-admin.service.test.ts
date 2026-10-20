@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { TOKENS } from '../../../lib/di';
 import { UserStatus } from '../enums';
 import { ADMIN_SUSPENDABLE_ROLES, UserAdminService } from '../service/user-admin.service';
-import { createFakes, FAKE_TRX, makeUser } from './fakes';
+import { createFakes, FAKE_TRX, makeUser, NOW } from './fakes';
 
 function setup() {
   const fakes = createFakes();
@@ -28,8 +28,8 @@ const errorCode = (promise: Promise<unknown>) =>
 describe('identity UserAdminService.changeStatus', () => {
   const actor = { actorUserId: 'admin-1' };
 
-  it('suspend: active → suspended only, then every session is revoked', async () => {
-    const { service, users, tokens } = setup();
+  it('suspend: active → suspended only, then every session is revoked and user.suspended written', async () => {
+    const { service, users, tokens, outbox } = setup();
     const user = makeUser();
     users.findById.mockResolvedValue(user);
     users.transitionStatus.mockResolvedValue(makeUser({ id: user.id, status: UserStatus.SUSPENDED }));
@@ -43,10 +43,15 @@ describe('identity UserAdminService.changeStatus', () => {
       FAKE_TRX,
     );
     expect(tokens.revokeAllSessions).toHaveBeenCalledWith(user.id, FAKE_TRX);
+    expect(outbox.add).toHaveBeenCalledExactlyOnceWith(FAKE_TRX, {
+      contract: expect.objectContaining({ type: 'user.suspended', version: 1 }) as unknown,
+      aggregateId: user.id,
+      payload: { userId: user.id, role: user.role, suspendedAt: NOW.toISOString() },
+    });
   });
 
-  it('reactivate: suspended → active only, no session changes', async () => {
-    const { service, users, tokens } = setup();
+  it('reactivate: suspended → active only, no session changes, no event', async () => {
+    const { service, users, tokens, outbox } = setup();
     const user = makeUser({ status: UserStatus.SUSPENDED });
     users.findById.mockResolvedValue(user);
     users.transitionStatus.mockResolvedValue(makeUser());
@@ -58,6 +63,7 @@ describe('identity UserAdminService.changeStatus', () => {
       FAKE_TRX,
     );
     expect(tokens.revokeAllSessions).not.toHaveBeenCalled();
+    expect(outbox.add).not.toHaveBeenCalled();
   });
 
   it('errors: not found, self-suspension, wrong role, wrong current status', async () => {

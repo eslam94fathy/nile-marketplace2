@@ -16,7 +16,7 @@ import { createPaymentsRouter, createPaymentsWebhookRouter, PAYMENTS_PATHS } fro
 import { createSellersRouter } from './app/sellers';
 import { createErrorHandler } from './lib/error';
 import { createDocsRouter, recordMountPath } from './lib/http';
-import { byIp, correlationId, notFound, RateLimitClass, requestLogger } from './lib/middleware';
+import { byIp, correlationId, HEADER, notFound, RateLimitClass, requestLogger } from './lib/middleware';
 import { type ApiInfrastructure } from './infrastructure';
 
 export const API_BASE_PATH = '/api/v1';
@@ -51,8 +51,22 @@ export function createApp(
   app.use(correlationId());
   app.use(requestLogger(logger, clock, [HEALTH_BASE_PATH]));
 
-  // 4. CORS allow-list (mostly irrelevant for the mobile app).
-  app.use(cors({ origin: [...env.CORS_ALLOWED_ORIGINS] }));
+  // 4. CORS allow-list. Credentials for the web client's refresh cookie (spec 03 §8.1): exact origins
+  // only, never `*`. X-Nile-Client forces a preflight, which an origin outside the list fails.
+  app.use(
+    cors({
+      origin: [...env.CORS_ALLOWED_ORIGINS],
+      credentials: true,
+      allowedHeaders: [
+        HEADER.AUTHORIZATION,
+        HEADER.CONTENT_TYPE,
+        HEADER.IDEMPOTENCY_KEY,
+        HEADER.CORRELATION_ID,
+        HEADER.NILE_CLIENT,
+      ],
+      exposedHeaders: [HEADER.CORRELATION_ID, HEADER.RETRY_AFTER, HEADER.IDEMPOTENT_REPLAYED],
+    }),
+  );
 
   // 5. Raw body for the Kashier webhook, JSON for everything else.
   const bodyLimit = env.HTTP_BODY_LIMIT_KB * BYTES_PER_KB;

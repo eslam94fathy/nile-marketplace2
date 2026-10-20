@@ -2,9 +2,10 @@ import { inject, injectable } from 'tsyringe';
 import { type IClock } from '../../../lib/clock';
 import { type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
+import { type IOutbox, UserSessionsRevoked } from '../../../lib/events';
 import { randomToken } from '../../../pkg/crypto';
 import { type IPasswordHasher } from '../../../pkg/hashing';
-import { type OtpPurpose, UserStatus, VerificationPurpose } from '../enums';
+import { type OtpPurpose, SessionsRevokedReason, UserStatus, VerificationPurpose } from '../enums';
 import {
   accountSuspended,
   emailNotVerified,
@@ -40,6 +41,7 @@ export class AuthService {
     @inject(TOKENS.PasswordHasher) private readonly hasher: IPasswordHasher,
     @inject(TOKENS.TransactionRunner) private readonly transactions: ITransactionRunner,
     @inject(TOKENS.Clock) private readonly clock: IClock,
+    @inject(TOKENS.Outbox) private readonly outbox: IOutbox,
   ) {}
 
   /** UC-ID-1. A wrong code's attempt is committed before INVALID_OTP is thrown. */
@@ -105,7 +107,7 @@ export class AuthService {
     return this.tokens.endSession(refreshToken);
   }
 
-  /** UC-ID-6 reset: new password, code consumed, every session revoked. */
+  /** UC-ID-6 reset: new password, code consumed, every session revoked (`user.sessions_revoked`, §8.2). */
   async resetPassword(email: string, otp: string, newPassword: string): Promise<void> {
     // Hashed before the transaction: bcrypt is slow and must not hold row locks.
     const passwordHash = await this.hasher.hash(newPassword);
@@ -117,6 +119,15 @@ export class AuthService {
 
       await this.users.updatePasswordHash(user.id, passwordHash, trx);
       await this.tokens.revokeAllSessions(user.id, trx);
+      await this.outbox.add(trx, {
+        contract: UserSessionsRevoked,
+        aggregateId: user.id,
+        payload: {
+          userId: user.id,
+          reason: SessionsRevokedReason.PASSWORD_RESET,
+          revokedAt: this.clock.now().toISOString(),
+        },
+      });
       return true;
     });
     if (!done) throw invalidOtp();

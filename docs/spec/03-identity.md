@@ -1,7 +1,7 @@
 # Spec 03 — identity
 
 Status: **v1.4 APPROVED (2026-10-13).** Approved by the user. v1.1: Phase 1 implementation clarifications (§7.1, I-1…I-9). v1.2: §4.11 index reference (DB-Q6). v1.3: `hashPassword` + `createPendingUser(passwordHash)` (§2, I-10, P2-Q2). v1.4: a suspension also blocks the access tokens already issued (I-11, Phase 8 security review F-4). Changes from now on need explicit approval and a version bump.
-**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 web-client token transport (R-21) and the `user.suspended` / `user.sessions_revoked` events (specs 13, 15). Kept as its own section, so every cross-reference stays valid (R2-Q1).
+**v2.1 APPROVED (2026-10-20):** §8.4 R2-P2 implementation clarifications IW-4…IW-10 (every recommendation accepted). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 web-client token transport (R-21) and the `user.suspended` / `user.sessions_revoked` events (specs 13, 15). Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -267,3 +267,15 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | IW-1 | Web app and api domains | **Rec:** `app.<domain>` (web) and `api.<domain>` (api, already planned), same registrable domain, so `SameSite=Strict` works · or serve the web app and the api on one host (`<domain>` + `/api`) |
 | IW-2 | Concurrent refresh from several tabs | **Rec:** the client serialises (Web Locks + BroadcastChannel); no server change · or a short grace window (e.g. 10 s) in which the just-replaced token returns the same new pair (weakens reuse detection) |
 | IW-3 | Opt-in signal | **Rec:** header `X-Nile-Client: web` (also the CSRF guard) · or a body field `tokenTransport: 'cookie'` |
+
+### 8.4 Clarifications (R2-P2 implementation, approved 2026-10-20)
+
+| # | Clarification | Where |
+|---|---|---|
+| IW-4 | Only the exact header value `web` selects the cookie. Any other value (`ios`, `WEB`) is a native client, not an error; so a cookie sent with another value is `400 VALIDATION_FAILED` like a cookie without the header | §8.1 opt-in |
+| IW-5 | With `X-Nile-Client: web`, `POST /auth/refresh` also accepts the token in the body (no cookie); the new one is set as the cookie and the body says `null`. A web client can move from body to cookie without logging in again | §8.1 |
+| IW-6 | The cookie is cleared (`Max-Age=0`, same path and attributes) only on requests that use the cookie transport (the web header or a cookie sent). Native answers never carry `Set-Cookie`. A `400` about the transport (both, neither, cookie without the header) clears nothing and uses up no session | §8.1 logout, `INVALID_REFRESH_TOKEN` |
+| IW-7 | A cookie value that isn't a 43-character token is not a `400`: it is looked up like any token, so refresh and change-password answer `401 INVALID_REFRESH_TOKEN` (cookie cleared) and logout `204`. The browser can then recover by logging in | §8.1 reading |
+| IW-8 | `Max-Age` = `REFRESH_TOKEN_TTL_DAYS` in seconds. Every rotation issues a token with a fresh TTL (UC-ID-4), so each new cookie gets the full `Max-Age` too | §8.1 cookie |
+| IW-9 | CORS as in conventions §9.4 (exposed `Retry-After`, `Idempotent-Replayed`, `X-Correlation-Id`), plus `Content-Type` among the allowed request headers (a JSON `POST` needs it in the preflight). No preflight `Max-Age` is set (browser default). For an origin outside the list the `cors` package still sends `Access-Control-Allow-Credentials`, which is harmless without `Access-Control-Allow-Origin` | §8.1 CORS |
+| IW-10 | `user.suspended` is written by every login suspension in the same transaction (the admin endpoint and `setUserStatus`, i.e. a delivery agent's deactivation); `suspendedAt` is the clock time of that transaction. Reactivation publishes nothing. A **seller** suspension (`seller.suspended`, spec 05) does not suspend the login, so it publishes no `user.suspended` and the seller's sockets stay open (its products are hidden as before) | §8.2 |
