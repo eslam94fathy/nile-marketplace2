@@ -29,7 +29,10 @@ export class SellerProductController {
       maxLimit: this.env.PAGINATION_MAX_LIMIT,
     });
     const page = await this.products.list(userOf(req), query);
-    sendSuccess(res, HTTP_STATUS.OK, page.items.map(toSellerProductDto), page.meta);
+    const items = page.items.map((product) =>
+      toSellerProductDto(product, page.primaryImages.get(product.id) ?? null),
+    );
+    sendSuccess(res, HTTP_STATUS.OK, items, page.meta);
   };
 
   create = async (req: Request, res: Response): Promise<void> => {

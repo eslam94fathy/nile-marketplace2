@@ -31,6 +31,10 @@ export const CatalogErrorCode = {
   VARIANT_LIMIT_REACHED: 'VARIANT_LIMIT_REACHED',
   SKU_TAKEN: 'SKU_TAKEN',
   COMPARE_AT_PRICE_INVALID: 'COMPARE_AT_PRICE_INVALID',
+  // R2 (spec 06 §8.6)
+  PRODUCT_IMAGE_NOT_FOUND: 'PRODUCT_IMAGE_NOT_FOUND',
+  PRODUCT_IMAGE_LIMIT_REACHED: 'PRODUCT_IMAGE_LIMIT_REACHED',
+  PRODUCT_IMAGE_ORDER_INVALID: 'PRODUCT_IMAGE_ORDER_INVALID',
   // STOCK_ADJUSTMENT_INVALID (spec 06 §6) is raised by inventory: InventoryErrorCode.
 } as const;
 
@@ -155,6 +159,25 @@ export const compareAtPriceInvalid = (cause?: unknown) =>
     'compareAtPrice must be greater than price',
     S.UNPROCESSABLE_ENTITY,
     { cause },
+  );
+
+/** A `variantId` in a body that isn't a live variant of the product (spec 06 §8.4). */
+export const variantReferenceNotFound = () =>
+  new AppError(C.VARIANT_NOT_FOUND, 'Variant not found', S.UNPROCESSABLE_ENTITY);
+
+export const productImageNotFound = () =>
+  new AppError(C.PRODUCT_IMAGE_NOT_FOUND, 'Product image not found', S.NOT_FOUND);
+export const productImageLimitReached = (max: number) =>
+  new AppError(
+    C.PRODUCT_IMAGE_LIMIT_REACHED,
+    `A product can have at most ${max} images`,
+    S.UNPROCESSABLE_ENTITY,
+  );
+export const productImageOrderInvalid = () =>
+  new AppError(
+    C.PRODUCT_IMAGE_ORDER_INVALID,
+    'List every image of the product exactly once',
+    S.UNPROCESSABLE_ENTITY,
   );
 
 /** Constraints that race with app-level checks (CLAUDE.md §6.4, spec 06 CA-11). */

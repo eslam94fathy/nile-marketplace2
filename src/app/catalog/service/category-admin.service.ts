@@ -4,6 +4,7 @@ import { type DbTransaction, type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import { type ILogger } from '../../../lib/logger';
 import { slugify } from '../../../pkg/text';
+import { MediaPurpose, type MediaService } from '../../media';
 import {
   CATEGORY_MAX_DEPTH,
   CATEGORY_SLUG_MAX_LENGTH,
@@ -95,6 +96,7 @@ export class CategoryAdminService {
     private readonly variantValues: VariantAttributeValueRepository,
     @inject(TOKENS.Logger) private readonly logger: ILogger,
     @inject(TOKENS.AuditRecorder) private readonly audit: IAuditRecorder,
+    @inject(TOKENS.MediaService) private readonly media: MediaService,
   ) {}
 
   /**
@@ -335,6 +337,68 @@ export class CategoryAdminService {
     throw new Error(`category ${categoryId}: subtree kept changing while locking it`);
   }
 
+  /**
+   * Spec 06 UC-CA-9: any admin's upload (ME-2) replaces the current image, which is released. The same
+   * image again only changes the alt text (CA-17).
+   */
+  async setImage(
+    categoryId: string,
+    mediaId: string,
+    altText: string | null,
+    actorUserId: string,
+  ): Promise<void> {
+    await this.tx.run(async (trx) => {
+      const current = await this.lockedImage(categoryId, trx);
+      if (current?.mediaId !== mediaId) {
+        await this.media.claim(
+          [mediaId],
+          { purpose: MediaPurpose.CATEGORY_IMAGE, ownerUserId: actorUserId },
+          trx,
+        );
+      }
+      await this.categories.setImage(categoryId, mediaId, altText, trx);
+      if (current && current.mediaId !== mediaId) await this.media.release([current.mediaId], trx);
+      await this.audit.record(
+        {
+          action: 'category.image_set',
+          targetId: categoryId,
+          before: imageValues(current),
+          after: { imageMediaId: mediaId, imageAltText: altText },
+        },
+        trx,
+      );
+    });
+    await this.changed('category image set', { categoryId, actorUserId });
+  }
+
+  /** Removing a missing image is a no-op (still 204, not audited). */
+  async removeImage(categoryId: string, actorUserId: string): Promise<void> {
+    const removed = await this.tx.run(async (trx) => {
+      const current = await this.lockedImage(categoryId, trx);
+      if (!current) return false;
+      await this.categories.setImage(categoryId, null, null, trx);
+      await this.media.release([current.mediaId], trx);
+      await this.audit.record(
+        {
+          action: 'category.image_removed',
+          targetId: categoryId,
+          before: imageValues(current),
+          after: imageValues(null),
+        },
+        trx,
+      );
+      return true;
+    });
+    if (removed) await this.changed('category image removed', { categoryId, actorUserId });
+  }
+
+  /** Locks the category (CA-2) and returns its current image, if any. */
+  private async lockedImage(categoryId: string, trx: DbTransaction) {
+    const [locked] = await this.categories.lockForUpdate([categoryId], trx);
+    if (!locked) throw categoryNotFound();
+    return this.categories.findImage(categoryId, trx);
+  }
+
   private async changed(message: string, fields: Record<string, string>): Promise<void> {
     await this.trees.invalidate();
     this.logger.info(message, { event: 'CATALOG_TAXONOMY_CHANGED', ...fields });
@@ -368,6 +432,10 @@ function optionValues(option: Omit<CategoryAttributeOption, 'id'>): AuditValues 
     sortOrder: option.sortOrder,
     attributeId: option.attributeId,
   };
+}
+
+function imageValues(image: { mediaId: string; altText: string | null } | null): AuditValues {
+  return { imageMediaId: image?.mediaId ?? null, imageAltText: image?.altText ?? null };
 }
 
 /** A patch without its absent fields, so spreading it never overwrites a value with `undefined`. */

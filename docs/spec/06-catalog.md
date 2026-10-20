@@ -1,7 +1,7 @@
 # Spec 06 — catalog
 
 Status: **v1.4 APPROVED (2026-10-10).** v1.0: approved with the Phase 3 clarifications in §7.1. v1.1: an active category always has an active parent (CA-13); attribute writes lock the whole subtree (CA-2). v1.2: product writes hold their category `FOR SHARE` (CA-2). v1.3: the product-detail cache holds neither visibility nor stock, so the consumers have nothing to invalidate (CA-8). v1.4: typo tolerance matches words, not the whole name (CA-14, P3-O1). Changes from now on need explicit approval and a version bump.
-**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 images (spec 14, R-2, R-3). §9 (2026-10-20) adds the rating projection (spec 17) and product cards (wishlist, spec 04 §8). Kept as its own section, so every cross-reference stays valid (R2-Q1).
+**v2.1 APPROVED (2026-10-20):** §8.7 R2-P1 implementation clarifications CA-15…CA-19 (every recommendation accepted). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 images (spec 14, R-2, R-3). §9 (2026-10-20) adds the rating projection (spec 17) and product cards (wishlist, spec 04 §8). Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -361,6 +361,16 @@ SellerProductDetailDto += { images: ProductImageDto[] }
 | `PRODUCT_IMAGE_NOT_FOUND` | 404 | Missing, or the image of another product or seller |
 | `PRODUCT_IMAGE_LIMIT_REACHED` | 422 | A 9th image |
 | `PRODUCT_IMAGE_ORDER_INVALID` | 422 | The reorder list isn't exactly the product's image ids |
+
+### 8.7 Clarifications (R2-P1 implementation, approved 2026-10-20)
+
+| # | Clarification | Where |
+|---|---|---|
+| CA-15 | An image is named by its **media id** everywhere: `ProductImageDto.id` (the `ImageDto.id`), `:imageId` in the paths, `imageIds` of the reorder and `variants[].imageId`. `media_id` is unique in `product_images`, so one id per image is enough; the row's own id stays internal | §8.4 |
+| CA-16 | `position` is `int(0..7)`; a position past the current end appends. Add answers every image in order (`201`), update the one image (`200`) | §8.4 |
+| CA-17 | Category image: setting the image that is already set changes only the alt text (no new claim, nothing released). Removing when there is no image is a `204` no-op and writes no audit row. Both changes are audited as `category.image_set` / `category.image_removed` with `imageMediaId` and `imageAltText` | UC-CA-9 |
+| CA-18 | The category tree cache holds each category's image with its CDN URLs; the product detail cache holds the images and each variant's `imageId`. Entries cached before R2 (without images) are treated as a miss and rebuilt once | §8.5, CA-8 |
+| CA-19 | A product or category image response with a media id that is somehow no longer `ready` leaves that image out instead of failing (attached media is always ready, ME-11) | §8.5 |
 
 ---
 

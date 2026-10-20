@@ -59,6 +59,8 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261013150001_add_products_min_price_id_index',
       '20261020120001_create_admin_audit_log',
       '20261020130001_create_media_objects',
+      '20261020140001_add_categories_image',
+      '20261020140002_create_product_images',
     ]);
   });
 

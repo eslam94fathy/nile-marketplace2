@@ -5,6 +5,13 @@ import { authenticate, requireRole } from '../../lib/middleware';
 import { CATALOG_SELLER_PATHS as P } from './constants';
 import { type SellerProductController } from './controller/seller-product.controller';
 import { type SellerVariantController } from './controller/seller-variant.controller';
+import { type ProductImageController } from './controller/product-image.controller';
+import {
+  AddProductImageDto,
+  ProductImageDto,
+  ReorderProductImagesDto,
+  UpdateProductImageDto,
+} from './dto/product-image.dto';
 import {
   CreateProductDto,
   CreateVariantDto,
@@ -25,6 +32,7 @@ const TAGS = ['seller: catalog'] as const;
 export interface CatalogSellerRouteDeps {
   products: SellerProductController;
   variants: SellerVariantController;
+  images: ProductImageController;
   jwtVerifier: JwtVerifier;
   /** `requireIdempotency`, for the stock-adjustment route (S-6, G25). */
   idempotency: RequestHandler;
@@ -54,6 +62,11 @@ export function addCatalogSellerRoutes(router: Router, deps: CatalogSellerRouteD
   router.delete(P.VARIANT, ...sellerOnly, variants.delete);
   router.post(P.STOCK_ADJUSTMENTS, ...sellerOnly, deps.idempotency, variants.adjustStock);
   router.get(P.STOCK_MOVEMENTS, ...sellerOnly, variants.movements);
+  // Before P.IMAGE, so "order" is never taken for an image id.
+  router.put(P.IMAGES_ORDER, ...sellerOnly, deps.images.reorder);
+  router.post(P.IMAGES, ...sellerOnly, deps.images.add);
+  router.patch(P.IMAGE, ...sellerOnly, deps.images.update);
+  router.delete(P.IMAGE, ...sellerOnly, deps.images.remove);
 
   const base = { tags: TAGS, auth: true } as const;
   const detail = (description: string) => ({ description, body: SellerProductDetailDto });
@@ -166,5 +179,41 @@ export function addCatalogSellerRoutes(router: Router, deps: CatalogSellerRouteD
     summary: 'Stock history of a variant, newest first (VARIANT_NOT_FOUND)',
     query: [...page, { name: 'sort', in: 'query', schema: { enum: ['-createdAt'] } }],
     responses: { 200: { description: 'One page', body: StockMovementDto, isArray: true, paginated: true } },
+  });
+
+  const imageList = (description: string) => ({ description, body: ProductImageDto, isArray: true });
+  docs.add({
+    ...base,
+    method: 'post',
+    path: path(P.IMAGES),
+    summary:
+      'Attach a ready product_image upload (at most 8), optionally tied to a variant, at a position or at the end (PRODUCT_NOT_FOUND, SELLER_NOT_APPROVED, PRODUCT_IMAGE_LIMIT_REACHED, VARIANT_NOT_FOUND, MEDIA_NOT_ATTACHABLE)',
+    requestBody: AddProductImageDto,
+    responses: { 201: imageList('Every image of the product, in order') },
+  });
+  docs.add({
+    ...base,
+    method: 'patch',
+    path: path(P.IMAGE),
+    summary:
+      'Tie the image to a variant or untie it (null), set or clear its alt text; imageId is the media id (PRODUCT_IMAGE_NOT_FOUND, SELLER_NOT_APPROVED, VARIANT_NOT_FOUND)',
+    requestBody: UpdateProductImageDto,
+    responses: { 200: { description: 'The image', body: ProductImageDto } },
+  });
+  docs.add({
+    ...base,
+    method: 'put',
+    path: path(P.IMAGES_ORDER),
+    summary:
+      'Reorder: list every image id of the product exactly once (PRODUCT_NOT_FOUND, SELLER_NOT_APPROVED, PRODUCT_IMAGE_ORDER_INVALID)',
+    requestBody: ReorderProductImagesDto,
+    responses: { 200: imageList('Every image of the product, in the new order') },
+  });
+  docs.add({
+    ...base,
+    method: 'delete',
+    path: path(P.IMAGE),
+    summary: 'Remove an image; the later ones move up (PRODUCT_IMAGE_NOT_FOUND, SELLER_NOT_APPROVED)',
+    responses: { 204: { description: 'Removed' } },
   });
 }

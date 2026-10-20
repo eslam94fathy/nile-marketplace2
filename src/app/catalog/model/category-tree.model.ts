@@ -3,6 +3,7 @@
  * cached (02-database.md §5, spec 06 CA-8). Pure and in-memory: every admin rule and public view
  * of the taxonomy is computed from it.
  */
+import { type ImageView } from '../../media';
 
 export interface Category {
   id: string;
@@ -30,6 +31,15 @@ export interface CategoryAttributeOption {
   sortOrder: number;
 }
 
+/** A category's image (spec 06 §8.1). Public CDN URLs never change, so they are cached with the tree. */
+export interface CategoryImage {
+  categoryId: string;
+  mediaId: string;
+  altText: string | null;
+  /** `null` only if the media is no longer ready (never for attached media). */
+  image: ImageView | null;
+}
+
 export interface AttributeWithOptions extends CategoryAttribute {
   options: CategoryAttributeOption[];
 }
@@ -39,6 +49,8 @@ export interface CategoryTreeSnapshot {
   categories: Category[];
   attributes: CategoryAttribute[];
   options: CategoryAttributeOption[];
+  /** R2 (spec 06 §8). Absent in snapshots built before images. */
+  images?: CategoryImage[];
 }
 
 const bySortOrder = <T extends { sortOrder: number; id: string }>(
@@ -56,6 +68,7 @@ export class CategoryTree {
   private readonly attributesOf = new Map<string, AttributeWithOptions[]>();
   private readonly attributes = new Map<string, AttributeWithOptions>();
   private readonly options = new Map<string, CategoryAttributeOption>();
+  private readonly images = new Map<string, CategoryImage>();
 
   private constructor(private readonly snapshot: CategoryTreeSnapshot) {
     for (const category of snapshot.categories) {
@@ -80,6 +93,7 @@ export class CategoryTree {
       this.attributes.get(option.attributeId)?.options.push(option);
     }
     for (const attribute of this.attributes.values()) attribute.options.sort(optionOrder);
+    for (const image of snapshot.images ?? []) this.images.set(image.categoryId, image);
   }
 
   static fromSnapshot(snapshot: CategoryTreeSnapshot): CategoryTree {
@@ -153,6 +167,10 @@ export class CategoryTree {
 
   option(optionId: string): CategoryAttributeOption | undefined {
     return this.options.get(optionId);
+  }
+
+  imageOf(categoryId: string): CategoryImage | undefined {
+    return this.images.get(categoryId);
   }
 
   /** Active categories only. An active category always has an active parent (spec 06 CA-13). */

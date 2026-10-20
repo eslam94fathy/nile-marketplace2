@@ -13,17 +13,29 @@ import {
   productInvalidStatusTransition,
   productNotFound,
 } from '../errors';
+import { type ImageView } from '../../media';
+import { type ProductImageView } from '../model/product-image.model';
 import { type Product } from '../model/product.model';
 import { type CategoryRepository } from '../repository/category.repository';
 import { type ProductVariantRepository } from '../repository/product-variant.repository';
 import { type ProductRepository } from '../repository/product.repository';
 import { type ProductDetailCache } from './product-detail-cache.service';
+import { type ProductImageViewService } from './product-image-view.service';
 import { type SellerGuard } from './seller-guard.service';
 import { type VariantView, type VariantViewService } from './variant-view.service';
 
 export interface ProductDetail {
   product: Product;
   variants: VariantView[];
+  /** In position order (spec 06 §8). */
+  images: ProductImageView[];
+}
+
+export interface SellerProductPage {
+  items: Product[];
+  meta: PageMeta;
+  /** Primary image per product id; products without images are absent. */
+  primaryImages: Map<string, ImageView>;
 }
 
 export interface CreateProductInput {
@@ -60,11 +72,13 @@ export class SellerProductService {
     @inject(TOKENS.CategoryRepository) private readonly categories: CategoryRepository,
     @inject(TOKENS.VariantViewService) private readonly views: VariantViewService,
     @inject(TOKENS.ProductDetailCache) private readonly detailCache: ProductDetailCache,
+    @inject(TOKENS.ProductImageViewService) private readonly images: ProductImageViewService,
   ) {}
 
-  async list(userId: string, query: ParsedListQuery): Promise<{ items: Product[]; meta: PageMeta }> {
+  async list(userId: string, query: ParsedListQuery): Promise<SellerProductPage> {
     const sellerId = await this.guard.sellerId(userId);
-    return toPage(await this.products.listForSeller(sellerId, query), query, (p) => p.createdAt);
+    const page = toPage(await this.products.listForSeller(sellerId, query), query, (p) => p.createdAt);
+    return { ...page, primaryImages: await this.images.primaryFor(page.items.map((p) => p.id)) };
   }
 
   async get(userId: string, productId: string): Promise<ProductDetail> {
@@ -91,7 +105,7 @@ export class SellerProductService {
         trx,
       );
     });
-    return { product, variants: [] };
+    return { product, variants: [], images: [] };
   }
 
   async update(userId: string, productId: string, input: UpdateProductInput): Promise<ProductDetail> {
@@ -138,7 +152,11 @@ export class SellerProductService {
     const product = await this.products.findLiveForSeller(productId, sellerId, trx);
     if (!product) throw productNotFound();
     const variants = await this.variants.findLiveByProductIds([product.id], trx);
-    return { product, variants: await this.views.build(variants, trx) };
+    return {
+      product,
+      variants: await this.views.build(variants, trx),
+      images: await this.images.forProduct(product.id, trx),
+    };
   }
 
   /**

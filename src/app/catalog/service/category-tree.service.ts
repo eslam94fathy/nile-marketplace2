@@ -4,6 +4,7 @@ import { type DbTransaction } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import { type ILogger } from '../../../lib/logger';
 import { type ICache } from '../../../pkg/cache';
+import { type MediaService } from '../../media';
 import { CATEGORY_TREE_CACHE_KEY } from '../constants';
 import { CategoryTree, type CategoryTreeSnapshot } from '../model/category-tree.model';
 import { type CategoryAttributeOptionRepository } from '../repository/category-attribute-option.repository';
@@ -23,6 +24,7 @@ export class CategoryTreeService {
     @inject(TOKENS.CategoryAttributeRepository) private readonly attributes: CategoryAttributeRepository,
     @inject(TOKENS.CategoryAttributeOptionRepository)
     private readonly options: CategoryAttributeOptionRepository,
+    @inject(TOKENS.MediaService) private readonly media: MediaService,
     @inject(TOKENS.Cache) private readonly cache: ICache,
     @inject(TOKENS.Env) private readonly env: CacheEnv,
     @inject(TOKENS.Logger) private readonly logger: ILogger,
@@ -43,7 +45,11 @@ export class CategoryTreeService {
     const categories = await this.categories.findAll(trx);
     const attributes = await this.attributes.findAll(trx);
     const options = await this.options.findAll(trx);
-    return CategoryTree.fromSnapshot({ categories, attributes, options });
+    const refs = await this.categories.findImages(trx);
+    // Outside `trx` (its own pool connection): a plain read of ready media.
+    const views = await this.media.getImages(refs.map((ref) => ref.mediaId));
+    const images = refs.map((ref) => ({ ...ref, image: views.get(ref.mediaId) ?? null }));
+    return CategoryTree.fromSnapshot({ categories, attributes, options, images });
   }
 
   /** After commit. A failed delete is bounded by the TTL. */
@@ -66,7 +72,9 @@ export class CategoryTreeService {
       if (
         !Array.isArray(parsed?.categories) ||
         !Array.isArray(parsed.attributes) ||
-        !Array.isArray(parsed.options)
+        !Array.isArray(parsed.options) ||
+        // An entry from before images (R2): a miss, rebuilt once.
+        !Array.isArray(parsed.images)
       ) {
         throw new TypeError('cached category tree has an unexpected shape');
       }

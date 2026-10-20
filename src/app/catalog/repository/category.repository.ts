@@ -15,6 +15,8 @@ interface CategoryTable {
   depth: number;
   sort_order: number;
   is_active: boolean;
+  image_media_id: string | null;
+  image_alt_text: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -48,6 +50,46 @@ export class CategoryRepository {
   async findAll(trx?: DbTransaction): Promise<Category[]> {
     const rows = await this.exec(trx)<CategoryTable>(T).select(...COLUMNS);
     return rows.map(toModel);
+  }
+
+  /** The categories that have an image (spec 06 §8.1). */
+  async findImages(
+    trx?: DbTransaction,
+  ): Promise<{ categoryId: string; mediaId: string; altText: string | null }[]> {
+    const rows = await this.exec(trx)<CategoryTable>(T)
+      .select('id', 'image_media_id', 'image_alt_text')
+      .whereNotNull('image_media_id');
+    return rows.flatMap((row) =>
+      row.image_media_id
+        ? [{ categoryId: row.id, mediaId: row.image_media_id, altText: row.image_alt_text }]
+        : [],
+    );
+  }
+
+  /** One category's image, `null` when it has none (or doesn't exist). */
+  async findImage(
+    id: string,
+    trx: DbTransaction,
+  ): Promise<{ categoryId: string; mediaId: string; altText: string | null } | null> {
+    const row = await trx<CategoryTable>(T)
+      .select('id', 'image_media_id', 'image_alt_text')
+      .where({ id })
+      .first();
+    return row?.image_media_id
+      ? { categoryId: row.id, mediaId: row.image_media_id, altText: row.image_alt_text }
+      : null;
+  }
+
+  /** Sets or clears (`null`) the image; the alt text goes with it. */
+  async setImage(
+    id: string,
+    mediaId: string | null,
+    altText: string | null,
+    trx: DbTransaction,
+  ): Promise<void> {
+    await trx<CategoryTable>(T)
+      .where({ id })
+      .update({ image_media_id: mediaId, image_alt_text: altText, updated_at: trx.fn.now() });
   }
 
   /**

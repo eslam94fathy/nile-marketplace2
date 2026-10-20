@@ -19,6 +19,7 @@ import { type Product } from '../model/product.model';
 import { resolveVariantOptions } from '../model/variant-options';
 import { type CategoryAttributeOptionRepository } from '../repository/category-attribute-option.repository';
 import { type CategoryAttributeRepository } from '../repository/category-attribute.repository';
+import { type ProductImageRepository } from '../repository/product-image.repository';
 import { type ProductVariantRepository } from '../repository/product-variant.repository';
 import { type ProductRepository } from '../repository/product.repository';
 import { type VariantAttributeValueRepository } from '../repository/variant-attribute-value.repository';
@@ -66,6 +67,7 @@ export class SellerVariantService {
     @inject(TOKENS.InventoryService) private readonly inventory: IInventoryService,
     @inject(TOKENS.VariantViewService) private readonly views: VariantViewService,
     @inject(TOKENS.ProductDetailCache) private readonly detailCache: ProductDetailCache,
+    @inject(TOKENS.ProductImageRepository) private readonly images: ProductImageRepository,
   ) {}
 
   async create(userId: string, productId: string, input: CreateVariantInput): Promise<VariantView> {
@@ -133,6 +135,8 @@ export class SellerVariantService {
       const product = await this.lockProduct(userId, productId, trx);
       const variant = await this.liveVariantOf(product, variantId, trx);
       await this.variants.softDelete(variant.id, trx);
+      // Its images stay on the product, untied (spec 06 UC-CA-8).
+      await this.images.untieVariant(variant.id, trx);
       await this.projections.recompute(product, trx);
     });
     await this.detailCache.invalidate([productId]);

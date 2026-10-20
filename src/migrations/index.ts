@@ -47,6 +47,8 @@ import * as m20261013120004 from './20261013120004_create_payouts';
 import * as m20261013150001 from './20261013150001_add_products_min_price_id_index';
 import * as m20261020120001 from './20261020120001_create_admin_audit_log';
 import * as m20261020130001 from './20261020130001_create_media_objects';
+import * as m20261020140001 from './20261020140001_add_categories_image';
+import * as m20261020140002 from './20261020140002_create_product_images';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -99,5 +101,7 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261013150001_add_products_min_price_id_index', module: m20261013150001 },
   { name: '20261020120001_create_admin_audit_log', module: m20261020120001 },
   { name: '20261020130001_create_media_objects', module: m20261020130001 },
+  { name: '20261020140001_add_categories_image', module: m20261020140001 },
+  { name: '20261020140002_create_product_images', module: m20261020140002 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

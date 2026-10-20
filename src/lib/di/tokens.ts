@@ -191,6 +191,12 @@ export const TOKENS = {
   AuditRetentionJob: Symbol.for('AuditRetentionJob'),
   AuditController: Symbol.for('AuditController'),
 
+  // catalog images (R2, spec 06 §8)
+  ProductImageRepository: Symbol.for('ProductImageRepository'),
+  ProductImageViewService: Symbol.for('ProductImageViewService'),
+  ProductImageService: Symbol.for('ProductImageService'),
+  ProductImageController: Symbol.for('ProductImageController'),
+
   // media module
   MediaObjectRepository: Symbol.for('MediaObjectRepository'),
   MediaUrls: Symbol.for('MediaUrls'),

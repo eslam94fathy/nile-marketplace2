@@ -7,7 +7,9 @@ import { type IInventoryService } from '../../inventory';
 import { type ISellerDirectory } from '../../sellers';
 import { MAX_AVAILABLE_QUANTITY, SEARCH_MAX_LENGTH, SEARCH_MIN_LENGTH } from '../constants';
 import { productNotFound } from '../errors';
+import { type ImageView } from '../../media';
 import { type CategoryTree } from '../model/category-tree.model';
+import { variantImageId } from '../model/product-image.model';
 import { type Product } from '../model/product.model';
 import { type ProductVariantRepository } from '../repository/product-variant.repository';
 import {
@@ -18,6 +20,7 @@ import {
 import { type VariantAttributeValueRepository } from '../repository/variant-attribute-value.repository';
 import { type CategoryTreeService } from './category-tree.service';
 import { type ProductDetailCache, type ProductDetailStatic } from './product-detail-cache.service';
+import { type ProductImageViewService } from './product-image-view.service';
 
 type SearchEnv = Pick<Env, 'SEARCH_WORD_SIMILARITY_THRESHOLD'>;
 
@@ -28,6 +31,7 @@ export interface ProductListItem {
   product: Product;
   category: { id: string; name: string; slug: string };
   seller: { id: string; businessName: string };
+  primaryImage: ImageView | null;
 }
 
 export interface PublicProductDetail extends ProductDetailStatic {
@@ -49,6 +53,7 @@ export class ProductBrowseService {
     @inject(TOKENS.ProductDetailCache) private readonly detailCache: ProductDetailCache,
     @inject(TOKENS.SellerDirectory) private readonly sellers: ISellerDirectory,
     @inject(TOKENS.InventoryService) private readonly inventory: IInventoryService,
+    @inject(TOKENS.ProductImageViewService) private readonly images: ProductImageViewService,
     @inject(TOKENS.Env) private readonly env: SearchEnv,
   ) {}
 
@@ -70,12 +75,14 @@ export class ProductBrowseService {
     const names = new Map(
       (await this.sellers.getSummaries(sellerIds)).map((s) => [s.sellerId, s.businessName]),
     );
+    const primaryImages = await this.images.primaryFor(page.items.map((row) => row.product.id));
     const items = page.items.map(({ product }) => {
       const category = tree.get(product.categoryId);
       return {
         product,
         category: { id: product.categoryId, name: category?.name ?? '', slug: category?.slug ?? '' },
         seller: { id: product.sellerId, businessName: names.get(product.sellerId) ?? '' },
+        primaryImage: primaryImages.get(product.id) ?? null,
       };
     });
     return { items, meta: page.meta };
@@ -111,6 +118,7 @@ export class ProductBrowseService {
     const active = (await this.variants.findLiveByProductIds([product.id])).filter((v) => v.isActive);
     const options = await this.values.findByVariantIds(active.map((v) => v.id));
     const [seller] = await this.sellers.getSummaries([product.sellerId]);
+    const images = await this.images.forProduct(product.id);
 
     const used = new Set([...options.values()].flat().map((value) => value.optionId));
     const attributes = tree
@@ -140,7 +148,9 @@ export class ProductBrowseService {
           optionCode,
           value,
         })),
+        imageId: variantImageId(images, variant.id),
       })),
+      images,
     };
   }
 

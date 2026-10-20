@@ -6,6 +6,8 @@ import { CATALOG_ADMIN_PATHS as A, CATALOG_PATHS as P, CATALOG_PRODUCT_PATHS as 
 import { type CategoryAdminController } from './controller/category-admin.controller';
 import { type CategoryController } from './controller/category.controller';
 import { type ProductController } from './controller/product.controller';
+import { type ProductImageController } from './controller/product-image.controller';
+import { SetCategoryImageDto } from './dto/product-image.dto';
 import { ProductDetailDto, ProductListItemDto } from './dto/product-public.dto';
 import { type SellerProductController } from './controller/seller-product.controller';
 import { type SellerVariantController } from './controller/seller-variant.controller';
@@ -35,6 +37,7 @@ export interface CatalogRouteDeps {
   products: ProductController;
   sellerProducts: SellerProductController;
   sellerVariants: SellerVariantController;
+  productImages: ProductImageController;
   jwtVerifier: JwtVerifier;
   idempotency: RequestHandler;
   docs: OpenApiRegistry;
@@ -62,10 +65,13 @@ export function catalogRoutes(deps: CatalogRouteDeps): Router {
   router.post(A.ATTRIBUTE_OPTIONS, ...adminOnly, admin.addOption);
   router.patch(A.OPTION, ...adminOnly, admin.updateOption);
   router.delete(A.OPTION, ...adminOnly, admin.deleteOption);
+  router.put(A.CATEGORY_IMAGE, ...adminOnly, admin.setImage);
+  router.delete(A.CATEGORY_IMAGE, ...adminOnly, admin.removeImage);
 
   addCatalogSellerRoutes(router, {
     products: deps.sellerProducts,
     variants: deps.sellerVariants,
+    images: deps.productImages,
     jwtVerifier: deps.jwtVerifier,
     idempotency: deps.idempotency,
     docs,
@@ -206,5 +212,23 @@ export function catalogRoutes(deps: CatalogRouteDeps): Router {
     responses: { 204: { description: 'Deleted' } },
   });
 
+  docs.add({
+    method: 'put',
+    path: `${basePath}${A.CATEGORY_IMAGE}`,
+    summary:
+      'Set the image of the category from a ready category_image upload; the previous image is released (CATEGORY_NOT_FOUND, MEDIA_NOT_ATTACHABLE)',
+    tags: ADMIN_TAGS,
+    auth: true,
+    requestBody: SetCategoryImageDto,
+    responses: { 200: { description: 'The category node', body: AdminCategoryNodeDto } },
+  });
+  docs.add({
+    method: 'delete',
+    path: `${basePath}${A.CATEGORY_IMAGE}`,
+    summary: 'Remove the image of the category; nothing to remove is fine (CATEGORY_NOT_FOUND)',
+    tags: ADMIN_TAGS,
+    auth: true,
+    responses: { 204: { description: 'Removed' } },
+  });
   return router;
 }

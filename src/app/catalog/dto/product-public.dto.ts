@@ -4,6 +4,8 @@ import { validationFailed } from '../../../lib/error';
 import { FieldType, FilterOp, IsMoney, type ListSpec, SLUG_PATTERN } from '../../../lib/http';
 import { MAX_ATTRIBUTE_FILTERS, MAX_ATTRIBUTE_FILTER_VALUES, PRODUCT_SLUG_MAX_LENGTH } from '../constants';
 import { RELEVANCE_FIELD } from '../repository/product.repository';
+import { ImageDto, toImageDto } from '../../media';
+import { ProductImageDto, toProductImageDto } from './product-image.dto';
 import {
   type ProductListItem,
   PRODUCT_LIST_PARAMS,
@@ -104,6 +106,12 @@ export class ProductListItemDto {
   @Type(() => ProductSellerRefDto)
   seller!: ProductSellerRefDto;
 
+  // Nullable: null when the product has no image (spec 06 §8.4).
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ImageDto)
+  primaryImage!: ImageDto | null;
+
   @IsISO8601()
   publishedAt!: string;
 }
@@ -171,6 +179,11 @@ export class ProductVariantDto {
   /** min(sellable, 99). Read live, never cached. */
   @IsInt()
   availableQuantity!: number;
+
+  /** The id within `images` shown for this variant: its own image, else the primary one. */
+  @IsOptional()
+  @IsUUID()
+  imageId!: string | null;
 }
 
 export class ProductDetailDto {
@@ -212,6 +225,11 @@ export class ProductDetailDto {
   @Type(() => ProductVariantDto)
   variants!: ProductVariantDto[];
 
+  /** In position order; the first is the primary image. */
+  @ValidateNested({ each: true })
+  @Type(() => ProductImageDto)
+  images!: ProductImageDto[];
+
   @IsISO8601()
   publishedAt!: string;
 }
@@ -220,7 +238,12 @@ export class ProductDetailDto {
 const visibleMoney = (value: { toString(): string } | null): string => value?.toString() ?? '0.00';
 const visibleDate = (value: Date | null, fallback: Date): string => (value ?? fallback).toISOString();
 
-export function toProductListItemDto({ product, category, seller }: ProductListItem): ProductListItemDto {
+export function toProductListItemDto({
+  product,
+  category,
+  seller,
+  primaryImage,
+}: ProductListItem): ProductListItemDto {
   return {
     id: product.id,
     slug: product.slug,
@@ -230,6 +253,7 @@ export function toProductListItemDto({ product, category, seller }: ProductListI
     inStock: product.inStock,
     category,
     seller,
+    primaryImage: primaryImage ? toImageDto(primaryImage) : null,
     publishedAt: visibleDate(product.publishedAt, product.createdAt),
   };
 }
@@ -251,6 +275,7 @@ export function toProductDetailDto(detail: PublicProductDetail): ProductDetailDt
       ...variant,
       ...(detail.stock.get(variant.id) ?? { inStock: false, availableQuantity: 0 }),
     })),
+    images: detail.images.map(toProductImageDto),
     publishedAt: visibleDate(product.publishedAt, product.createdAt),
   };
 }

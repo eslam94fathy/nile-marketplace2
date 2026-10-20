@@ -67,3 +67,29 @@ export function mediaApi(t: TestApp, token: string) {
 
   return { requestUpload, complete, get, upload, media };
 }
+
+/**
+ * A `ready` media row straight in the database (no objects in storage): for tests of the modules that
+ * attach media, where the upload pipeline itself is not under test (it is in media.test.ts).
+ */
+export async function insertReadyMedia(
+  t: TestApp,
+  ownerUserId: string,
+  purpose: 'product_image' | 'category_image' | 'review_image' | 'support_attachment' | 'return_photo',
+): Promise<string> {
+  const [row] = await t.infra.db
+    .knex('media_objects')
+    .insert({
+      owner_user_id: ownerUserId,
+      purpose,
+      status: 'ready',
+      declared_content_type: 'image/png',
+      declared_size_bytes: 1000,
+      width: 1200,
+      height: 800,
+      processed_at: new Date(),
+    })
+    .returning<{ id: string }[]>('id');
+  if (!row) throw new Error('media insert returned no row');
+  return row.id;
+}

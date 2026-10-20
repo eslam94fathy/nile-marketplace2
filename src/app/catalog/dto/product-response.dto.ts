@@ -14,7 +14,9 @@ import { MovementType, type InventoryMovement, type StockDto } from '../../inven
 import { ProductStatus, VariantStatus } from '../enums';
 import { type VariantView } from '../service/variant-view.service';
 import { type ProductDetail } from '../service/seller-product.service';
+import { ImageDto, type ImageView, toImageDto } from '../../media';
 import { type Product } from '../model/product.model';
+import { ProductImageDto, toProductImageDto } from './product-image.dto';
 
 /* Response DTOs for spec 06 §4.3 (decorators describe the OpenAPI shape only). */
 
@@ -123,6 +125,12 @@ export class SellerProductDto {
   @IsBoolean()
   inStock!: boolean;
 
+  // Nullable: null when the product has no image (spec 06 §8.4).
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ImageDto)
+  primaryImage!: ImageDto | null;
+
   @IsOptional()
   @IsISO8601()
   publishedAt!: string | null;
@@ -139,6 +147,11 @@ export class SellerProductDetailDto extends SellerProductDto {
   @ValidateNested({ each: true })
   @Type(() => SellerVariantDto)
   variants!: SellerVariantDto[];
+
+  /** In position order; the first is the primary image. */
+  @ValidateNested({ each: true })
+  @Type(() => ProductImageDto)
+  images!: ProductImageDto[];
 }
 
 export class StockMovementDto {
@@ -169,7 +182,7 @@ export class StockMovementDto {
   createdAt!: string;
 }
 
-export function toSellerProductDto(product: Product): SellerProductDto {
+export function toSellerProductDto(product: Product, primaryImage: ImageView | null): SellerProductDto {
   return {
     id: product.id,
     slug: product.slug,
@@ -181,6 +194,7 @@ export function toSellerProductDto(product: Product): SellerProductDto {
     minPrice: product.minPrice?.toString() ?? null,
     maxPrice: product.maxPrice?.toString() ?? null,
     inStock: product.inStock,
+    primaryImage: primaryImage ? toImageDto(primaryImage) : null,
     publishedAt: product.publishedAt?.toISOString() ?? null,
     createdAt: product.createdAt.toISOString(),
     updatedAt: product.updatedAt.toISOString(),
@@ -211,7 +225,11 @@ export function toSellerVariantDto({ variant, options, stock }: VariantView): Se
 }
 
 export function toSellerProductDetailDto(detail: ProductDetail): SellerProductDetailDto {
-  return { ...toSellerProductDto(detail.product), variants: detail.variants.map(toSellerVariantDto) };
+  return {
+    ...toSellerProductDto(detail.product, detail.images[0]?.image ?? null),
+    variants: detail.variants.map(toSellerVariantDto),
+    images: detail.images.map(toProductImageDto),
+  };
 }
 
 export function toStockMovementDto(movement: InventoryMovement): StockMovementDto {

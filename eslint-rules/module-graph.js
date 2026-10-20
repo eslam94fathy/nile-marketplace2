@@ -9,7 +9,7 @@ const MODULE_GRAPH = {
   customers: ['identity'],
   sellers: ['identity'],
   delivery: ['identity'],
-  catalog: ['sellers', 'inventory'],
+  catalog: ['sellers', 'inventory', 'media'],
   cart: ['catalog', 'customers', 'inventory', 'sellers'],
   ordering: ['customers', 'cart', 'catalog', 'sellers', 'inventory', 'payments', 'delivery'],
   finance: ['sellers', 'delivery'],

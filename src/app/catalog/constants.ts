@@ -5,6 +5,7 @@ export const CATALOG_TABLES = {
   PRODUCTS: 'products',
   PRODUCT_VARIANTS: 'product_variants',
   VARIANT_ATTRIBUTE_VALUES: 'variant_attribute_values',
+  PRODUCT_IMAGES: 'product_images',
 } as const;
 
 /** Public paths under /api/v1 (spec 06 §4.1). */
@@ -21,6 +22,7 @@ export const CATALOG_ADMIN_PATHS = {
   ATTRIBUTE: '/admin/attributes/:attributeId',
   ATTRIBUTE_OPTIONS: '/admin/attributes/:attributeId/options',
   OPTION: '/admin/options/:optionId',
+  CATEGORY_IMAGE: '/admin/categories/:categoryId/image',
 } as const;
 
 /** Limits (spec 06 §1; a change goes through code review). */
@@ -52,7 +54,15 @@ export const CATALOG_SELLER_PATHS = {
   VARIANT: '/seller/products/:productId/variants/:variantId',
   STOCK_ADJUSTMENTS: '/seller/variants/:variantId/stock-adjustments',
   STOCK_MOVEMENTS: '/seller/variants/:variantId/stock-movements',
+  IMAGES: '/seller/products/:productId/images',
+  IMAGES_ORDER: '/seller/products/:productId/images/order',
+  IMAGE: '/seller/products/:productId/images/:imageId',
 } as const;
+
+/** Images per product (spec 06 §8.1, R-2); mirrors chk_product_images_position (0..7). */
+export const PRODUCT_IMAGE_LIMIT = 8;
+/** `product_images.alt_text` / `categories.image_alt_text`. */
+export const IMAGE_ALT_TEXT_MAX_LENGTH = 200;
 
 /** Product and variant DTO limits = column lengths (02-database.md §5, DB-Q4). */
 export const PRODUCT_NAME_MIN_LENGTH = 2;
