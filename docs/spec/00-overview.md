@@ -575,3 +575,44 @@ The user accepted every recommendation in specs 04 §8.6, 09 §8.6, 17 §7 and 2
 | BO-6 | Admin product block is in R2 |
 | BO-7 | Placed and delivered GMV both shown; returns reduce delivered GMV on the day received |
 | BO-8 | The seller is notified in-app + push when a product is blocked |
+
+### 10.11 Answered log: Release 2 spec questions, third batch (2026-10-20)
+
+The user accepted every recommendation in specs 09 §8.9, 10 §8.7, 11 §8.6, 12 §8.7, 18 §7 and 19 §7.
+
+| Q | Answer |
+|---|---|
+| RE-1 | One open return per seller order; later requests for what is still returnable within the window |
+| RE-2 | At least 1 photo (max 4) for seller-fault reasons, optional for `changed_mind` |
+| RE-3 | A rejection can be escalated within 7 days; the admin decides in returns, final |
+| RE-4 | One reason per request |
+| RE-5 | Return fee = the customer governorate's current delivery fee, snapshotted with the agent share rate |
+| RE-6 | Seller inspects within 48 h (confirm with restock choice, or dispute); silence = confirmed without restock |
+| RE-7 | The original delivery fee is never refunded |
+| RE-8 | COD payout via mobile wallet or InstaPay, stored and sent encrypted, cleared at the end |
+| RE-9 | Return notifications to seller and customer under `orders` |
+| RE-10 | No extra abuse limits in R2 |
+| PR-1 | Coupon preview endpoint; the code is sent again at checkout, the cart stores nothing |
+| PR-2 | Proportional allocation with largest-remainder rounding |
+| PR-3 | Per-customer limit required (forms propose 1) |
+| PR-4 | No customer targeting in R2 |
+| PR-5 | No public coupon list |
+| PR-6 | Rate class `coupon-preview` (20 / min per user) |
+| PR-7 | Seller coupons: commission on the discounted subtotal, shown on the seller order |
+| PR-8 | After the first redemption only `endsAt`, `globalLimit`, `status` change |
+| PR-9 | Admins may deactivate seller coupons (audited) |
+| OR-20 | Return amounts computed in ordering |
+| OR-21 | A seller order stays `delivered` after a return |
+| OR-22 | Existing customer-money event fields carry paid amounts, version 1, consumers deployed first |
+| PA-22 | Every Kashier refund flag is refunded automatically |
+| PA-23 | `partially_refunded` / `refunded` replace the `_manually` statuses (expand/contract) |
+| PA-24 | An unknown refund outcome is checked with Kashier before any resend; undecidable → manual |
+| PA-25 | Refunds run in the worker, which now holds the Kashier secret key (reverses PA-18) |
+| PA-26 | Customer notified when a refund is issued |
+| DE-17 | Return pickups auto-assigned by the customer's governorate |
+| DE-18 | Up to 3 pickup attempts; refusal ends at once; no fee on failure |
+| DE-19 | Seller absent at hand-over not modelled in R2 |
+| FI-12 | `seller_payable` may go negative for a fee larger than the hold |
+| FI-13 | No holds for seller orders delivered before R2 |
+| FI-14 | Coupon cost in `platform_promotions` |
+| FI-15 | A refund event before the return booking is retried |

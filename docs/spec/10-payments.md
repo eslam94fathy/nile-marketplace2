@@ -1,7 +1,7 @@
 # Spec 10 — payments
 
 Status: **v1.4 APPROVED (2026-10-13).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: what Kashier's test environment showed (PA-11…PA-17: no abandon, one open session per order, status mapping, config). v1.2: the worker holds no Kashier secret (PA-18); the webhook answers in the standard envelope (PA-19). v1.3: flagged refunds never exceed what was collected (PA-20). v1.4: the signed fields must cover what we read (PA-21, Phase 8 security review F-1). Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 automated Kashier refunds and COD customer refunds (R-15, spec 18). Folded into §1–§7 when approved. Open questions in §8.7 (PA-22…PA-26).
+**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 automated Kashier refunds and COD customer refunds (R-15, spec 18). Folded into §1–§7 when approved. §8.7 PA-22…PA-26 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -181,7 +181,9 @@ Candidates `pending_auto` with `next_attempt_at <= now()`, read without locks, u
 - Worker env (reverses PA-18, PA-25): `KASHIER_SECRET_KEY`, `KASHIER_MERCHANT_ID` (refunds need the secret key), `JOB_PAYMENT_REFUND_INTERVAL_MS`, `PAYMENT_REFUND_BATCH_SIZE`, `PAYMENT_REFUND_MAX_ATTEMPTS`, `PAYMENT_REFUND_STUCK_MINUTES`, and the S-1 key (already there). The worker's egress uses the same NAT IPs Kashier allow-lists (K-7). No defaults.
 - New error codes: `REFUND_NOT_RETRYABLE` 409 (retry of a refund that isn't a `pending_manual` Kashier refund).
 
-### 8.7 Open questions
+### 8.7 Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.11.
 
 | # | Topic | Options / recommendation |
 |---|---|---|

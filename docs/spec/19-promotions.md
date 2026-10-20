@@ -1,6 +1,6 @@
 # Spec 19 — promotions (coupons)
 
-Status: **v1.0 DRAFT (2026-10-20).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.4 (coupons), R-17, R-18, spec 09 v2.0 §8.8 (checkout and snapshots), spec 12 v2.0 §8 (funding in the ledger). Open questions in §7 (PR-1…PR-9) must be answered before approval.
+Status: **v1.0 DRAFT (2026-10-20).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.4 (coupons), R-17, R-18, spec 09 v2.0 §8.8 (checkout and snapshots), spec 12 v2.0 §8 (funding in the ledger). §7 PR-1…PR-9 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -145,7 +145,9 @@ Consumed: none.
 
 New rate-limit class `coupon-preview`: user id, `RATE_LIMIT_COUPON_PREVIEW_POINTS` / `_DURATION_SECONDS` (proposed 20 per minute), so codes can't be guessed by brute force (PR-6). Checkout keeps its `checkout` limit.
 
-## 7. Open questions
+## 7. Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.11.
 
 | # | Topic | Options / recommendation |
 |---|---|---|

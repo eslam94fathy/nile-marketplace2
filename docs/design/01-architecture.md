@@ -1,6 +1,7 @@
 # System Design 01 — Architecture (Release 1)
 
 Status: **v1.10 APPROVED (2026-10-13).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). v1.4: catalog cache keys and TTLs (§8), "newest" sorts on `published_at` (§9) (Phase 3). v1.5: typo search matches words (§9, P3-O1). v1.6: edge `cart → customers` (§2, A-4, Phase 4). v1.7: checkout inserts the order rows before reserving stock (§7.1, A-3); one lock order across ordering, inventory and payments (§3.1); order jobs handle one order per transaction (§6); Kashier sessions and webhook signature (§7.2) (Phase 5). v1.8: the expiry job abandons no session (§6, spec 10 PA-11). v1.9: region `eu-central-1` (SD-3d), sizes, RabbitMQ 4.2, TLS to the data stores, secrets, network and egress IPs (K-7), deploy pipeline, alerting (§12.1, §13, Phase 8). v1.10: suspended-user deny entry in Redis (§8, §10, spec 03 I-11). Changes from now on need explicit approval and a version bump.
+**v2.0 DRAFT (2026-10-20):** §14 adds Release 2 (realtime process, media storage and CDN, new modules and edges, lock order, jobs, security, capacity, hosting, new dependencies). Folded into §1–§13 when approved. Open questions in §14.11 (A-5…A-10).
 Inputs: `CLAUDE.md` (engineering rules), `docs/spec/00-overview.md` v1.0 (business). Schema: `02-database.md`.
 
 ---
@@ -306,3 +307,142 @@ Region: **`eu-central-1`** (SD-3d).
 | Pipelines | `deploy.yml` (switched on in Phase 9 by the repository variable `DEPLOY_ENABLED`): CI green on `main` → build the image once, push to **ECR** tagged with the git SHA → `node dist/migrate.js latest` as a one-off ECS task (a non-zero exit stops the deploy) → update the api and worker services → wait until both are stable. A `production` job behind a GitHub environment with required reviewers, used at go-live. `infra.yml`: on PRs touching `infra/`, `terraform fmt -check`, `validate` and a Trivy config scan per root, plus `plan` per env with the read-only role from Phase 9; `apply` only by hand. All AWS access through GitHub OIDC; no long-lived keys. Staging admins are created with a documented `aws ecs run-task` of `seed-admin.js` |
 | Alerting | CloudWatch log groups with retention (staging 14 days, prod 90). Metric filters and alarms → an SNS email topic: `level` error / fatal, events sent to a DLQ, ALB 5xx, unhealthy targets, RDS CPU and free storage. Still no metrics endpoint or error-tracking service (SD-4) |
 | Scanning | Trivy in CI for the image (OS and npm packages) and the Terraform code, failing on high / critical; a one-off gitleaks scan of the git history (P8-Q14) |
+
+---
+
+## 14. Release 2 [v2.0 DRAFT, 2026-10-20]
+
+Inputs: `docs/spec/00-overview.md` v2.0 draft §10 (answers §10.8–§10.11), specs 01–20 Release 2 sections. §1–§13 still describe Release 1; this section is folded into them when approved. Open questions in §14.11 (A-5…A-10).
+
+### 14.1 Runtime topology
+```
+        Web app (app.<domain>)                     browser push services (FCM, Mozilla, Apple, WNS)
+           │ HTTPS + WSS        │ direct upload (presigned POST)          ▲
+   ┌───────▼────────┐           ▼                                         │ Web Push (VAPID)
+   │ ALB            │      ┌──────────┐   CloudFront (media.<domain>) ◄── public images
+   │ /api/v1/* ─────┼─► api│ S3 media │◄──────────────── worker (sharp) ─┘
+   │ /realtime* ────┼─► realtime (Socket.IO) ◄── Redis adapter ── worker (redis-emitter)
+   └────────────────┘      └──────────┘
+```
+
+| Process | New in R2 | Scaling |
+|---|---|---|
+| `api` | Media upload tickets (signs presigned POST / GET locally, no S3 call except `HEAD` + one range `GET` on complete), notification centre, support, reviews, returns, coupons, back-office | As §1 |
+| `realtime` (**new**, `node dist/realtime.js`) | Socket.IO gateway, WebSocket transport only (so no sticky sessions), JWT handshake, rooms, client signals. Shares Redis through `@socket.io/redis-adapter` (RT-1, RT-7) | 2 tasks × 0.25 vCPU / 0.5 GB to start; autoscaling on CPU and connection count after the R2-P8 socket load test |
+| `worker` | + image processing (`media.processing`), realtime fan-out (Redis emitter), push sending, refunds (Kashier secret key, PA-25), new jobs (§14.5). Now needs Redis (reverses spec 06 CA-8) and S3 | 2 tasks; size per A-6 |
+
+### 14.2 Module dependency graph (full edge list, replaces §2's table when approved)
+
+| Module | May call |
+|---|---|
+| identity | audit |
+| customers | identity, catalog (product cards, new), audit |
+| sellers | identity, audit |
+| delivery | identity, audit |
+| media | none |
+| catalog | sellers, inventory, media (new), audit |
+| inventory | none |
+| promotions (**new**) | sellers, catalog, audit |
+| cart | customers, catalog, inventory, sellers, media (new), promotions (new) |
+| payments | audit |
+| ordering | customers, cart, catalog, sellers, inventory, payments, delivery, media (new), promotions (new), audit |
+| support (**new**) | ordering, customers, sellers, identity, media, audit |
+| reviews (**new**) | ordering, catalog, customers, sellers, media, audit |
+| returns (**new**) | ordering, inventory, payments, delivery, media, audit |
+| finance | sellers, delivery, returns (new, holding release), audit |
+| notifications | customers, sellers, delivery, ordering (recipient resolution, spec 02 §6.3) |
+| realtime (**new**) | customers, sellers, delivery, ordering, support |
+| backoffice (**new**) | identity, customers, sellers, ordering, support, finance, delivery, returns |
+| audit (**new**) | none |
+
+- **Ordering is no longer a sink.** In R1 nobody called ordering. In R2 support, reviews, returns, notifications, realtime and backoffice read it through its public API (spec 09 §8.1). None of them is reachable from ordering, so the graph stays acyclic; `module-graph.js` is updated with this table and keeps failing CI on a cycle.
+- **audit** is a leaf every module with admin writes depends on; `record(entry, trx)` runs in the caller's transaction (spec 20 §2.2).
+- **`lib/realtime`** (the Redis emitter behind `IRealtimeEmitter`) is infrastructure, not a module edge, like `lib/events`.
+
+### 14.3 Lock order (replaces §3.1's line when approved)
+`return_requests` → `carts` (checkout only) → `orders` → `seller_orders` (by id) → `inventory_items` (by id) → `payments` → `coupons`.
+- Returns completion is the only path that starts at `return_requests`; nothing locks a return after an order (spec 18 UC-RE-7).
+- `coupons` is last both in checkout (`redeem`) and in the close step (`release`), so a hot coupon row is held for the shortest time and never waits on stock (spec 19 UC-PR-2).
+- Module-local orders: support ticket → `media_objects` (claim); review → product stats → seller stats (spec 17 §1.2); finance accounts by id (FI-3); media rows by id inside `claim`.
+
+### 14.4 Messaging
+- New queues and bindings: `docs/spec/02-events.md` §6 (the source of truth, A-1).
+- **Deploy order for changed payloads** (OR-22): payloads only gain fields or change meaning in a way equal to R1 when no coupon is used, and the consumers of a changed event ship **before** the publisher starts setting the new fields (release notes per R2 phase).
+- `media.processing` runs with prefetch 1 per worker task (CPU-heavy), the other queues keep their prefetch.
+- Consumers with external effects (push sending, image processing) use the `beforeTransaction` step (§3.2).
+
+### 14.5 Scheduled jobs (worker, advisory-locked)
+| Job | Every (env) | What it does |
+|---|---|---|
+| `media-cleanup` | `JOB_MEDIA_CLEANUP_INTERVAL_MS` | Spec 14 UC-ME-4 |
+| `support-jobs` | `JOB_SUPPORT_INTERVAL_MS` | Auto-close, SLA flag (spec 16 UC-SU-5) |
+| `notification-retention` | `JOB_NOTIFICATION_RETENTION_INTERVAL_MS` | In-app rows older than 90 days (spec 13 UC-NO-5) |
+| `returns-jobs` | `JOB_RETURNS_INTERVAL_MS` | Seller decision timeout, escalation lapse, inspection timeout (spec 18 UC-RE-9) |
+| `payment-refunds` | `JOB_PAYMENT_REFUND_INTERVAL_MS` | Automated Kashier refunds (spec 10 UC-PA-6) |
+| `seller-hold-release` | `JOB_SELLER_HOLD_RELEASE_INTERVAL_MS` | Holding period (spec 12 §8.3) |
+| `audit-retention` | `JOB_AUDIT_RETENTION_INTERVAL_MS` | Audit rows older than 2 years (spec 20 §2.4) |
+
+All follow the P5-Q5 pattern: candidates read without locks, one row per short transaction with `FOR UPDATE SKIP LOCKED`.
+
+### 14.6 Caching (Redis)
+| Data | Strategy | Invalidation |
+|---|---|---|
+| Admin dashboard | One value `v1:backoffice:dashboard`, TTL `DASHBOARD_CACHE_TTL_SECONDS` (60) | None (age shown as `generatedAt`) |
+| Product detail | Unchanged key; now also holds the images (CDN URLs are immutable) | Every image write (spec 06 §8.2) |
+| Category tree | Unchanged key; now also holds category images | Category image set / remove |
+| Socket.IO adapter | Redis pub/sub channels of `@socket.io/redis-adapter` | n/a (transient) |
+
+Ratings live on the product and seller rows (read fresh), so no rating is cached.
+
+### 14.7 Security specifics (R2)
+- **Uploads:** presigned POST with exact key, exact `Content-Type`, `content-length-range` and a 5-minute expiry; magic-byte check on complete; `sharp` with `limitInputPixels` (50 MP) and `failOn: 'error'`; every output re-encoded to WebP without metadata (EXIF / GPS stripped); originals deleted; private media only through presigned GET URLs to authorised viewers (ME-1). Bucket: public access blocked, objects encrypted (SSE-S3), CORS `POST` from `CORS_ALLOWED_ORIGINS` only, CloudFront reads `public/*` through Origin Access Control.
+- **Sockets:** `Origin` allow-list (cross-site WebSocket hijacking), the R1 JWT verifier with the suspended-user deny entry, disconnect at `exp`, 4 KB inbound buffer, 5 signals / s per socket, handshake rate limit; messages carry ids and statuses only (no PII).
+- **Web tokens (R-21):** refresh cookie `__Secure-nile_rt` `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`, read only with `X-Nile-Client: web`; CORS with credentials for exact origins only (spec 03 §8.1).
+- **Push:** endpoint host allow-list checked on register and again before sending (SSRF guard); RFC 8291 payload encryption; no PII on the lock screen (R-7).
+- **Sensitive data at rest:** COD refund payout details (wallet number, InstaPay address) are AES-256-GCM encrypted with the S-1 key in returns and payments, decrypted only in the admin refund detail endpoint, and added to the logger's redaction keys.
+- **Kashier refunds:** the worker now holds `KASHIER_SECRET_KEY` (PA-25); its egress uses the allow-listed NAT IPs (K-7).
+- **Audit:** every admin write in the same transaction as the change; `UPDATE` blocked by a trigger (BO-2); actor, IP and correlation id taken from the request context only.
+- R2-P8 runs the upload and socket parts of the security review (overview §10.5).
+
+### 14.8 Capacity check (R2 additions)
+| Concern | Estimate | Verdict |
+|---|---|---|
+| Sockets | ~10 % of daily active users online at peak; with ~20k DAU at the design horizon → ~2k concurrent sockets, ~1 message / socket / min | 2 × 0.25 vCPU gateway tasks; Socket.IO handles ~10k idle sockets per core. Measured in R2-P8 |
+| Fan-out | ~10 events per order × 20k orders/day peak → ~2.5 emits/s average | Trivial for Redis pub/sub |
+| Image processing | ~2k sellers × ~20 images/month + review / support images → < 5k images/day; `sharp` ≈ 0.2–0.5 s CPU per image for 3 sizes | < 1 CPU-hour/day; fits the worker with prefetch 1 (A-6) |
+| Media storage | ~300k variants × ≤ 8 images × ~150 KB (3 WebP sizes) ≈ ≤ 360 GB at the horizon | S3 + CloudFront, no capacity concern; cost in the estimate |
+| Push | ≤ ~10 pushes per order → ~200k / day peak, each one HTTPS call | Worker, `PUSH_HTTP_TIMEOUT_MS`; queue absorbs bursts |
+| Ledger growth | + holds, releases, return and refund entries ≈ +30 % rows | Same verdict as §11 |
+
+### 14.9 Hosting additions (Terraform, applied with R2 after P9)
+| Concern | Decision |
+|---|---|
+| Media bucket | One private S3 bucket per env (`nile-<env>-media`), SSE-S3, versioning off (objects are immutable, keys never reused), lifecycle rule deleting `uploads/*` after 2 days, CORS for the web origin. New module `s3-media` |
+| CDN | CloudFront distribution over `public/*` with Origin Access Control, `media.<domain>` (A-8), long immutable caching. New module `cdn` |
+| Realtime | ECS service `realtime` from the same image, ALB listener rule `/realtime*` → its target group, health check `/health/live`, ALB idle timeout 120 s (A-7) |
+| IAM | api task role: `s3:PutObject` (signing for `uploads/*`), `s3:GetObject` on `uploads/*` and `private/*` (HEAD, range read, presigned GET), `s3:DeleteObject` on `uploads/*`. worker task role: `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on the bucket. realtime: no S3 |
+| Secrets | New: `VAPID_PRIVATE_KEY` (by hand). `KASHIER_SECRET_KEY` and `KASHIER_MERCHANT_ID` now also injected into the worker |
+| Local dev / tests | MinIO in docker-compose and in Testcontainers (`minio/minio`, pinned tag), a bucket created at start-up; `STORAGE_PROVIDER = minio` is refused in deployed envs (F-3 pattern) |
+| Alarms | + DLQ alarms for the new queues (existing metric filter), realtime unhealthy targets, `PAYMENT_REFUND_GAVE_UP` and `MEDIA_PROCESSING_STUCK` log events |
+
+### 14.10 New dependencies (CLAUDE.md §1: each needs approval, A-9)
+| Package | Why | Where |
+|---|---|---|
+| `@aws-sdk/client-s3`, `@aws-sdk/s3-presigned-post`, `@aws-sdk/s3-request-presigner` | Presigned uploads / downloads, HEAD, range GET, put, delete (works with MinIO through `endpoint` + `forcePathStyle`) | `pkg/storage` |
+| `sharp` | Decode, rotate, strip metadata, resize, WebP encode; native, ships prebuilt binaries for linux-x64 | `pkg/image` (worker) |
+| `socket.io`, `@socket.io/redis-adapter`, `@socket.io/redis-emitter` | Gateway, cross-task delivery, emitting from the worker | `realtime`, `lib/realtime` |
+| `web-push` | VAPID signing and RFC 8291 encryption (R-20) | `pkg/push` |
+| `socket.io-client` (dev) | Integration tests of the gateway | `test/` |
+
+No cookie library: the api reads one cookie, parsed by a small helper in `lib/http` (the `cookie` header is already redacted in logs). Exact versions are pinned in the R2 implementation plan.
+
+### 14.11 Open questions
+
+| # | Topic | Options / recommendation |
+|---|---|---|
+| A-5 | Hosting of the web app | **Rec:** out of this repository: the web team hosts `app.<domain>` (static hosting or its own service); we provide CORS origins, the cookie domain rules and the realtime URL · or a static S3 + CloudFront site in our Terraform |
+| A-6 | Where images are processed | **Rec:** in the worker, queue `media.processing` with prefetch 1, and the worker task raised to 1 vCPU / 2 GB in prod so a burst of uploads can't slow the other consumers noticeably · or a separate `media-worker` ECS service from the same image |
+| A-7 | ALB for sockets | **Rec:** the existing ALB with a `/realtime*` rule; its idle timeout goes to 120 s for every target (harmless for the api) · or a second ALB for realtime |
+| A-8 | CDN domain | **Rec:** `media.<domain>` with an ACM certificate in `us-east-1` (CloudFront requirement) · or the default `*.cloudfront.net` domain (no DNS work, uglier URLs) |
+| A-9 | New dependencies | **Rec:** approve the §14.10 list · or name the packages to replace |
+| A-10 | Object storage in tests | **Rec:** MinIO through Testcontainers in integration tests, an in-memory `IObjectStorage` fake in unit tests (the pattern of the email and payment gateways) · or LocalStack S3 |

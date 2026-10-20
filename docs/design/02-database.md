@@ -1,6 +1,7 @@
 # System Design 02 — Database Schema (Release 1)
 
 Status: **v1.13 APPROVED (2026-10-13).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). v1.5: public product listings sort on `published_at` (D-5); `id` tie-break on the stock-history index (D-6). v1.6: `idx_products_category_id` for category usage checks (D-7). v1.7: cart FK `ON DELETE` behaviour and why `cart_items.variant_id` has no index (§7, P4-Q11). v1.8: ordering/payments indexes, Kashier session columns, refund reason `amount_mismatch`, FK behaviour and unindexed FKs (§6, §8, §9, D-8, Phase 5). v1.9: `inventory_reservations.quantity` is what is still reserved, `>= 0`, and 0 exactly when `released` (§6, D-9). v1.10: shipment snapshots, the cancelled-after-pickup marker and the delivery list indexes (§10, D-2, D-3, D-10, Phase 6). v1.11: every timestamp a list cursor sorts on is `TIMESTAMPTZ(3)` (§0, D-11). v1.12: finance enum CHECKs, the non-negative balance guard, list indexes, FK behaviour and the duplicate-payout guard (§0, §11, D-12, Phase 7). v1.13: `idx_products_min_price_id` for the price-sorted listing without a category (§5, D-13, Phase 8 load baseline). Changes from now on need explicit approval and a version bump. Decisions: §13.
+**v2.0 DRAFT (2026-10-20):** §14 adds the Release 2 schema (new tables of media, support, reviews, returns, promotions, audit; columns and indexes on existing tables; migration rules). Folded into §1–§13 when approved. Open questions in §14.15 (DB-Q7…DB-Q12).
 Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §6. Business rules: `docs/spec/00-overview.md` v1.0.
 
 ---
@@ -567,3 +568,141 @@ Index: `idx_processed_events_processed_at`: the cleanup job.
 | D-13 | `idx_products_min_price_id (min_price, id) WHERE VIS`, built concurrently: the public listing sorted by price without a category read and sorted every visible product (144 ms idle, ~300 ms under load on 100k products), found by the P8 load baseline (2026-10-13) |
 
 No open schema questions.
+
+---
+
+## 14. Release 2 schema [v2.0 DRAFT, 2026-10-20]
+
+Inputs: specs 01–20 Release 2 sections, architecture v2.0 draft §14. The conventions of §0 apply unchanged. §1–§12 still describe Release 1; this section is folded into them when approved. Open questions in §14.15 (DB-Q7…DB-Q12).
+
+### 14.1 Ownership additions (§1)
+| Module | Tables |
+|---|---|
+| media | `media_objects` |
+| catalog | + `product_images` |
+| customers | + `wishlist_items` |
+| notifications | + `user_notifications`, `notification_preferences`, `push_subscriptions` |
+| support | `support_tickets`, `support_messages`, `support_message_attachments`, `support_ticket_reads` |
+| reviews | `product_reviews`, `review_images`, `review_replies`, `review_rating_stats` |
+| returns | `return_requests`, `return_items`, `return_photos`, `return_status_history` |
+| promotions | `coupons`, `coupon_redemptions` |
+| ordering | + `order_item_returns` |
+| finance | + `seller_order_holds` |
+| audit | `admin_audit_log` |
+
+### 14.2 Migration rules for R2 (CLAUDE.md §6.1)
+- **New `NOT NULL` columns on existing tables** (DB-Q7): `ADD COLUMN … NOT NULL DEFAULT <value>` (metadata-only in Postgres ≥ 11, no table rewrite) immediately followed, in the same migration, by `ALTER COLUMN … DROP DEFAULT`. The schema ends with no DB default (G13, D5); existing rows hold the stated backfill value and new rows must pass it.
+- **New `CHECK` / FK constraints on large existing tables** (`products`, `orders`, `seller_orders`, `order_items`, `shipments`, `payment_refunds`, `ledger_entries`): added `NOT VALID`, then `VALIDATE CONSTRAINT` in a later migration (no long exclusive lock).
+- **Indexes on existing tables**: `CREATE INDEX CONCURRENTLY` in their own non-transactional migrations (`config.transaction = false`), as DB-Q6 / D-13.
+- **Enum value removals** (`partially_refunded_manually`, `refunded_manually`, PA-23): expand (CHECK accepts old + new) → backfill → contract (CHECK without the old values) in a later release, after every reader runs the new code.
+- New tables are created in one migration per module (one concern each).
+
+### 14.3 media
+#### media_objects
+std columns (`created_at TIMESTAMPTZ(3)`) · `owner_user_id` fk → users · `purpose VARCHAR(30)` (`product_image, category_image, support_attachment, review_image, return_photo`) · `status VARCHAR(20)` (`pending, processing, ready, failed`) · `failure_reason VARCHAR(30) null` (`decode_failed, unsupported_type, dimensions_out_of_range`; `chk_media_objects_failure_reason`: set ⇔ `failed`) · `declared_content_type VARCHAR(20)` (`image/jpeg, image/png, image/webp`) · `declared_size_bytes INTEGER CHECK (> 0)` · `width SMALLINT null`, `height SMALLINT null` (set ⇔ `ready`, CHECK) · `processed_at`, `claimed_at`, `released_at`, `retained_at` `TIMESTAMPTZ null`.
+Storage keys are derived from `id` and `purpose` (spec 14 §1.1), never stored.
+Indexes:
+- `idx_media_objects_owner_user_id_open (owner_user_id) WHERE status IN ('pending','processing')`: the open-upload count (UC-ME-1).
+- `idx_media_objects_cleanup (created_at, id) WHERE claimed_at IS NULL AND status <> 'processing'`: cleanup candidates `pending` / unclaimed `ready` / `failed` (UC-ME-4).
+- `idx_media_objects_released (released_at, id) WHERE released_at IS NOT NULL AND retained_at IS NULL`: released candidates.
+- `idx_media_objects_processing (updated_at) WHERE status = 'processing'`: the stuck-processing check.
+- No index on `owner_user_id` beyond the partial one (no other lookup by owner).
+
+### 14.4 catalog
+- `products` += `rating_count INTEGER` (backfill 0, `CHECK (>= 0)`) · `rating_avg NUMERIC(3,2) null` (`CHECK (rating_avg BETWEEN 1 AND 5)`, null ⇔ `rating_count = 0`) · `rating_version BIGINT` (backfill 0) · `admin_blocked_at TIMESTAMPTZ null`, `admin_block_reason VARCHAR(500) null` (both null or both set).
+- **Admin block and VIS** (DB-Q8): a block also sets `status = 'inactive'`, and the seller can't change the status while `admin_blocked_at` is set (spec 20 §3.4, `PRODUCT_BLOCKED`). VIS (§5) stays as it is, so none of the seven VIS partial indexes is rebuilt. Unblock clears the two columns and leaves the product `inactive`; the seller re-activates it.
+- New index `idx_products_rating_id ((COALESCE(rating_avg, 0)) DESC, id DESC) WHERE VIS`, concurrently: public listing sorted by `-rating` without a category (spec 06 §9.3). Within a category, the planner uses `idx_products_category_id_published_at_id` and sorts the category's rows (bounded by category size); a `(category_id, rating, id)` index is added only if the P9 / R2-P8 load test shows the need.
+- `categories` += `image_media_id UUID null` (fk → media_objects, `uq_categories_image_media_id`) · `image_alt_text VARCHAR(200) null`.
+#### product_images
+std columns · `product_id` fk · `media_id` fk → media_objects (`uq_product_images_media_id`) · `variant_id UUID null` fk → product_variants · `position SMALLINT CHECK (BETWEEN 0 AND 7)` · `alt_text VARCHAR(200) null`.
+- `uq_product_images_product_id_position (product_id, position) DEFERRABLE INITIALLY IMMEDIATE`: one image per position; the reorder statement sets it `DEFERRED` for its transaction. Also serves the per-page primary-image read (`DISTINCT ON (product_id) … ORDER BY product_id, position`, spec 06 §8.5) and "images of a product".
+- `idx_product_images_variant_id (variant_id) WHERE variant_id IS NOT NULL`: untie images when a variant is deleted.
+
+### 14.5 customers, sellers
+- `wishlist_items`: `id UUID PK DEFAULT uuidv7()` · `customer_id` fk · `product_id` fk → products · `created_at TIMESTAMPTZ(3) DEFAULT now()` (append-only; no `updated_at`). `uq_wishlist_items_customer_id_product_id` (also the count under the customer lock and the ids endpoint). `idx_wishlist_items_customer_id_created_at_id (customer_id, created_at DESC, id DESC)`: the list. No index on `product_id` (products are soft-deleted, so the `RESTRICT` check never runs).
+- `customers`: trigram index `idx_customers_name_trgm USING GIN ((first_name || ' ' || last_name) gin_trgm_ops)`, concurrently: admin customer search by name (spec 20 §3.3). `idx_customers_phone (phone)`: search by phone.
+- `users`: `idx_users_email_pattern (email text_pattern_ops)`, concurrently: admin prefix search `email LIKE 'abc%'` (spec 20 §3.3; `uq_users_email` uses the default collation, which can't serve `LIKE`).
+- `sellers` += `rating_count INTEGER` (backfill 0), `rating_avg NUMERIC(3,2) null`, `rating_version BIGINT` (backfill 0), CHECKs as on products.
+
+### 14.6 notifications
+- `user_notifications`: std columns (`created_at TIMESTAMPTZ(3)`) · `user_id` fk → users · `category VARCHAR(20)` (`orders, shipments, support, promotions`) · `type VARCHAR(40)` (CHECK, spec 13 §8.2 / §8.8 / §8.9 values) · `title VARCHAR(120)` · `body VARCHAR(300)` · `link VARCHAR(300) null` · `source_event_id UUID` · `read_at TIMESTAMPTZ null` · `push_sent_at TIMESTAMPTZ null`.
+  - `uq_user_notifications_user_id_source_event_id`: one row per event and recipient.
+  - `idx_user_notifications_user_id_created_at_id (user_id, created_at DESC, id DESC)`: the list (and `category` filter on top).
+  - `idx_user_notifications_user_id_unread (user_id, created_at DESC) WHERE read_at IS NULL`: unread count and `read=false` filter.
+  - `idx_user_notifications_created_at (created_at)`: retention job.
+- `notification_preferences`: `user_id` fk + `category` composite PK [SD-8] · `push_enabled BOOLEAN` · `updated_at TIMESTAMPTZ DEFAULT now()`.
+- `push_subscriptions`: std columns · `user_id` fk · `endpoint VARCHAR(2048)` (`uq_push_subscriptions_endpoint`, also the upsert target) · `p256dh VARCHAR(100)` · `auth VARCHAR(50)` · `user_agent VARCHAR(200) null` · `last_success_at TIMESTAMPTZ null`. `idx_push_subscriptions_user_id_created_at (user_id, created_at)`: a user's subscriptions, oldest first (the 11th deletes the oldest).
+- The user FKs are `ON DELETE RESTRICT` (users are never deleted).
+
+### 14.7 support
+- `support_tickets`: std columns (`created_at TIMESTAMPTZ(3)`) · `ticket_number VARCHAR(20)` (`uq_`, from `support_ticket_number_seq`) · `opener_user_id` fk → users · `opener_role VARCHAR(10)` (`customer, seller`) · `category VARCHAR(30)` · `subject VARCHAR(150)` · `status VARCHAR(20)` · `order_id UUID null` fk → orders · `seller_order_id UUID null` fk → seller_orders · `assigned_admin_user_id UUID null` fk → users · `last_message_at`, `last_user_message_at`, `last_admin_message_at` `TIMESTAMPTZ(3)` (the first message sets the first two; `last_admin_message_at` null until an admin replies) · `awaiting_admin_since TIMESTAMPTZ(3) null` · `sla_breached_at`, `resolved_at`, `closed_at` `TIMESTAMPTZ null`.
+  - `idx_support_tickets_opener_user_id_last_message_at_id (opener_user_id, last_message_at DESC, id DESC)`: the user's list (+ the open-ticket count with a status filter on few rows).
+  - `idx_support_tickets_status_last_message_at_id (status, last_message_at DESC, id DESC)`: admin list by status.
+  - `idx_support_tickets_last_message_at_id (last_message_at DESC, id DESC)`: unfiltered admin list.
+  - `idx_support_tickets_awaiting_admin_since_id (awaiting_admin_since, id) WHERE status IN ('open','awaiting_admin')`: the oldest-waiting queue and the SLA job.
+  - `idx_support_tickets_assigned_admin_user_id (assigned_admin_user_id, last_message_at DESC, id DESC) WHERE assigned_admin_user_id IS NOT NULL`: "my tickets".
+  - `idx_support_tickets_resolved_at (resolved_at) WHERE status = 'resolved'`: auto-close job.
+  - No index on `order_id` / `seller_order_id` (no lookup by order; orders are never deleted).
+- `support_messages`: append-only columns (`created_at TIMESTAMPTZ(3)`) · `ticket_id` fk · `kind VARCHAR(20)` (`message, internal_note, system`) · `sender_user_id UUID null` (null ⇔ `system`, CHECK) · `sender_role VARCHAR(10)` · `body VARCHAR(4000)`. `idx_support_messages_ticket_id_created_at_id (ticket_id, created_at DESC, id DESC)`: the message list.
+- `support_message_attachments`: `message_id` fk · `media_id` fk → media_objects (`uq_`) · `position SMALLINT CHECK (BETWEEN 0 AND 2)`; PK (`message_id`, `position`) [SD-8].
+- `support_ticket_reads`: (`ticket_id`, `user_id`) PK [SD-8] · `last_read_at TIMESTAMPTZ`.
+
+### 14.8 reviews
+- `product_reviews`: std columns (`created_at TIMESTAMPTZ(3)`) · `product_id` fk · `seller_id` fk · `customer_id` fk · `order_item_id` fk → order_items · `variant_id` fk · `rating SMALLINT CHECK (BETWEEN 1 AND 5)` · `title VARCHAR(120) null` · `body TEXT null` (`CHECK (char_length(body) <= 2000)`) · `status VARCHAR(20)` (`published, hidden`) · `hidden_reason VARCHAR(500) null`, `hidden_by_user_id UUID null`, `hidden_at TIMESTAMPTZ null` (all set ⇔ `hidden`) · `edited_at`, `deleted_at` `TIMESTAMPTZ null`.
+  - `uq_product_reviews_customer_id_product_id (customer_id, product_id) WHERE deleted_at IS NULL` (RV-1); also "has the customer reviewed these products" for the reviewable list.
+  - `idx_product_reviews_product_id_created_at_id (product_id, created_at DESC, id DESC) WHERE status = 'published' AND deleted_at IS NULL`: public list (the `rating` filter / sort reads within one product).
+  - `idx_product_reviews_seller_id_created_at_id (seller_id, created_at DESC, id DESC) WHERE status = 'published' AND deleted_at IS NULL`: seller list.
+  - `idx_product_reviews_customer_id_created_at_id (customer_id, created_at DESC, id DESC) WHERE deleted_at IS NULL`: "my reviews".
+  - `idx_product_reviews_created_at_id (created_at DESC, id DESC) WHERE deleted_at IS NULL`: admin list.
+- `review_images`: `review_id` fk · `media_id` fk (`uq_`) · `position SMALLINT CHECK (BETWEEN 0 AND 3)`; PK (`review_id`, `position`).
+- `review_replies`: std columns · `review_id` fk (`uq_review_replies_review_id`) · `seller_id` fk · `body VARCHAR(1000)` · `hidden_at TIMESTAMPTZ null`, `hidden_reason VARCHAR(500) null`, `hidden_by_user_id UUID null` (all or none).
+- `review_rating_stats`: std columns · `subject_type VARCHAR(10)` (`product, seller`) · `subject_id UUID` (polymorphic, no FK) · `rating_count`, `rating_sum`, `count_1` … `count_5` `INTEGER` · `version BIGINT`. `uq_review_rating_stats_subject_type_subject_id` (the upsert target and the summary read). CHECKs per spec 17 §1.2.
+
+### 14.9 returns
+- `return_requests`: std columns (`created_at TIMESTAMPTZ(3)`) · `return_number VARCHAR(20)` (`uq_`, `return_number_seq`) · `seller_order_id` fk · `order_id` fk · `customer_id` fk · `seller_id` fk · `status VARCHAR(20)` · `reason VARCHAR(30)` · `description VARCHAR(1000) null` · `return_fee money` · `return_fee_payer VARCHAR(10)` · `agent_share_rate rate` · `refund_amount money` · `refund_payout_method VARCHAR(20) null` · `refund_payout_encrypted TEXT null` (`CHECK (char_length(...) <= 1000)`; ciphertext, cleared at the end) · `agent_id UUID null` fk → delivery_agents · `rejection_reason VARCHAR(500) null` · `refusal_reason VARCHAR(20) null` · `escalation_note VARCHAR(500) null` · `dispute_reason VARCHAR(500) null` · deadlines `seller_decision_deadline_at`, `escalation_deadline_at`, `inspection_deadline_at` `TIMESTAMPTZ null` · `approved_at`, `received_at`, `completed_at` `TIMESTAMPTZ null`.
+  - `uq_return_requests_seller_order_id_open (seller_order_id) WHERE status IN ('requested','rejected','escalated','approved','picked_up','received','disputed')`: one open return (RE-1); also `getOpenReturnSellerOrderIds` (with the escalation deadline check on the few `rejected` rows).
+  - `idx_return_requests_customer_id_created_at_id`, `idx_return_requests_seller_id_created_at_id`, `idx_return_requests_created_at_id` (each `… created_at DESC, id DESC`): customer, seller and admin lists.
+  - `idx_return_requests_seller_decision (seller_decision_deadline_at) WHERE status = 'requested'`, `idx_return_requests_escalation (escalation_deadline_at) WHERE status = 'rejected'`, `idx_return_requests_inspection (inspection_deadline_at) WHERE status = 'received'`: the three jobs.
+- `return_items`: std columns · `return_id` fk · `order_item_id` fk · `quantity SMALLINT CHECK (BETWEEN 1 AND 99)` · `restock BOOLEAN null` (set at completion). `uq_return_items_return_id_order_item_id`.
+- `return_photos`: `return_id` fk · `media_id` fk (`uq_`) · `uploaded_by VARCHAR(10)` (`customer, seller`) · `position SMALLINT`; PK (`return_id`, `uploaded_by`, `position`).
+- `return_status_history`: same shape as the order histories, index `(return_id, created_at)`.
+
+### 14.10 promotions
+- `coupons`: std columns (`created_at TIMESTAMPTZ(3)`) · `code VARCHAR(32)` (`uq_coupons_code`; stored upper-case, `CHECK (code = upper(code))`) · `funding VARCHAR(10)` · `seller_id UUID null` fk · `discount_type VARCHAR(10)` · `discount_value NUMERIC(12,4)` (rate or money by type, CHECKs) · `max_discount NUMERIC(12,2) null` · `min_items_subtotal money` · `scope VARCHAR(10)` · `scope_seller_id UUID null` fk → sellers · `scope_category_id UUID null` fk → categories · `starts_at`, `ends_at` `TIMESTAMPTZ` (`CHECK (starts_at < ends_at)`) · `global_limit INTEGER null` · `per_customer_limit SMALLINT` · `redemption_count INTEGER` (`CHECK (redemption_count >= 0 AND (global_limit IS NULL OR redemption_count <= global_limit))`) · `status VARCHAR(10)` · `first_redeemed_at TIMESTAMPTZ null` (locks the fields, PR-8).
+  - `idx_coupons_seller_id_created_at_id (seller_id, created_at DESC, id DESC) WHERE seller_id IS NOT NULL`: seller list; `idx_coupons_created_at_id (created_at DESC, id DESC)`: admin list.
+- `coupon_redemptions`: std columns · `coupon_id` fk · `customer_id` fk · `order_id` fk (`uq_coupon_redemptions_order_id`) · `discount_total money` · `status VARCHAR(10)` (`active, released`) · `released_at TIMESTAMPTZ null` (set ⇔ released).
+  - `idx_coupon_redemptions_coupon_id_customer_id (coupon_id, customer_id) WHERE status = 'active'`: the per-customer count.
+  - `idx_coupon_redemptions_coupon_id_created_at (coupon_id, created_at DESC)`: the admin coupon detail.
+
+### 14.11 ordering, inventory
+- `orders` += `coupon_id UUID null` fk → coupons · `coupon_code VARCHAR(32) null` · `discount_total money` (backfill 0; `chk_orders_discount`: `coupon_id IS NULL ⇒ discount_total = 0`). The dashboard counts seller orders, so `orders` gets no new index.
+- `seller_orders` += `discount_amount money` (backfill 0) · `discount_funding VARCHAR(10) null` (set ⇔ `discount_amount > 0`) · `returned_subtotal`, `returned_paid`, `returned_commission`, `returned_seller_net` `money` (backfill 0). `cancel_reason` CHECK gains `admin_cancelled`.
+  - `idx_seller_orders_placed_at (placed_at) INCLUDE (subtotal, discount_amount, status) WHERE placed_at IS NOT NULL` and `idx_seller_orders_delivered_at (delivered_at) INCLUDE (subtotal, discount_amount, seller_id) WHERE delivered_at IS NOT NULL`, concurrently: dashboard GMV and top sellers over 30 days (spec 20 §3.2).
+- `order_items` += `image_media_id UUID null` fk → media_objects, with `idx_order_items_image_media_id (image_media_id) WHERE image_media_id IS NOT NULL` (concurrently): media cleanup deletes `media_objects` rows, and the `RESTRICT` check would otherwise scan `order_items` (DB-Q9) · `returned_quantity INTEGER` (backfill 0) · `discount_original`, `discount_amount` `money` (backfill 0). `chk_order_items_quantities CHECK (cancelled_quantity + returned_quantity <= quantity)` (NOT VALID, then validated).
+- `order_item_returns`: append-only columns · `return_id UUID` fk → return_requests `DEFERRABLE INITIALLY DEFERRED` (ordering writes before returns updates its row in the same transaction; the return row already exists, so `IMMEDIATE` would work too, but deferring keeps the write order free) · `order_item_id` fk · `quantity SMALLINT CHECK (> 0)` · `subtotal_amount`, `discount_amount`, `paid_amount`, `commission_amount` `money`. `idx_order_item_returns_order_item_id`.
+- `inventory_movements.movement_type` CHECK gains `return_restock`; `reference_type` gains `return`.
+
+### 14.12 payments, delivery
+- `payments.status` CHECK expand: + `partially_refunded`, `refunded` (PA-23; the `_manually` values removed in a later release).
+- `payment_refunds` += `return_id UUID null` fk → return_requests · `method VARCHAR(20)` (backfill `manual`; `kashier_auto, manual`) · `attempt_count SMALLINT` (backfill 0) · `next_attempt_at TIMESTAMPTZ null` · `last_error VARCHAR(500) null` · `payout_details_encrypted TEXT null` (≤ 1000 chars) · `succeeded_at TIMESTAMPTZ null`. `status` CHECK gains `pending_auto, processing, succeeded`; `reason` gains `return`.
+  - `idx_payment_refunds_next_attempt_at_id (next_attempt_at, id) WHERE status = 'pending_auto'`: the refund job; `idx_payment_refunds_processing (updated_at) WHERE status = 'processing'`: stuck check; `idx_payment_refunds_return_id (return_id) WHERE return_id IS NOT NULL`: `getRefundsByReturnIds`. The R1 queue index (`WHERE status = 'pending_manual'`) stays; a new `idx_payment_refunds_status_created_at_id (status, created_at, id)` serves the list over every status.
+- `shipments` += `kind VARCHAR(10)` (backfill `delivery`) · `return_id UUID null` fk → return_requests (`uq_shipments_return_id`) · `CHECK ((kind = 'return') = (return_id IS NOT NULL))`. `status` CHECK gains `pickup_failed`. `uq_shipments_seller_order_id` is replaced by `uq_shipments_seller_order_id_delivery (seller_order_id) WHERE kind = 'delivery'` (create the new one concurrently, then drop the old).
+
+### 14.13 finance
+- `finance_accounts.account_type` CHECK gains `seller_pending, customer_refund_payable, platform_promotions`; `chk_finance_accounts_balance_non_negative` becomes `account_type IN ('platform_delivery_revenue','platform_promotions','seller_payable') OR balance >= 0` (FI-12, FI-14).
+- `ledger_entries.entry_type` and `reference_type` CHECKs gain the spec 12 §8.1 values.
+- `seller_order_holds`: `seller_order_id` PK + fk · `seller_id` fk · `held_amount money` · `release_after TIMESTAMPTZ` · `released_at TIMESTAMPTZ null` · `created_at`, `updated_at`. `idx_seller_order_holds_release_after (release_after) WHERE released_at IS NULL`: release job; `idx_seller_order_holds_seller_id_release_after (seller_id, release_after) WHERE released_at IS NULL`: `GET /seller/finance/holds`.
+
+### 14.14 audit
+`admin_audit_log` as spec 20 §2.1, with its three indexes and `trg_admin_audit_log_no_update` (`BEFORE UPDATE … RAISE EXCEPTION`). The trigger function lives in the same migration; its `down` drops both.
+
+### 14.15 Open questions
+
+| # | Topic | Options / recommendation |
+|---|---|---|
+| DB-Q7 | Adding `NOT NULL` columns to existing tables without a DB default | **Rec:** `ADD COLUMN … NOT NULL DEFAULT v` then `DROP DEFAULT` in the same migration (fast, metadata-only, no default left) · or add nullable, backfill in batches, then `SET NOT NULL` after a validated CHECK (slower, more migrations) |
+| DB-Q8 | Admin block vs. the public visibility indexes | **Rec:** a block also sets `status = 'inactive'` and locks the status, so VIS and its seven partial indexes stay unchanged; unblock leaves the product inactive for the seller to re-activate (amends spec 20 §3.4) · or add `admin_blocked_at IS NULL` to VIS and rebuild every VIS index concurrently |
+| DB-Q9 | `order_items.image_media_id` index | **Rec:** a partial index, because media cleanup deletes `media_objects` rows and the FK `RESTRICT` check would otherwise scan `order_items` · or no index and accept the scan in a nightly job |
+| DB-Q10 | Rating sort inside a category | **Rec:** only the global `idx_products_rating_id` now; a per-category index after measuring · or a `(category_id, COALESCE(rating_avg,0), id)` index from the start |
+| DB-Q11 | Encrypted payout details column type | **Rec:** `TEXT` with a length CHECK holding the base64 envelope of the S-1 helper (`iv.tag.ciphertext`) · or `BYTEA` |
+| DB-Q12 | Seller orders delivered before R2 | **Rec:** no `seller_order_holds` rows (FI-13); their returns still debit `seller_pending` first, then `seller_payable` (so a pre-R2 return reverses from the available balance) · or a one-off migration creating holds for seller orders delivered in the last 14 days |

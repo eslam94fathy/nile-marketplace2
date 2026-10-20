@@ -188,7 +188,7 @@ Rows added to the §8.2 mapping (RV-8 and BO-8 accepted 2026-10-20):
 | `seller_order.cancelled` (`admin_cancelled`) | customer and seller | orders | `seller_order_cancelled` | unchanged §8.2 row; the seller now also receives it because an admin, not the seller, cancelled |
 
 ### 8.9 Additions from specs 10 and 18 [2026-10-20]
-Subject to RE-9 and PA-26. All under `orders`:
+RE-9 and PA-26 accepted 2026-10-20. All under `orders`:
 
 | Event | Recipient | Type | Text (title · body) |
 |---|---|---|---|

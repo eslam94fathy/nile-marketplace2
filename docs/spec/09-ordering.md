@@ -1,7 +1,7 @@
 # Spec 09 — ordering
 
 Status: **v1.5 APPROVED (2026-10-13).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: `amountCancelled` when the last units are cancelled (OR-12); what the order totals count (OR-13). v1.2: shipment events that overtake their predecessor are retried (OR-14). v1.3: the expiry job abandons nothing and waits on a payment in flight (OR-6 as amended by spec 10 PA-11, PA-13). v1.4: `seller_order.items_cancelled` carries `previousStatus` (OR-15). v1.5: one open Kashier payment per customer (OR-16, Phase 8 security review F-2). Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 pieces other R2 specs rely on: a public API (ordering is now called by other modules), `seller_order.accepted`, the order-item image snapshot and admin cancellation (S-9 for R2). §8.7 (returns, spec 18) and §8.8 (coupons, spec 19) added 2026-10-20. Folded into §1–§7 when approved. §8.6 OR-17…OR-19 answered 2026-10-20. Open questions in §8.9 (OR-20…OR-22).
+**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 pieces other R2 specs rely on: a public API (ordering is now called by other modules), `seller_order.accepted`, the order-item image snapshot and admin cancellation (S-9 for R2). §8.7 (returns, spec 18) and §8.8 (coupons, spec 19) added 2026-10-20. Folded into §1–§7 when approved. §8.6 OR-17…OR-19 answered 2026-10-20. §8.9 OR-20…OR-22 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -373,7 +373,9 @@ Amounts that payments and delivery treat as customer money are paid amounts: `co
 #### Read changes
 `OrderDetailDto` gains `coupon: { code, discountTotal } | null`; seller orders gain `discountAmount`, `discountFunding`; `OrderItemDto` gains `discountAmount`, `paidTotal`. The seller sees `discountAmount` and `discountFunding` on `SellerOrderDto` (PR-7).
 
-### 8.9 Open questions
+### 8.9 Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.11.
 
 | # | Topic | Options / recommendation |
 |---|---|---|

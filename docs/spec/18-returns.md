@@ -1,6 +1,6 @@
 # Spec 18 — returns
 
-Status: **v1.0 DRAFT (2026-10-20).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.4 (returns and refunds, holding period), R-13…R-16, `14-media.md` (return photos), spec 09 v2.0 §8.7, spec 10 v2.0 §8, spec 11 v2.0 §8, spec 12 v2.0 §8, spec 07 v2.0 §8. Open questions in §7 (RE-1…RE-10) must be answered before approval.
+Status: **v1.0 DRAFT (2026-10-20).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.4 (returns and refunds, holding period), R-13…R-16, `14-media.md` (return photos), spec 09 v2.0 §8.7, spec 10 v2.0 §8, spec 11 v2.0 §8, spec 12 v2.0 §8, spec 07 v2.0 §8. §7 RE-1…RE-10 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -202,7 +202,9 @@ Consumed (queue `returns.shipment-updates`): `return_shipment.picked_up`, `retur
 
 Config: api `RETURN_WINDOW_DAYS`, `RETURN_SELLER_DECISION_HOURS`, `RETURN_ESCALATION_WINDOW_DAYS`, `RETURN_INSPECTION_HOURS`; worker the same four + `JOB_RETURNS_INTERVAL_MS`, `RETURN_JOBS_BATCH_SIZE`, and the S-1 encryption key (already there). No defaults.
 
-## 7. Open questions
+## 7. Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.11.
 
 | # | Topic | Options / recommendation |
 |---|---|---|

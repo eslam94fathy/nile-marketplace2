@@ -1,7 +1,7 @@
 # Spec 12 — finance
 
 Status: **v1.0 APPROVED (2026-10-13)**, with the Phase 7 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 holding period (Q-25, R-16), coupon funding (R-17) and return / refund entries (spec 18). Folded into §1–§7 when approved. Open questions in §8.7 (FI-12…FI-15).
+**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 holding period (Q-25, R-16), coupon funding (R-17) and return / refund entries (spec 18). Folded into §1–§7 when approved. §8.7 FI-12…FI-15 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -195,7 +195,9 @@ Out-of-order: a refund event before `return.completed` has been booked would pus
 - New public method `getDashboardStats() → { codOutstanding, sellerPayable, sellerPending, agentFeePayable, customerRefundPayable }` (spec 20 §3.2).
 - Config (worker, no defaults): `RETURN_WINDOW_DAYS`, `JOB_SELLER_HOLD_RELEASE_INTERVAL_MS`, `SELLER_HOLD_BATCH_SIZE`.
 
-### 8.7 Open questions
+### 8.7 Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.11.
 
 | # | Topic | Options / recommendation |
 |---|---|---|

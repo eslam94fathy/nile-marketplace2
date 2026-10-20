@@ -1,7 +1,7 @@
 # Spec 11 — delivery
 
 Status: **v1.2 APPROVED (2026-10-12).** v1.0 (2026-10-09): the reference-data part, with the clarifications in §7.1. v1.1: the whole spec (agents, shipments, assignment) approved with the Phase 6 clarifications in §7.2. v1.2: how the consumer orders item cancellations and returns (DE-15, DE-16). Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 return shipments (spec 18), a dashboard method, and the paid-amount payload change (spec 09 §8.8). Folded into §1–§7 when approved. Open questions in §8.6 (DE-17…DE-19).
+**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 return shipments (spec 18), a dashboard method, and the paid-amount payload change (spec 09 §8.8). Folded into §1–§7 when approved. §8.6 DE-17…DE-19 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -237,7 +237,9 @@ Consumed: `seller_order.ready_for_pickup`, `seller_order.items_cancelled`, `sell
 Published (new): `return_shipment.picked_up`, `return_shipment.delivered`, `return_shipment.failed` → returns (`returns.shipment-updates`), realtime. `shipment.assigned` gains `kind` and `returnId`. Ordering's `ordering.shipment-updates` never receives return events (different names), so R1 consumers are untouched.
 Consumed (new queue `delivery.return-updates`): `return.approved`, `return.status_changed`.
 
-### 8.6 Open questions
+### 8.6 Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.11.
 
 | # | Topic | Options / recommendation |
 |---|---|---|
