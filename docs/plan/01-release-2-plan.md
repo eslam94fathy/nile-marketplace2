@@ -73,6 +73,8 @@ Exact versions are pinned at install (`save-exact=true`), using the latest stabl
 | dev: `socket.io-client` | 4.8.4 | P2 | Integration tests |
 | dev: `@testcontainers/minio` | 12.1.0 | P1 | Matches the installed `testcontainers` 12.1.0 |
 
+**Installed 2026-10-20 (R2-P1 step 2):** `@aws-sdk/*` **3.1146.0** (3.1147.0 was published 2026-10-06 22:58 UTC, under two weeks old on the install day), `sharp` 0.35.5, `@testcontainers/minio` 12.1.0. `sharp` loads in the runtime image with `npm ci --ignore-scripts` (prebuilt `@img/sharp-linux-x64`), and Trivy finds nothing HIGH / CRITICAL in it. MinIO image: `pgsty/minio:RELEASE.2026-08-04T00-00-00Z` (architecture v2.2 §14.9).
+
 ---
 
 ## 3. Rules for every R2 phase

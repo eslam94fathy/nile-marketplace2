@@ -52,6 +52,37 @@ services:
       timeout: 10s
       retries: 20
 
+  # S3-compatible storage for media (architecture §14.9): API at http://localhost:9100, console at
+  # http://localhost:9101 (host ports off 9000 / 9001, which IDEs and other tools often hold).
+  # pgsty/minio is the community build of MinIO (upstream no longer publishes images).
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: nile
+      MINIO_ROOT_PASSWORD: nile-minio
+    ports: ['9100:9000', '9101:9001']
+    volumes: ['miniodata:/data']
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:9000/minio/health/live']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Creates the media bucket once; `public/*` is anonymously readable, standing in for CloudFront.
+  minio-init:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - >-
+        mc alias set local http://minio:9000 nile nile-minio &&
+        mc mb --ignore-existing local/nile-media &&
+        mc anonymous set download local/nile-media/public
+    restart: 'no'
+
   # Local inbox for development email (EMAIL_PROVIDER=mailpit): web UI at http://localhost:8025
   mailpit:
     image: axllent/mailpit:v1.31.2
@@ -101,3 +132,4 @@ services:
 
 volumes:
   pgdata:
+  miniodata:
