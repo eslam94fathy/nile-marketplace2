@@ -188,6 +188,12 @@ export const TOKENS = {
   // notifications module
   NotificationLogRepository: Symbol.for('NotificationLogRepository'),
   EmailNotificationService: Symbol.for('EmailNotificationService'),
+  UserNotificationRepository: Symbol.for('UserNotificationRepository'),
+  NotificationPreferenceRepository: Symbol.for('NotificationPreferenceRepository'),
+  UserEventsService: Symbol.for('UserEventsService'),
+  NotificationRetentionJob: Symbol.for('NotificationRetentionJob'),
+  NotificationCenterService: Symbol.for('NotificationCenterService'),
+  NotificationController: Symbol.for('NotificationController'),
 
   // audit module (spec 20 §2)
   AuditLogRepository: Symbol.for('AuditLogRepository'),

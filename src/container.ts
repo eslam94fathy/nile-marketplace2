@@ -10,7 +10,7 @@ import { Dependency, registerHealthModule } from './app/health';
 import { registerIdentityModule } from './app/identity';
 import { registerInventoryModule } from './app/inventory';
 import { registerMediaModule, registerMediaWorker } from './app/media';
-import { registerNotificationsModule } from './app/notifications';
+import { registerNotificationsHttp, registerNotificationsModule } from './app/notifications';
 import { registerOrderingModule, registerOrderingWorker } from './app/ordering';
 import { registerPaymentsHttp, registerPaymentsModule } from './app/payments';
 import { registerRealtimeGateway, registerRealtimeWorker } from './app/realtime';
@@ -82,6 +82,8 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
   registerOrderingModule(container);
   // After sellers and delivery: finance resolves owners through their public APIs (FI-11).
   registerFinanceModule(container);
+  // The notification centre endpoints (spec 13 §8.4).
+  registerNotificationsHttp(container);
   return container;
 }
 
@@ -92,7 +94,10 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   container.register(TOKENS.ObjectStorage, { useValue: infra.objectStorage });
   container.register(TOKENS.ImageProcessor, { useValue: infra.imageProcessor });
 
+  // notifications.user-events resolves recipients through customers, sellers, delivery, ordering.
   registerNotificationsModule(container);
+  registerCustomersLookups(container);
+  registerDeliveryAgentLookups(container);
   // catalog.listing-projections reads seller statuses and stock (spec 06 UC-CA-7).
   registerSellersModule(container);
   registerInventoryModule(container);

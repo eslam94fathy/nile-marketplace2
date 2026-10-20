@@ -30,6 +30,8 @@ describe('rate limiting (G18, docs/spec/01-api-conventions.md §7)', () => {
     expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
   });
 
+  // Builds its own app (a database clone, vhost and bucket) inside the test: give it the hook timeout,
+  // since under a full parallel run the clone alone can take longer than the default test timeout.
   it('strict-auth counts the email separately from the IP (case-insensitive)', async () => {
     // Fresh limits: different key prefix → a new app on new resources.
     const fresh = await startTestApp({
@@ -46,7 +48,7 @@ describe('rate limiting (G18, docs/spec/01-api-conventions.md §7)', () => {
     } finally {
       await fresh.close();
     }
-  });
+  }, 120_000);
 
   it('Redis down: sensitive classes fail closed (503), general fails open', async () => {
     const fresh = await startTestApp({

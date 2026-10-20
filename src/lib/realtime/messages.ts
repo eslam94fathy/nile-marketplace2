@@ -14,6 +14,8 @@ export const RealtimeMessageType = {
   SHIPMENT_UNASSIGNED: 'shipment.unassigned',
   PAYMENT_UPDATED: 'payment.updated',
   MEDIA_UPDATED: 'media.updated',
+  /** Emitted by notifications after it stores an in-app row (spec 13 UC-NO-2). */
+  NOTIFICATION_CREATED: 'notification.created',
   /** Sent just before the server closes the socket (RT-8). */
   SESSION_ENDED: 'session.ended',
 } as const;
@@ -51,6 +53,13 @@ export interface RealtimeMessageData {
   [RealtimeMessageType.SHIPMENT_UNASSIGNED]: { shipmentId: string; sellerOrderId: string };
   [RealtimeMessageType.PAYMENT_UPDATED]: { orderId: string; paymentStatus: string };
   [RealtimeMessageType.MEDIA_UPDATED]: { mediaId: string; status: string };
+  [RealtimeMessageType.NOTIFICATION_CREATED]: {
+    notificationId: string;
+    category: string;
+    title: string;
+    body: string;
+    link: string | null;
+  };
   [RealtimeMessageType.SESSION_ENDED]: { reason: DisconnectReason };
 }
 

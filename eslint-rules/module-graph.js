@@ -15,6 +15,8 @@ const MODULE_GRAPH = {
   finance: ['sellers', 'delivery'],
   // R2-P2 (spec 15): profiles at connect, parties and statuses for the fan-out. support from spec 16.
   realtime: ['customers', 'sellers', 'delivery', 'ordering'],
+  // R2-P2 (spec 13 §8, spec 02 §6.3): recipient resolution.
+  notifications: ['customers', 'sellers', 'delivery', 'ordering'],
   // R2 (architecture v2.0 §14.2). Modules record audit rows through lib/audit, not by importing audit.
   audit: ['identity'],
 };

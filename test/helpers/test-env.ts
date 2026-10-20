@@ -77,6 +77,10 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     RATE_LIMIT_REALTIME_CONNECT_POINTS: '1000',
     RATE_LIMIT_REALTIME_CONNECT_WINDOW_SECONDS: '60',
     REALTIME_SIGNAL_RATE_PER_SECOND: '5',
+    // notification centre retention (worker, spec 13 UC-NO-5)
+    NOTIFICATION_RETENTION_DAYS: '90',
+    JOB_NOTIFICATION_RETENTION_INTERVAL_MS: '86400000',
+    NOTIFICATION_RETENTION_BATCH_SIZE: '1000',
     IDEMPOTENCY_TTL_HOURS: '24',
     IDEMPOTENCY_LOCK_TTL_SECONDS: '30',
     // identity (cost 10 = the minimum allowed, keeps tests fast)

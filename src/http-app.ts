@@ -11,6 +11,7 @@ import { createCustomersRouter } from './app/customers';
 import { createDeliveryRouter } from './app/delivery';
 import { createFinanceRouter } from './app/finance';
 import { createIdentityRouter } from './app/identity';
+import { createNotificationsRouter } from './app/notifications';
 import { createOrderingRouter } from './app/ordering';
 import { createPaymentsRouter, createPaymentsWebhookRouter, PAYMENTS_PATHS } from './app/payments';
 import { createSellersRouter } from './app/sellers';
@@ -85,6 +86,7 @@ export function createApp(
   // 7. Routes.
   if (env.API_DOCS_ENABLED) app.use(DOCS_PATH, recordMountPath(), createDocsRouter(infra.openApi, API_INFO));
   app.use(API_BASE_PATH, recordMountPath(), createIdentityRouter(container, API_BASE_PATH));
+  app.use(API_BASE_PATH, recordMountPath(), createNotificationsRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createDeliveryRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createCustomersRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createSellersRouter(container, API_BASE_PATH));

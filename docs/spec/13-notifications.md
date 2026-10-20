@@ -1,7 +1,7 @@
 # Spec 13 — notifications (minimal)
 
 Status: **v1.1 APPROVED (2026-10-08).** Approved by the user. v1.1: Phase 1 implementation clarifications (§7.1, N-1…N-5). Changes from now on need explicit approval and a version bump.
-**v2.0 APPROVED (2026-10-20):** §8 adds Release 2 push (standard Web Push, R-20), the in-app notification centre and preferences (R-5…R-7). Kept as its own section, so every cross-reference stays valid (R2-Q1).
+**v2.1 APPROVED (2026-10-20):** §8.10 R2-P2 implementation clarifications NO-12…NO-21 (every recommendation accepted). **v2.0 APPROVED (2026-10-20):** §8 adds Release 2 push (standard Web Push, R-20), the in-app notification centre and preferences (R-5…R-7). Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -200,3 +200,19 @@ RE-9 and PA-26 accepted 2026-10-20. All under `orders`:
 | → `completed` | customer | `return_completed` | "Return accepted" · "Return {returnNumber} is complete. Your refund is on its way." |
 | → `refused` | customer, seller | `return_refused` | "Return closed" · "Return {returnNumber} was closed without a refund." |
 | `payment.refunded`, `payment.refund_recorded` | customer | `refund_issued` | "Refund issued" · "Your refund for order #{n} was issued." |
+
+### 8.10 Clarifications (R2-P2 implementation, approved 2026-10-20)
+
+| # | Clarification | Where |
+|---|---|---|
+| NO-12 | `link` values are client routes the web app provides: the customer `/orders/<orderId>`, the seller `/seller/orders/<sellerOrderId>`, the agent `/agent/shipments/<shipmentId>` | §8.1, §8.2 |
+| NO-13 | "Part of order #{n}" only when the order has several seller orders, else "Order #{n}": for `seller_order_accepted` and the customer's `seller_order_cancelled`. The seller's cancellation reads "Order #{n} was cancelled." (its own seller order) | §8.2 |
+| NO-14 | Who is told what. `order.placed`: a seller row only for seller orders not `pending_payment`. `seller_order.cancelled`: no customer row for `payment_failed` / `payment_expired` (they already get `payment_failed`), and no seller row when the seller cancelled or the seller order was still `pending_payment` (the seller never saw it) | §8.2 |
+| NO-15 | The retention job deletes in batches of `NOTIFICATION_RETENTION_BATCH_SIZE` (worker env, like audit). Staging and prod: 90 days, daily, 1 000 per batch | UC-NO-5, §8.6 |
+| NO-16 | The type CHECK and enum list every §8.2, §8.8 and §8.9 type now, so the later phases add senders, not CHECK changes | §8.1 |
+| NO-17 | `read`: an already-read notification stays as it was (`204`); another user's or an unknown id is `404 NOTIFICATION_NOT_FOUND`. `read-all` touches only unread rows | §8.4 |
+| NO-18 | `PUT /me/notification-preferences` changes only the categories it lists (1…4, each once; else `400`) and answers all four | §8.4 |
+| NO-19 | Recipients are resolved before the transaction (the consumer host's `beforeTransaction`, P1-I4): ordering's parties (`getNotificationParties`) and the profile → user id lookups. An order that can't be found, or a profile without a user, is skipped with a `warn` | UC-NO-2 step 1 |
+| NO-20 | The push request and the `notification.created` message go only for rows this delivery inserted, so a redelivered event announces nothing. The message carries the source `eventId` and the row's `created_at` | UC-NO-2 steps 2–3 |
+| NO-21 | Step split inside R2-P2: the centre and preferences ship in step 5; subscriptions, sending, the VAPID config and the `user.suspended` / `user.sessions_revoked` clean-up in step 6, in the same PR. Until the `notifications.push` queue exists, a published `notification.push_requested` has no queue and is dropped | §8.3 |
+

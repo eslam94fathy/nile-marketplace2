@@ -47,7 +47,7 @@ import { PaymentUpdateService } from './service/payment-update.service';
 import { ShipmentUpdateService } from './service/shipment-update.service';
 
 export { OrderingErrorCode } from './errors';
-export { OrderStatus, SellerOrderStatus } from './enums';
+export { OrderStatus, SellerOrderStatus, SellerOrderCancelReason } from './enums';
 export type { NotificationParty, OrderLink } from './model/notification-party.model';
 /** Inject with `TOKENS.OrderingDirectory`. */
 export type { IOrderingDirectory } from './service/ordering-directory.service';

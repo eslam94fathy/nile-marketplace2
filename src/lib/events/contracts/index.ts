@@ -29,6 +29,7 @@ export * from './media-failed.event';
 export * from './user-suspended.event';
 export * from './user-sessions-revoked.event';
 export * from './seller-order-accepted.event';
+export * from './notification-push-requested.event';
 
 import { CodRemittanceConfirmed } from './cod-remittance-confirmed.event';
 import { InventoryStockStatusChanged } from './inventory-stock-status-changed.event';
@@ -36,6 +37,7 @@ import { MediaFailed } from './media-failed.event';
 import { MediaReady } from './media-ready.event';
 import { MediaUploaded } from './media-uploaded.event';
 import { NotificationEmailRequested } from './notification-email-requested.event';
+import { NotificationPushRequested } from './notification-push-requested.event';
 import { OrderClosed } from './order-closed.event';
 import { OrderPlaced } from './order-placed.event';
 import { PaymentExpired } from './payment-expired.event';
@@ -88,4 +90,5 @@ export const ALL_EVENT_CONTRACTS = [
   UserSuspended,
   UserSessionsRevoked,
   SellerOrderAccepted,
+  NotificationPushRequested,
 ] as const;

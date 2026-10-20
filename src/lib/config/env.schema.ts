@@ -290,6 +290,13 @@ const mediaApiShape = {
   MEDIA_MAX_OPEN_UPLOADS_PER_USER: positiveInt(1_000),
 };
 
+/** notification-centre retention job (spec 13 UC-NO-5, NO-7), worker only. */
+const notificationJobsShape = {
+  NOTIFICATION_RETENTION_DAYS: positiveInt(3_650),
+  JOB_NOTIFICATION_RETENTION_INTERVAL_MS: positiveInt(604_800_000),
+  NOTIFICATION_RETENTION_BATCH_SIZE: positiveInt(100_000),
+};
+
 /** media cleanup job (spec 14 UC-ME-4), worker only. */
 const mediaJobsShape = {
   MEDIA_PENDING_RETENTION_HOURS: positiveInt(24 * 30),
@@ -507,6 +514,7 @@ export const workerEnvSchema = z
     ...deliveryJobsShape,
     ...auditJobsShape,
     ...mediaJobsShape,
+    ...notificationJobsShape,
     ...storageShape,
     // The payment consumer sets the acceptance deadline when a Kashier order is placed (OR-8).
     ...orderingShape,
