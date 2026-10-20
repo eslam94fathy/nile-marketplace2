@@ -1,7 +1,7 @@
 # System Design 02 — Database Schema (Release 1)
 
 Status: **v1.13 APPROVED (2026-10-13).** v1.1: COD payment status `cancelled` (D-1, S-12). v1.2: refresh_tokens cleanup index + `replaced_by_id ON DELETE SET NULL` (D-4). v1.3: `notification_log` FK and failure check (Phase 1). v1.4: `idx_users_role_created_at` (DB-Q6). v1.5: public product listings sort on `published_at` (D-5); `id` tie-break on the stock-history index (D-6). v1.6: `idx_products_category_id` for category usage checks (D-7). v1.7: cart FK `ON DELETE` behaviour and why `cart_items.variant_id` has no index (§7, P4-Q11). v1.8: ordering/payments indexes, Kashier session columns, refund reason `amount_mismatch`, FK behaviour and unindexed FKs (§6, §8, §9, D-8, Phase 5). v1.9: `inventory_reservations.quantity` is what is still reserved, `>= 0`, and 0 exactly when `released` (§6, D-9). v1.10: shipment snapshots, the cancelled-after-pickup marker and the delivery list indexes (§10, D-2, D-3, D-10, Phase 6). v1.11: every timestamp a list cursor sorts on is `TIMESTAMPTZ(3)` (§0, D-11). v1.12: finance enum CHECKs, the non-negative balance guard, list indexes, FK behaviour and the duplicate-payout guard (§0, §11, D-12, Phase 7). v1.13: `idx_products_min_price_id` for the price-sorted listing without a category (§5, D-13, Phase 8 load baseline). Changes from now on need explicit approval and a version bump. Decisions: §13.
-**v2.0 DRAFT (2026-10-20):** §14 adds the Release 2 schema (new tables of media, support, reviews, returns, promotions, audit; columns and indexes on existing tables; migration rules). Folded into §1–§13 when approved. §14.15 DB-Q7…DB-Q12 answered 2026-10-20 (every recommendation accepted).
+**v2.0 APPROVED (2026-10-20):** §14 adds the Release 2 schema (new tables of media, support, reviews, returns, promotions, audit; columns and indexes on existing tables; migration rules). Kept as its own section, so every cross-reference stays valid (R2-Q1). §14.15 DB-Q7…DB-Q12 answered 2026-10-20 (every recommendation accepted).
 Engine: PostgreSQL 18, single `public` schema. Engineering rules: `CLAUDE.md` §6. Business rules: `docs/spec/00-overview.md` v1.0.
 
 ---
@@ -572,9 +572,9 @@ No open schema questions.
 
 ---
 
-## 14. Release 2 schema [v2.0 DRAFT, 2026-10-20]
+## 14. Release 2 schema [v2.0, approved 2026-10-20]
 
-Inputs: specs 01–20 Release 2 sections, architecture v2.0 draft §14. The conventions of §0 apply unchanged. §1–§12 still describe Release 1; this section is folded into them when approved. Decisions in §14.15 (DB-Q7…DB-Q12, answered 2026-10-20).
+Inputs: specs 01–20 Release 2 sections, architecture v2.0 §14. The conventions of §0 apply unchanged. §1–§12 still describe Release 1; this section stays separate (R2-Q1). Decisions in §14.15 (DB-Q7…DB-Q12, answered 2026-10-20).
 
 ### 14.1 Ownership additions (§1)
 | Module | Tables |

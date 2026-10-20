@@ -1,6 +1,6 @@
 # Spec 19 — promotions (coupons)
 
-Status: **v1.0 DRAFT (2026-10-20).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.4 (coupons), R-17, R-18, spec 09 v2.0 §8.8 (checkout and snapshots), spec 12 v2.0 §8 (funding in the ledger). §7 PR-1…PR-9 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (coupons), R-17, R-18, spec 09 v2.0 §8.8 (checkout and snapshots), spec 12 v2.0 §8 (funding in the ledger). §7 PR-1…PR-9 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables

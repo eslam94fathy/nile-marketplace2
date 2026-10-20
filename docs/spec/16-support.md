@@ -1,6 +1,6 @@
 # Spec 16 — support
 
-Status: **v1.0 DRAFT (2026-10-19).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.4 (support tickets), R-8, R-9, R-19. §7 SU-1…SU-6 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (support tickets), R-8, R-9, R-19. §7 SU-1…SU-6 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables

@@ -1,7 +1,7 @@
 # Spec 11 — delivery
 
 Status: **v1.2 APPROVED (2026-10-12).** v1.0 (2026-10-09): the reference-data part, with the clarifications in §7.1. v1.1: the whole spec (agents, shipments, assignment) approved with the Phase 6 clarifications in §7.2. v1.2: how the consumer orders item cancellations and returns (DE-15, DE-16). Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 return shipments (spec 18), a dashboard method, and the paid-amount payload change (spec 09 §8.8). Folded into §1–§7 when approved. §8.6 DE-17…DE-19 answered 2026-10-20.
+**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 return shipments (spec 18), a dashboard method, and the paid-amount payload change (spec 09 §8.8). Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.6 DE-17…DE-19 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -210,7 +210,7 @@ Consumed: `seller_order.ready_for_pickup`, `seller_order.items_cancelled`, `sell
 
 ---
 
-## 8. Release 2: return shipments [v2.0 DRAFT, 2026-10-20]
+## 8. Release 2: return shipments [v2.0, approved 2026-10-20]
 
 ### 8.1 Model
 - `shipments.kind` `VARCHAR(10)`: `ShipmentKind` `delivery, return` (CHECK; existing rows filled with `delivery`). A return shipment has `return_id` (unique, nullable for `delivery`; `CHECK (kind = 'return') = (return_id IS NOT NULL)`), and `seller_order_id` is no longer unique on its own: `uq_shipments_seller_order_id` becomes partial `WHERE kind = 'delivery'` (database v2.0).

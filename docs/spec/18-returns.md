@@ -1,6 +1,6 @@
 # Spec 18 — returns
 
-Status: **v1.0 DRAFT (2026-10-20).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.4 (returns and refunds, holding period), R-13…R-16, `14-media.md` (return photos), spec 09 v2.0 §8.7, spec 10 v2.0 §8, spec 11 v2.0 §8, spec 12 v2.0 §8, spec 07 v2.0 §8. §7 RE-1…RE-10 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (returns and refunds, holding period), R-13…R-16, `14-media.md` (return photos), spec 09 v2.0 §8.7, spec 10 v2.0 §8, spec 11 v2.0 §8, spec 12 v2.0 §8, spec 07 v2.0 §8. §7 RE-1…RE-10 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables

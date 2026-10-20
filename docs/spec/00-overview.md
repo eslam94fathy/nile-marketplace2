@@ -1,7 +1,7 @@
 # Nile Marketplace — Spec Overview (Release 1)
 
 Status: **v1.1 APPROVED (2026-10-08).** v1.0 approved 2026-10-07. v1.1: §7 now points to `02-events.md` (O-3); per-module answers in §9.1. Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-19):** §10 adds the Release 2 scope. R-1…R-21 answered 2026-10-19 (§10.8). §10 stays [PROPOSED] until the section is approved. §1–§9 still describe Release 1.
+**v2.0 APPROVED (2026-10-20):** §10 adds the Release 2 scope. R-1…R-21 answered 2026-10-19 (§10.8). §10 approved 2026-10-20 (R2-Q1), with the answers in §10.8–§10.13. §1–§9 describe Release 1; where §10.3–§10.4 and the Release 2 sections of the module specs differ, the module specs win.
 Legend: **[CONFIRMED]** = decided by the user · **[PROPOSED]** = Claude's proposal, not yet approved · **Q-n** = open question (§8). Answers are logged in §9.
 
 Nothing marked [PROPOSED] may be implemented until it is approved.
@@ -342,7 +342,7 @@ The user accepted every recommendation in §8.1.
 
 ---
 
-## 10. Release 2 [PROPOSED, v2.0 draft 2026-10-19]
+## 10. Release 2 [CONFIRMED 2026-10-20]
 
 ### 10.1 Scope
 
@@ -381,7 +381,7 @@ Sequencing (user, 2026-10-19): R2 specs and design are written now; P9 (staging 
 | `finance` | changed | + pending balance, customer refund payable | Holding period, coupon funding, refund entries |
 | `sellers` | changed | + `rating_avg` / `rating_count` | Seller rating projection |
 
-### 10.3 Cross-cutting rules [PROPOSED]
+### 10.3 Cross-cutting rules [CONFIRMED]
 
 **Media**
 - Clients upload **directly to object storage** with a short-lived presigned POST limited by size and content type. The api never receives image bytes.
@@ -400,7 +400,7 @@ Sequencing (user, 2026-10-19): R2 specs and design are written now; P9 (staging 
 - Push subscriptions (Web Push endpoint + keys) are registered after login and removed on logout; subscriptions the push service reports gone (404 / 410) are deleted.
 - Push payloads carry no PII beyond what the lock screen may show (order number, short text) (R-7).
 
-### 10.4 Business rules per feature [PROPOSED]
+### 10.4 Business rules per feature [CONFIRMED; details in the module specs]
 
 **Product and category images**
 - Up to N images per product, ordered, one marked primary (the first). An image may be tied to a variant, so the app shows it when that variant is picked (R-2).
@@ -441,16 +441,16 @@ Sequencing (user, 2026-10-19): R2 specs and design are written now; P9 (staging 
 - Redemption is atomic at checkout (the limit can't be exceeded under concurrency). The discount is snapshotted per seller order and per item.
 - Who funds the discount decides the commission and the ledger entries (R-17). Cancelling a whole checkout before delivery frees the redemption (R-18).
 
-### 10.5 Proposed R2 phases (detailed in `docs/plan/01-release-2-plan.md` once §10 is approved)
+### 10.5 R2 phases (detailed in `docs/plan/01-release-2-plan.md`)
 
 | Phase | Content |
 |---|---|
-| R2-P0 | Specs 14–20, spec bumps (01, 02, 06, 09, 10, 12, 13), architecture v2.0, database v2.0, new dependencies approved |
-| R2-P1 | Media + product / category images |
+| R2-P0 | Specs 14–20, spec bumps, architecture v2.0, database v2.0, new dependencies, R2 plan: **done** (approved 2026-10-20) |
+| R2-P1 | Audit (moved from R2-P5, R2-Q2) + media + product / category images |
 | R2-P2 | Realtime gateway + push + notification centre |
 | R2-P3 | Support tickets |
 | R2-P4 | Reviews, ratings, wishlist |
-| R2-P5 | Admin back-office + audit log |
+| R2-P5 | Admin back-office (dashboard, user directory, admin cancellation, product block) |
 | R2-P6 | Holding period, returns, automated refunds |
 | R2-P7 | Coupons |
 | R2-P8 | Hardening (upload and socket security review, socket load test), staging rollout |
@@ -635,3 +635,17 @@ The user accepted every recommendation in architecture v2.0 §14.11 and database
 | DB-Q10 | Rating sort indexed globally; per-category index only after measuring |
 | DB-Q11 | Encrypted payout details stored as `TEXT` with a length CHECK |
 | DB-Q12 | No holds for seller orders delivered before R2 |
+
+### 10.13 Answered log: Release 2 plan questions (2026-10-20)
+
+The user accepted every recommendation in `docs/plan/01-release-2-plan.md` §2.2.
+
+| Q | Answer |
+|---|---|
+| R2-Q1 | Every R2 document approved as written. The Release 2 sections stay as their own numbered sections (not moved into §1–§7), so cross-references stay valid |
+| R2-Q2 | Audit built in R2-P1, wired into every existing admin write |
+| R2-Q3 | `r2-specs` merges into `main` (docs only); then one branch per phase from `main` |
+| R2-Q4 | Before go-live a phase ships in one deploy; after go-live, unparseable payload changes ship consumers first, publisher second |
+| R2-Q5 | R2 phases go to staging as they merge; production at the separate go-live decision |
+| R2-Q6 | The user provides DNS for `media.<domain>` before R2-P1, the web origins and realtime URL before R2-P2, the Kashier test account before R2-P6 |
+| R2-Q7 | VAPID key pair per environment generated by hand, private key in Secrets Manager |

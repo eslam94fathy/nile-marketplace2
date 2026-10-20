@@ -1,7 +1,7 @@
 # System Design 01 — Architecture (Release 1)
 
 Status: **v1.10 APPROVED (2026-10-13).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). v1.4: catalog cache keys and TTLs (§8), "newest" sorts on `published_at` (§9) (Phase 3). v1.5: typo search matches words (§9, P3-O1). v1.6: edge `cart → customers` (§2, A-4, Phase 4). v1.7: checkout inserts the order rows before reserving stock (§7.1, A-3); one lock order across ordering, inventory and payments (§3.1); order jobs handle one order per transaction (§6); Kashier sessions and webhook signature (§7.2) (Phase 5). v1.8: the expiry job abandons no session (§6, spec 10 PA-11). v1.9: region `eu-central-1` (SD-3d), sizes, RabbitMQ 4.2, TLS to the data stores, secrets, network and egress IPs (K-7), deploy pipeline, alerting (§12.1, §13, Phase 8). v1.10: suspended-user deny entry in Redis (§8, §10, spec 03 I-11). Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-20):** §14 adds Release 2 (realtime process, media storage and CDN, new modules and edges, lock order, jobs, security, capacity, hosting, new dependencies). Folded into §1–§13 when approved. §14.11 A-5…A-10 answered 2026-10-20 (every recommendation accepted).
+**v2.0 APPROVED (2026-10-20):** §14 adds Release 2 (realtime process, media storage and CDN, new modules and edges, lock order, jobs, security, capacity, hosting, new dependencies). Kept as its own section, so every cross-reference stays valid (R2-Q1). §14.11 A-5…A-10 answered 2026-10-20 (every recommendation accepted).
 Inputs: `CLAUDE.md` (engineering rules), `docs/spec/00-overview.md` v1.0 (business). Schema: `02-database.md`.
 
 ---
@@ -311,9 +311,9 @@ Region: **`eu-central-1`** (SD-3d).
 
 ---
 
-## 14. Release 2 [v2.0 DRAFT, 2026-10-20]
+## 14. Release 2 [v2.0, approved 2026-10-20]
 
-Inputs: `docs/spec/00-overview.md` v2.0 draft §10 (answers §10.8–§10.11), specs 01–20 Release 2 sections. §1–§13 still describe Release 1; this section is folded into them when approved. Decisions in §14.11 (A-5…A-10, answered 2026-10-20).
+Inputs: `docs/spec/00-overview.md` v2.0 §10 (answers §10.8–§10.11), specs 01–20 Release 2 sections. §1–§13 still describe Release 1; this section stays separate (R2-Q1). Decisions in §14.11 (A-5…A-10, answered 2026-10-20).
 
 ### 14.1 Runtime topology
 ```
@@ -332,7 +332,7 @@ Inputs: `docs/spec/00-overview.md` v2.0 draft §10 (answers §10.8–§10.11), s
 | `realtime` (**new**, `node dist/realtime.js`) | Socket.IO gateway, WebSocket transport only (so no sticky sessions), JWT handshake, rooms, client signals. Shares Redis through `@socket.io/redis-adapter` (RT-1, RT-7) | 2 tasks × 0.25 vCPU / 0.5 GB to start; autoscaling on CPU and connection count after the R2-P8 socket load test |
 | `worker` | + image processing (`media.processing`), realtime fan-out (Redis emitter), push sending, refunds (Kashier secret key, PA-25), new jobs (§14.5). Now needs Redis (reverses spec 06 CA-8) and S3 | 2 tasks; size per A-6 |
 
-### 14.2 Module dependency graph (full edge list, replaces §2's table when approved)
+### 14.2 Module dependency graph (full edge list; supersedes §2's table)
 
 | Module | May call |
 |---|---|
@@ -360,7 +360,7 @@ Inputs: `docs/spec/00-overview.md` v2.0 draft §10 (answers §10.8–§10.11), s
 - **audit** is a leaf every module with admin writes depends on; `record(entry, trx)` runs in the caller's transaction (spec 20 §2.2).
 - **`lib/realtime`** (the Redis emitter behind `IRealtimeEmitter`) is infrastructure, not a module edge, like `lib/events`.
 
-### 14.3 Lock order (replaces §3.1's line when approved)
+### 14.3 Lock order (supersedes §3.1's line)
 `return_requests` → `carts` (checkout only) → `orders` → `seller_orders` (by id) → `inventory_items` (by id) → `payments` → `coupons`.
 - Returns completion is the only path that starts at `return_requests`; nothing locks a return after an order (spec 18 UC-RE-7).
 - `coupons` is last both in checkout (`redeem`) and in the close step (`release`), so a hot coupon row is held for the shortest time and never waits on stock (spec 19 UC-PR-2).

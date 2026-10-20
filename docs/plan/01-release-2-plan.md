@@ -1,7 +1,7 @@
 # Implementation Plan (Release 2)
 
-Status: **v1.0 DRAFT (2026-10-20).** Open questions in §2.2 (R2-Q1…R2-Q7) must be answered before approval. R2 code starts **after P9** (staging deploy of R1), as decided on 2026-10-19 (CLAUDE.md §14.1l).
-Inputs: `CLAUDE.md`, `docs/spec/00-overview.md` v2.0 draft §10 (answers §10.8–§10.12), specs 01–20 (Release 2 sections), `docs/design/01-architecture.md` v2.0 draft §14, `docs/design/02-database.md` v2.0 draft §14. Release 1 plan: `00-implementation-plan.md`.
+Status: **v1.0 APPROVED (2026-10-20).** §2.2 R2-Q1…R2-Q7 answered (every recommendation accepted); R2-P0 is done (§2.1). R2 code starts **after P9** (staging deploy of R1), as decided on 2026-10-19 (CLAUDE.md §14.1l).
+Inputs: `CLAUDE.md`, `docs/spec/00-overview.md` v2.0 §10 (answers §10.8–§10.12), specs 01–20 (Release 2 sections), `docs/design/01-architecture.md` v2.0 draft §14, `docs/design/02-database.md` v2.0 draft §14. Release 1 plan: `00-implementation-plan.md`.
 
 ---
 
@@ -29,7 +29,7 @@ Dependencies between phases: P2 needs P1 only for `media.ready` pushes (P1 works
 
 ### 2.1 What is left in R2-P0
 1. **Approval of the drafts as a whole** (R2-Q1). Every open question is answered (overview §10.9–§10.12), but the documents are still drafts.
-2. **Folding:** each draft section moves into the numbered sections of its document with a version bump, the way R1 clarifications were folded (one commit, docs only):
+2. **Approval (done 2026-10-20):** every document below was approved at the version shown. The Release 2 parts were **not** moved into §1–§7: they stay as their own numbered sections (§8, §9, §14, …), because other specs, the design and this plan cite them by number dozens of times (e.g. "spec 09 §8.7"), and moving them would break those references. Each status line now says so:
 
 | Document | From | To |
 |---|---|---|
@@ -44,11 +44,13 @@ Dependencies between phases: P2 needs P1 only for `media.ready` pushes (P1 works
 
 3. CLAUDE.md: §1 stack table gains object storage (S3 / CloudFront, MinIO), Socket.IO and Web Push; §2.1 folder tree gains `realtime.ts`; §15 "Release 2" line points to the approved scope.
 
-### 2.2 Decisions to approve (R2-Q)
+### 2.2 Decisions (answered 2026-10-20)
+
+The user accepted every recommendation. The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.13.
 
 | # | Topic | Options / recommendation |
 |---|---|---|
-| R2-Q1 | Approving the R2 documents | **Rec:** approve every R2 draft as written with its answered questions, and fold them in one docs commit on `r2-specs` (§2.1) · or approve per document |
+| R2-Q1 | Approving the R2 documents | **Rec:** approve every R2 draft as written with its answered questions, in one docs commit on `r2-specs` (§2.1) · or approve per document |
 | R2-Q2 | When the audit module is built | **Rec:** in R2-P1, together with wiring every existing R1 admin write: from then on each new admin write ships audited, instead of retrofitting P1–P4 in P5 · or in R2-P5 as the overview phase list had it |
 | R2-Q3 | Branches | **Rec:** `r2-specs` merges into `main` after R2-Q1 (docs only); then one branch per phase from `main` (`r2-p1-media`, `r2-p2-realtime`, …), each merged after green CI and a staging deploy · or one long-lived `release-2` branch |
 | R2-Q4 | Event payload and enum changes during rolling deploys | **Rec:** before production go-live, a phase ships in one deploy (only staging runs it); after go-live, a change a running consumer can't parse (new enum value, OR-22 fields) is shipped in two deploys: consumers first, publisher second, and parse failures of known event types stay retries (not DLQ) during a deploy · or always two deploys |

@@ -1,7 +1,7 @@
 # Spec 02 — Domain Events Catalogue (Release 1)
 
 Status: **v1.1 APPROVED (2026-10-12).** v1.0 approved by the user 2026-10-08. v1.1: `seller_order.items_cancelled` carries `previousStatus` (E-8). It replaces the event list in `00-overview.md` §7 and the event names in `01-architecture.md` §3/§5 (differences in §5 below). Changes from now on need explicit approval and a version bump.
-**v1.2 DRAFT (2026-10-19):** §6 adds the Release 2 events of specs 03, 09, 13, 14, 15, 16; §6.4 (2026-10-20) those of specs 06, 17, 20; §6.5 those of specs 09 §8.7–8.8, 10, 11, 18, 19. Folded into §2–§3 when approved.
+**v1.2 APPROVED (2026-10-20):** §6 adds the Release 2 events of specs 03, 09, 13, 14, 15, 16; §6.4 (2026-10-20) those of specs 06, 17, 20; §6.5 those of specs 09 §8.7–8.8, 10, 11, 18, 19. Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Contracts live in `src/lib/events/contracts/` (architecture §2), one file per event: name constant + payload type + version.
 
 ---
@@ -226,7 +226,7 @@ last seller order terminal ─► order.closed ─► finance: platform delivery
 
 ---
 
-## 6. Release 2 events [v1.2 DRAFT, 2026-10-19]
+## 6. Release 2 events [v1.2, approved 2026-10-20]
 
 ### 6.1 New events
 

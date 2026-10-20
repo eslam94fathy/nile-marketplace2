@@ -1,6 +1,6 @@
 # Spec 15 — realtime
 
-Status: **v1.0 DRAFT (2026-10-19).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.3 (realtime rules), R-4 (web client), R-5, R-21. §7 RT-1…RT-7 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.3 (realtime rules), R-4 (web client), R-5, R-21. §7 RT-1…RT-7 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables

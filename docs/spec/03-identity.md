@@ -1,7 +1,7 @@
 # Spec 03 — identity
 
 Status: **v1.4 APPROVED (2026-10-13).** Approved by the user. v1.1: Phase 1 implementation clarifications (§7.1, I-1…I-9). v1.2: §4.11 index reference (DB-Q6). v1.3: `hashPassword` + `createPendingUser(passwordHash)` (§2, I-10, P2-Q2). v1.4: a suspension also blocks the access tokens already issued (I-11, Phase 8 security review F-4). Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-19):** §8 adds the Release 2 web-client token transport (R-21) and the `user.suspended` / `user.sessions_revoked` events (specs 13, 15). Folded into §1–§7 when approved.
+**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 web-client token transport (R-21) and the `user.suspended` / `user.sessions_revoked` events (specs 13, 15). Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -230,7 +230,7 @@ Choices made where the text above was silent, accepted by the user when Phase 1 
 
 ---
 
-## 8. Release 2: web token transport and session events [v2.0 DRAFT, 2026-10-19]
+## 8. Release 2: web token transport and session events [v2.0, approved 2026-10-20]
 
 ### 8.1 Refresh token in a cookie for the web client (R-21, CLAUDE.md §10 amendment)
 The access token is unchanged: the web client holds it **in memory only** and sends `Authorization: Bearer`. Only the refresh token's transport changes, and only when the client asks for it.

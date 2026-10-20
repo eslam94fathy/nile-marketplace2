@@ -1,7 +1,7 @@
 # Spec 06 — catalog
 
 Status: **v1.4 APPROVED (2026-10-10).** v1.0: approved with the Phase 3 clarifications in §7.1. v1.1: an active category always has an active parent (CA-13); attribute writes lock the whole subtree (CA-2). v1.2: product writes hold their category `FOR SHARE` (CA-2). v1.3: the product-detail cache holds neither visibility nor stock, so the consumers have nothing to invalidate (CA-8). v1.4: typo tolerance matches words, not the whole name (CA-14, P3-O1). Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-19):** §8 adds the Release 2 images (spec 14, R-2, R-3). §9 (2026-10-20) adds the rating projection (spec 17) and product cards (wishlist, spec 04 §8). Both are folded into §1–§7 when approved.
+**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 images (spec 14, R-2, R-3). §9 (2026-10-20) adds the rating projection (spec 17) and product cards (wishlist, spec 04 §8). Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -285,7 +285,7 @@ Consumed: `seller.approved`, `seller.suspended`, `inventory.stock_status_changed
 
 ---
 
-## 8. Release 2: product and category images [v2.0 DRAFT, 2026-10-19]
+## 8. Release 2: product and category images [v2.0, approved 2026-10-20]
 
 ### 8.1 Tables and limits
 - New table `product_images`: `product_id` (FK, `RESTRICT`), `media_id` (FK → `media_objects`, `RESTRICT`, unique), `variant_id` (nullable FK, `RESTRICT`: an image may be tied to one variant, R-2), `position` (0-based; `uq_product_images_product_id_position`, deferrable so a reorder can swap positions), `alt_text VARCHAR(200)` nullable (optional; the client falls back to the product name).
@@ -364,7 +364,7 @@ SellerProductDetailDto += { images: ProductImageDto[] }
 
 ---
 
-## 9. Release 2: product rating projection and product cards [v2.0 DRAFT, 2026-10-20]
+## 9. Release 2: product rating projection and product cards [v2.0, approved 2026-10-20]
 
 ### 9.1 Columns
 New columns on `products`: `rating_count INT NOT NULL` (`CHECK >= 0`), `rating_avg NUMERIC(3,2) NULL` (`CHECK` between 1 and 5; `null` = no reviews), `rating_version BIGINT NOT NULL`. The migration fills existing rows with `0`, `null`, `0`; product create passes them (no DB defaults, G13).

@@ -1,7 +1,7 @@
 # Spec 14 — media
 
-Status: **v1.0 DRAFT (2026-10-19).** Release 2. Inputs: `00-overview.md` v2.0 draft §10 (R-1, R-2, R-9), `01-api-conventions.md` v1.4 draft. §7 ME-1…ME-6 answered 2026-10-20 (every recommendation accepted).
-Conventions: `01-api-conventions.md`. Events: `02-events.md` (v1.2 draft adds the media events).
+Status: **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10 (R-1, R-2, R-9), `01-api-conventions.md` v1.4. §7 ME-1…ME-6 answered 2026-10-20 (every recommendation accepted).
+Conventions: `01-api-conventions.md`. Events: `02-events.md` (v1.2 adds the media events).
 
 ## 1. Scope & owned tables
 

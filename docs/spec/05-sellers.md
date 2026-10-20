@@ -1,7 +1,7 @@
 # Spec 05 — sellers
 
 Status: **v1.1 APPROVED (2026-10-10).** v1.0 (2026-10-09): approved with the Phase 2 clarifications in §7.1. v1.1: lock option on `getSellerByUserId` for catalog write guards (SE-4, P3-Q4). Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 seller rating projection (spec 17, R-11), a public seller page and the user-id lookup for notifications. Folded into §1–§7 when approved.
+**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 seller rating projection (spec 17, R-11), a public seller page and the user-id lookup for notifications. Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -157,7 +157,7 @@ Consumed: none.
 
 ---
 
-## 8. Release 2: seller rating and lookups [v2.0 DRAFT, 2026-10-20]
+## 8. Release 2: seller rating and lookups [v2.0, approved 2026-10-20]
 
 ### 8.1 Rating projection (R-11)
 - New columns on `sellers`: `rating_count INT NOT NULL` (`CHECK >= 0`), `rating_avg NUMERIC(3,2) NULL` (`CHECK` between 1 and 5; `null` = no reviews yet, the stated reason for a nullable column), `rating_version BIGINT NOT NULL`. The migration fills existing rows with `0`, `null`, `0` explicitly; there are no DB defaults (G13), and seller creation passes the three values.

@@ -1,7 +1,7 @@
 # Spec 08 — cart
 
 Status: **v1.0 APPROVED (2026-10-11).** Approved by the user with the Phase 4 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 line images (spec 06 §8.3) and the coupon preview (spec 19). Folded into §1–§7 when approved.
+**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 line images (spec 06 §8.3) and the coupon preview (spec 19). Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -104,7 +104,7 @@ None.
 
 ---
 
-## 8. Release 2: images and coupon preview [v2.0 DRAFT, 2026-10-20]
+## 8. Release 2: images and coupon preview [v2.0, approved 2026-10-20]
 
 - Cart lines gain `image: ImageDto | null` (the variant's image, `getVariantsForPurchase.imageMediaId`, spec 06 §8.3), one `media.getImages` call per response.
 - `POST /cart/coupon-preview` (auth: customer · rate: `coupon-preview`): body `code str(4..32)`. Cart reads its lines as for `GET /cart` (no lock: a preview changes nothing), leaves out issue lines (P4-Q7), and calls `promotions.quote` (spec 19 UC-PR-1). → `200 CouponQuoteDto`. An empty cart (or only issue lines) → `422 CART_EMPTY`. Coupon errors as in spec 19 §6.

@@ -1,7 +1,7 @@
 # Spec 01 — API Conventions (shared by all module specs)
 
 Status: **v1.3 APPROVED (2026-10-10).** Approved by the user. v1.1: passwords are never trimmed; `opt` implemented by a shared `Optional()` decorator (Phase 1). v1.2: `GOVERNORATE_NOT_FOUND` is a common code (§6, P2-Q7). v1.3: an unmapped restrict violation (`23001`) is a `CONFLICT` too (§6, P3-Q11). Changes from now on need explicit approval and a version bump.
-**v1.4 DRAFT (2026-10-19):** §9 adds the Release 2 shared pieces (image shape, new rate-limit classes, realtime envelope, web client). Folded into §1–§8 when approved.
+**v1.4 APPROVED (2026-10-20):** §9 adds the Release 2 shared pieces (image shape, new rate-limit classes, realtime envelope, web client). Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Inputs: `CLAUDE.md` §7–§10, `docs/design/01-architecture.md` v1.0, `docs/design/02-database.md` v1.0.
 
 Module specs: `03-identity.md` · `04-customers.md` · `05-sellers.md` · `06-catalog.md` · `07-inventory.md` · `08-cart.md` · `09-ordering.md` · `10-payments.md` · `11-delivery.md` · `12-finance.md` · `13-notifications.md`. Release 2 (drafts): `14-media.md` · `15-realtime.md` · `16-support.md` · `17-reviews.md` · `18-returns.md` · `19-promotions.md` · `20-backoffice.md`. Events: `02-events.md`.
@@ -127,7 +127,7 @@ Module error codes are **globally unique** and listed in each module spec. A cod
 
 ---
 
-## 9. Release 2 additions [v1.4 DRAFT, 2026-10-19]
+## 9. Release 2 additions [v1.4, approved 2026-10-20]
 
 ### 9.1 Shared image shape
 Every response that shows an image uses the media module's `ImageDto` (spec 14 §2). Owning modules add their own fields, such as `position` or `altText`.

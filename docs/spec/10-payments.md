@@ -1,7 +1,7 @@
 # Spec 10 — payments
 
 Status: **v1.4 APPROVED (2026-10-13).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: what Kashier's test environment showed (PA-11…PA-17: no abandon, one open session per order, status mapping, config). v1.2: the worker holds no Kashier secret (PA-18); the webhook answers in the standard envelope (PA-19). v1.3: flagged refunds never exceed what was collected (PA-20). v1.4: the signed fields must cover what we read (PA-21, Phase 8 security review F-1). Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 automated Kashier refunds and COD customer refunds (R-15, spec 18). Folded into §1–§7 when approved. §8.7 PA-22…PA-26 answered 2026-10-20.
+**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 automated Kashier refunds and COD customer refunds (R-15, spec 18). Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.7 PA-22…PA-26 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -137,7 +137,7 @@ Consumed: `seller_order.items_cancelled`, `seller_order.cancelled`, `seller_orde
 
 ---
 
-## 8. Release 2: automated refunds and customer refunds [v2.0 DRAFT, 2026-10-20]
+## 8. Release 2: automated refunds and customer refunds [v2.0, approved 2026-10-20]
 
 ### 8.1 What changes
 - **Every Kashier refund flag is refunded automatically** through Kashier's refund API (R-15), not only returns: cancellations, item cancellations, failed deliveries, late payments, amount mismatches, the all-cancelled fee (PA-22). The admin "record manual refund" flow stays as the fallback.

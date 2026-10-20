@@ -1,7 +1,7 @@
 # Spec 04 — customers
 
 Status: **v1.0 APPROVED (2026-10-09).** Approved by the user with the Phase 2 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 wishlist (R-12), reviewer display names (spec 17 RV-6) and the user-id lookup for notifications. Folded into §1–§7 when approved. §8.6 WL-1…WL-3 answered 2026-10-20.
+**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 wishlist (R-12), reviewer display names (spec 17 RV-6) and the user-id lookup for notifications. Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.6 WL-1…WL-3 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -123,7 +123,7 @@ None specific to this module.
 
 ---
 
-## 8. Release 2: wishlist and lookups [v2.0 DRAFT, 2026-10-20]
+## 8. Release 2: wishlist and lookups [v2.0, approved 2026-10-20]
 
 ### 8.1 Scope and table
 - New table `wishlist_items`: `customer_id` (FK `RESTRICT`), `product_id` (FK → `products`, `RESTRICT`; products are only ever soft-deleted), `created_at TIMESTAMPTZ(3)`. `uq_wishlist_items_customer_id_product_id`. The list index is `(customer_id, created_at DESC, id DESC)`.

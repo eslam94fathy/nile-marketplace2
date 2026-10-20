@@ -1,7 +1,7 @@
 # Spec 12 — finance
 
 Status: **v1.0 APPROVED (2026-10-13)**, with the Phase 7 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 holding period (Q-25, R-16), coupon funding (R-17) and return / refund entries (spec 18). Folded into §1–§7 when approved. §8.7 FI-12…FI-15 answered 2026-10-20.
+**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 holding period (Q-25, R-16), coupon funding (R-17) and return / refund entries (spec 18). Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.7 FI-12…FI-15 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -144,7 +144,7 @@ Consumed: `seller_order.delivered`, `order.closed` (`finance.ledger`).
 
 ---
 
-## 8. Release 2: holding period, coupons, returns [v2.0 DRAFT, 2026-10-20]
+## 8. Release 2: holding period, coupons, returns [v2.0, approved 2026-10-20]
 
 ### 8.1 New accounts and table
 | `account_type` | owner | Meaning of a positive balance | May go negative? |
