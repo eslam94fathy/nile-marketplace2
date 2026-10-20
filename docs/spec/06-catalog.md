@@ -1,7 +1,7 @@
 # Spec 06 — catalog
 
 Status: **v1.4 APPROVED (2026-10-10).** v1.0: approved with the Phase 3 clarifications in §7.1. v1.1: an active category always has an active parent (CA-13); attribute writes lock the whole subtree (CA-2). v1.2: product writes hold their category `FOR SHARE` (CA-2). v1.3: the product-detail cache holds neither visibility nor stock, so the consumers have nothing to invalidate (CA-8). v1.4: typo tolerance matches words, not the whole name (CA-14, P3-O1). Changes from now on need explicit approval and a version bump.
-**v2.0 DRAFT (2026-10-19):** §8 adds the Release 2 images (spec 14, R-2, R-3). It is folded into §1–§7 when approved. The rating projection (spec 17) follows in the same version.
+**v2.0 DRAFT (2026-10-19):** §8 adds the Release 2 images (spec 14, R-2, R-3). §9 (2026-10-20) adds the rating projection (spec 17) and product cards (wishlist, spec 04 §8). Both are folded into §1–§7 when approved.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -361,3 +361,32 @@ SellerProductDetailDto += { images: ProductImageDto[] }
 | `PRODUCT_IMAGE_NOT_FOUND` | 404 | Missing, or the image of another product or seller |
 | `PRODUCT_IMAGE_LIMIT_REACHED` | 422 | A 9th image |
 | `PRODUCT_IMAGE_ORDER_INVALID` | 422 | The reorder list isn't exactly the product's image ids |
+
+---
+
+## 9. Release 2: product rating projection and product cards [v2.0 DRAFT, 2026-10-20]
+
+### 9.1 Columns
+New columns on `products`: `rating_count INT NOT NULL` (`CHECK >= 0`), `rating_avg NUMERIC(3,2) NULL` (`CHECK` between 1 and 5; `null` = no reviews), `rating_version BIGINT NOT NULL`. The migration fills existing rows with `0`, `null`, `0`; product create passes them (no DB defaults, G13).
+
+### 9.2 Projection (consumer `catalog.listing-projections` ← `review.rating_changed`)
+`UPDATE products SET rating_count = ?, rating_avg = ?, rating_version = ?, updated_at = now() WHERE id = ? AND rating_version < ?`, with `rating_avg` computed by the spec 17 §1.2 rule. 0 rows → an older or duplicate event, ack. No product lock is taken first: one conditional update needs none, and it touches nothing CA-2 protects. The rating sits on the product row, which is read fresh on every request, so no cache is deleted (CA-8 still holds).
+
+### 9.3 Reads
+- `ProductListItemDto` and `ProductDetailDto` gain `rating: { avg: string | null; count: number }`. `ProductDetailDto.seller` gains the seller's `ratingAvg`, `ratingCount` (from `sellers.getSummaries`, spec 05 §8.2).
+- `GET /products` whitelist addition:
+
+| apiField | column | type | ops | sort |
+|---|---|---|---|---|
+| rating | `rating_avg` | number (1..5) | `gte` | yes, on `COALESCE(rating_avg, 0)` then `id` (unrated products last on `-rating`) |
+
+  The sort needs an index on `(COALESCE(rating_avg, 0), id)` over publicly visible products (database v2.0, with the same partial predicate as the other public list indexes).
+- New public method `getProductCards(productIds) → Map<productId, ProductCardDto>` (customers' wishlist, reviews' lists): one batched read of the product rows plus one primary-image read (§8.5). Deleted and hidden products are returned too, with `available: false`, so callers can show what the customer saved.
+```ts
+interface ProductCardDto {
+  id: string; slug: string; name: string; minPrice: string | null; maxPrice: string | null;
+  inStock: boolean; available: boolean;          // publicly visible right now
+  primaryImage: ImageDto | null; rating: { avg: string | null; count: number };
+}
+```
+- The review endpoints' `PRODUCT_NOT_FOUND` (spec 17 §4.1) uses the existing public visibility rule, through a new `isPubliclyVisible(productId) → boolean` (`EXISTS`, G22).

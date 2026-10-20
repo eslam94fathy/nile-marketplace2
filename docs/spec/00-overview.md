@@ -511,3 +511,38 @@ The user accepted every recommendation R-1…R-19 except R-4, answered as "a web
 | R-19 | Every admin write + seed-admin runs audited; kept 2 years |
 | R-20 | Standard Web Push (VAPID keys, `web-push` library); a future mobile app adds FCM behind the same `pkg/push` interface |
 | R-21 | Web: access token in memory only; refresh token in an `HttpOnly; Secure; SameSite=Strict` cookie scoped to `/api/v1/auth`, used by refresh and logout, which also require a custom header against CSRF; body transport kept for a future mobile app (spec 03 and CLAUDE.md §10 / O1 change) |
+
+### 10.9 Answered log: Release 2 spec questions (2026-10-20)
+
+The user accepted every recommendation in the open-question tables of specs 03 §8.3, 13 §8.7, 14 §7, 15 §7 and 16 §7.
+
+| Q | Answer |
+|---|---|
+| IW-1 | Web app on `app.<domain>`, api on `api.<domain>` (same registrable domain, `SameSite=Strict` works) |
+| IW-2 | The web client serialises refreshes across tabs (Web Locks + BroadcastChannel); no server grace window |
+| IW-3 | Opt-in header `X-Nile-Client: web`, also the CSRF guard |
+| NO-6 | Push through a second outbox event and queue `notifications.push` (retries, DLQ) |
+| NO-7 | In-app notifications kept 90 days |
+| NO-8 | Password reset and suspension delete all of the user's push subscriptions; change-password keeps them |
+| NO-9 | New tickets reach admins through the socket only; the assigned admin gets in-app + push for user messages |
+| NO-10 | Agents use the web app and get `shipment_assigned` push with `high` urgency |
+| NO-11 | `promotions` category created now, off by default, no sender in R2 |
+| ME-1 | Private media under `private/`, never on the CDN, presigned GET URLs (10 min) for authorised viewers only |
+| ME-2 | Any admin may claim any admin's `category_image` upload |
+| ME-3 | `complete` answers `202` + `MediaDto`; the client polls or waits for the socket push |
+| ME-4 | The FK `RESTRICT` decides cleanup: still referenced → kept (`retained_at`) |
+| ME-5 | Orphan objects after a failed delete accepted, `warn` log |
+| ME-6 | New rate-limit class `upload`, keyed by user id (30 per 10 min proposed) |
+| RT-1 | Gateway in its own entrypoint and ECS service behind the same ALB (`/realtime*`, idle timeout 120 s), 2 × 0.25 vCPU to start |
+| RT-2 | Disconnect at token `exp`; the client refreshes through REST and reconnects |
+| RT-3 | Fan-out with Redis down: drop with `warn` |
+| RT-4 | Kashier return page waits for `payment.updated` (~30 s), fallback poll every 5 s |
+| RT-5 | 5 signals / s per socket, no per-user connection cap; revisit after the R2-P8 socket load test |
+| RT-6 | Hand-written `docs/realtime.md`, payload types exported from `src/app/realtime/messages.ts` |
+| RT-7 | Classic pub/sub Redis adapter; emitter compatibility verified in R2-P2 |
+| SU-1 | `Idempotency-Key` required on ticket open and message post (replaces the "client message id") |
+| SU-2 | The first replying admin takes an unassigned ticket |
+| SU-3 | Users see every admin as "Nile Support"; admins see names |
+| SU-4 | Open-ticket limit is a soft check; a small overshoot is accepted |
+| SU-5 | Assign, resolve and close are audited; messages and notes are not |
+| SU-6 | Tickets kept indefinitely in R2 |

@@ -1,6 +1,6 @@
 # Spec 16 — support
 
-Status: **v1.0 DRAFT (2026-10-19).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.4 (support tickets), R-8, R-9, R-19. Open questions in §7 (SU-1…SU-6) must be answered before approval.
+Status: **v1.0 DRAFT (2026-10-19).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.4 (support tickets), R-8, R-9, R-19. §7 SU-1…SU-6 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -180,7 +180,9 @@ Consumed: none.
 Log event codes: `SUPPORT_SLA_BREACHED` (warn).
 New rate-limit class `support-message`: user id, `RATE_LIMIT_SUPPORT_MESSAGE_POINTS` / `_DURATION_SECONDS` (proposed 30 per minute).
 
-## 7. Open questions
+## 7. Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.8.
 
 | # | Topic | Options / recommendation |
 |---|---|---|

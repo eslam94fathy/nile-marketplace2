@@ -258,7 +258,9 @@ Both are written to the outbox in the same transaction as the change. The I-11 R
 | `user.suspended` | `setUserStatus(…, 'suspended')` and the admin suspend endpoint | `{ userId, role, suspendedAt }` | realtime (disconnect sockets, spec 15), notifications (delete push subscriptions, spec 13 NO-8) |
 | `user.sessions_revoked` | Password reset (UC-ID-6), which revokes every session | `{ userId, reason: 'password_reset', revokedAt }` | notifications (delete push subscriptions) |
 
-### 8.3 Open questions
+### 8.3 Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.8.
 
 | # | Topic | Options / recommendation |
 |---|---|---|

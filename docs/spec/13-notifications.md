@@ -164,7 +164,9 @@ Consumed: §8.2 events (queue `notifications.user-events`), `notification.push_r
   - **worker:** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (secret), `VAPID_SUBJECT` (`mailto:`), `PUSH_HTTP_TIMEOUT_MS`, `PUSH_ENDPOINT_HOST_ALLOWLIST` (re-checked before sending), `NOTIFICATION_RETENTION_DAYS`, `JOB_NOTIFICATION_RETENTION_INTERVAL_MS`.
   - Rotating the VAPID keys invalidates every subscription; the runbook covers it.
 
-### 8.7 Open questions
+### 8.7 Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.8.
 
 | # | Topic | Options / recommendation |
 |---|---|---|
@@ -174,3 +176,13 @@ Consumed: §8.2 events (queue `notifications.user-events`), `notification.push_r
 | NO-9 | Admin notifications | **Rec:** new tickets reach admins through the socket (`admins` room) only; an assigned admin gets in-app + push for user messages; no rows fanned out to every admin · or an in-app row for every admin per new ticket |
 | NO-10 | Delivery agents | **Rec:** agents use the same web app and get `shipment_assigned` with `high` urgency · or no push for agents in R2 |
 | NO-11 | `promotions` category | **Rec:** created now (preferences exist, off by default) with no sender in R2; campaign sending is a later release · or leave the category out until there is a sender |
+
+### 8.8 Additions from specs 17 and 20 [2026-10-20]
+Rows added to the §8.2 mapping, subject to RV-8 and BO-8:
+
+| Event | Recipient | Category | Type | Text (title · body) |
+|---|---|---|---|---|
+| `review.created` | the seller | orders | `review_received` | "New review" · "One of your products has a new review." |
+| `review.replied` | the reviewer | orders | `review_replied` | "Seller replied" · "The seller replied to your review." |
+| `product.blocked` | the seller | orders | `product_blocked` | "Product blocked" · "A product was blocked by the platform." |
+| `seller_order.cancelled` (`admin_cancelled`) | customer and seller | orders | `seller_order_cancelled` | unchanged §8.2 row; the seller now also receives it because an admin, not the seller, cancelled |

@@ -1,7 +1,7 @@
 # Spec 02 — Domain Events Catalogue (Release 1)
 
 Status: **v1.1 APPROVED (2026-10-12).** v1.0 approved by the user 2026-10-08. v1.1: `seller_order.items_cancelled` carries `previousStatus` (E-8). It replaces the event list in `00-overview.md` §7 and the event names in `01-architecture.md` §3/§5 (differences in §5 below). Changes from now on need explicit approval and a version bump.
-**v1.2 DRAFT (2026-10-19):** §6 adds the Release 2 events of specs 03, 09, 13, 14, 15, 16 (later R2 specs add theirs). Folded into §2–§3 when approved.
+**v1.2 DRAFT (2026-10-19):** §6 adds the Release 2 events of specs 03, 09, 13, 14, 15, 16; §6.4 (2026-10-20) those of specs 06, 17, 20 (specs 18, 19 add theirs). Folded into §2–§3 when approved.
 Contracts live in `src/lib/events/contracts/` (architecture §2), one file per event: name constant + payload type + version.
 
 ---
@@ -296,3 +296,31 @@ New queues:
 `order.placed` and the `seller_order.*` / `shipment.*` payloads don't always name the user to notify. For example, `order.placed` lists `sellerOrderIds` but not their sellers, and the shipment events carry no customer.
 - Realtime and notifications resolve recipients through a new batched ordering method, `getNotificationParties(sellerOrderIds | orderIds)` → `{ orderId, orderNumber, customerId, sellerOrders: { sellerOrderId, sellerId, status }[] }` (spec 09 v2.0), plus the profile → user id lookups of customers, sellers and delivery.
 - This follows the §1 rule: re-read, don't trust the payload, so out-of-order events still show the current status.
+
+### 6.4 Reviews, product block, admin cancellation [2026-10-20]
+
+| Event | Publisher | Aggregate | Consumers (queue) |
+|---|---|---|---|
+| `review.created` | reviews | product_review | notifications (`notifications.user-events`, RV-8) |
+| `review.replied` | reviews | product_review | notifications (RV-8) |
+| `review.rating_changed` | reviews | product (rating stats) | catalog (`catalog.listing-projections`), sellers (`sellers.rating-projection`, new) |
+| `product.blocked` | catalog | product | notifications (BO-8) |
+| `product.unblocked` | catalog | product | notifications (BO-8) |
+
+```ts
+// reviews
+// review.created
+{ reviewId: string; productId: string; sellerId: string; customerId: string; rating: number }
+// review.replied
+{ reviewId: string; productId: string; customerId: string }
+// review.rating_changed: absolute aggregates + a version per subject (spec 17 §1.2); consumers apply only newer versions
+{ product: { productId: string; ratingCount: number; ratingSum: number; version: number };
+  seller:  { sellerId: string;  ratingCount: number; ratingSum: number; version: number } }
+
+// catalog
+// product.blocked / product.unblocked
+{ productId: string; sellerId: string; at: string }
+```
+
+- `seller_order.cancelled.reason` gains the value `admin_cancelled` (spec 09 §8.4). Additive, still version 1. Payments and delivery treat it exactly like `seller_cancelled`; their payload parsers must accept the new value before ordering ships it (R2 deploy order: consumers first).
+- New queue `sellers.rating-projection` (binding `review.rating_changed`). `catalog.listing-projections` adds the binding `review.rating_changed`.

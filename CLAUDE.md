@@ -284,6 +284,9 @@ P8-Q1 the stack reaches `main` through one PR `p7-finance → main` with green C
 ### 14.1l Decided (2026-10-19, Release 2 scope)
 R2 scope: images (S3 + CloudFront, MinIO locally), realtime (Socket.IO), support tickets (customer / seller → admin only), push + notification centre, reviews + wishlist, back-office + audit, returns + refunds + holding period, coupons · R2 specs now, P9 when the AWS accounts arrive, R2 code after P9 · branch `r2-specs` stacked on `p8-hardening` · R-1…R-19 recommendations accepted, R-4 = the client is a web app for now (mobile later) · R-20 standard Web Push (VAPID, `web-push`), FCM later behind the same `pkg/push` interface · R-21 web refresh token in an `HttpOnly` cookie, access token in memory (amends §10 and O1) (`docs/spec/00-overview.md` v2.0 draft §10.8)
 
+### 14.1m Decided (2026-10-20, Release 2 spec questions)
+Every recommendation accepted (`docs/spec/00-overview.md` §10.9): IW-1…IW-3 web on `app.<domain>`, api on `api.<domain>`, client-side refresh serialisation, opt-in header `X-Nile-Client: web` (spec 03 §8) · NO-6…NO-11 push via outbox + queue `notifications.push`, in-app kept 90 days, reset / suspension drop push subscriptions, admins get new tickets by socket only, agents get push, `promotions` off with no sender (spec 13 §8) · ME-1…ME-6 private media by presigned GET only, any admin claims category images, `complete` → `202`, FK `RESTRICT` decides cleanup, orphan objects accepted, rate class `upload` (spec 14) · RT-1…RT-7 own realtime ECS service, disconnect at `exp`, drop on Redis down, Kashier return waits for `payment.updated`, 5 signals / s, hand-written `docs/realtime.md`, classic Redis adapter (spec 15) · SU-1…SU-6 `Idempotency-Key` on ticket and message posts, first replying admin assigned, admins shown as "Nile Support", soft open-ticket limit, assign / resolve / close audited, tickets kept (spec 16)
+
 ### 14.2 Still open
 
 | # | Topic | Options / recommendation |
@@ -291,6 +294,8 @@ R2 scope: images (S3 + CloudFront, MinIO locally), realtime (Socket.IO), support
 | P9-O1 | Search cost (P8 load baseline L-2: 93 % of database time at 100 req/s) | Re-measure on staging at production sizes; if still dominant: two-phase search (full-text first, trigram matches only when it returns less than a page) · rank only the best N · a short Redis cache of popular search pages. Spec 06 change. See `docs/perf/p8-load-baseline.md` |
 | P9-O2 | Api capacity per task (L-3: one Node process saturates at ~150–180 req/s on a laptop core) | Measure req/s per task on staging; likely 1 vCPU tasks or a higher autoscaling max than 4 (P8-Q7); cost estimate follows |
 | P9-O3 | Overload status (L-5: pool-acquire timeouts answer 500) | Map them to `503 SERVICE_UNAVAILABLE` + `Retry-After` (error handler, CLAUDE.md §9.1) · or keep 500 |
+
+| R2-O1 | Release 2 spec questions (2026-10-20 batch) | RV-1…RV-8 (spec 17), WL-1…WL-3 (spec 04 §8.6), OR-17…OR-19 (spec 09 §8.6), BO-1…BO-8 (spec 20). Each table holds the options and a recommendation |
 
 New ones go here as rows of this table.
 

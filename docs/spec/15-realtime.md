@@ -1,6 +1,6 @@
 # Spec 15 — realtime
 
-Status: **v1.0 DRAFT (2026-10-19).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.3 (realtime rules), R-4 (web client), R-5, R-21. Open questions in §7 (RT-1…RT-7) must be answered before approval.
+Status: **v1.0 DRAFT (2026-10-19).** Release 2. Inputs: `00-overview.md` v2.0 draft §10.3 (realtime rules), R-4 (web client), R-5, R-21. §7 RT-1…RT-7 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -121,7 +121,9 @@ Config (realtime process, own env schema, no defaults):
 
 The worker additionally needs `REDIS_URL` for the emitter. This reverses spec 06 CA-8, under which the worker had no Redis (architecture v2.0).
 
-## 7. Open questions
+## 7. Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.8.
 
 | # | Topic | Options / recommendation |
 |---|---|---|

@@ -1,6 +1,7 @@
 # Spec 09 — ordering
 
 Status: **v1.5 APPROVED (2026-10-13).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: `amountCancelled` when the last units are cancelled (OR-12); what the order totals count (OR-13). v1.2: shipment events that overtake their predecessor are retried (OR-14). v1.3: the expiry job abandons nothing and waits on a payment in flight (OR-6 as amended by spec 10 PA-11, PA-13). v1.4: `seller_order.items_cancelled` carries `previousStatus` (OR-15). v1.5: one open Kashier payment per customer (OR-16, Phase 8 security review F-2). Changes from now on need explicit approval and a version bump.
+**v2.0 DRAFT (2026-10-20):** §8 adds the Release 2 pieces other R2 specs rely on: a public API (ordering is now called by other modules), `seller_order.accepted`, the order-item image snapshot and admin cancellation (S-9 for R2). Returns (spec 18) and coupons (spec 19) add their parts in the same version. Folded into §1–§7 when approved. Open questions in §8.6 (OR-17…OR-19).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -257,3 +258,64 @@ Consumed: `payment.paid`, `payment.failed` (`ordering.payment-updates`); `shipme
 | OR-14 | The `ordering.shipment-updates` consumer tells a **stale** event from an **early** one. Each shipment event has the statuses it applies from and the statuses that mean an earlier event of the same shipment isn't applied yet (`picked_up` early while placed / accepted; `out_for_delivery` while ready_for_pickup / out_for_delivery; `attempt_failed` and `delivered` while ready_for_pickup / picked_up / delivery_failed). An early event throws and is retried by the broker with backoff (DLQ + `error` log if it never applies); a stale one (seller order cancelled, or already past it) is a no-op with a `warn` log `SHIPMENT_EVENT_IGNORED` (Phase 5 step 7, v1.2) | §3.6, architecture §3.2 |
 | OR-15 | `seller_order.items_cancelled` carries `previousStatus`: the seller order's status when the items were cancelled (unchanged by it), so delivery can tell a cancellation made while `ready_for_pickup` (shipment exists or is coming) from an earlier one (spec 02 v1.1 E-8, spec 11 DE-15; Phase 6 step 6, v1.4) | UC-OR-4 |
 | OR-16 | At most one open payment per customer: a Kashier checkout while the customer has an order in `pending_payment` answers `409 ORDER_PAYMENT_PENDING` with that order's id in `details[0].value`, until it is paid, expires or fails. Checked after the cart lock, which serialises a customer's checkouts. COD checkouts are not affected (they never wait for payment). Stops one customer holding stock with repeated unpaid Kashier checkouts (Phase 8 security review F-2, v1.5) | §3.1 |
+
+---
+
+## 8. Release 2: public API, acceptance event, image snapshot, admin cancel [v2.0 DRAFT, 2026-10-20]
+
+### 8.1 Public API (`index.ts`)
+R1 had none (§2). R2 modules read ordering, and ordering still calls none of them, so the graph stays acyclic: realtime, notifications, support, reviews and backoffice depend on ordering; ordering depends on none of them (architecture v2.0).
+
+| Method | Caller | Notes |
+|---|---|---|
+| `getNotificationParties({ orderIds?, sellerOrderIds? }) → NotificationParty[]` | realtime, notifications (spec 02 §6.3) | `{ orderId, orderNumber, customerId, status, sellerOrders: { sellerOrderId, sellerId, status }[] }`. Batched, current state (re-read, never trust the payload) |
+| `getCustomerOrderLink(customerId, orderId, sellerOrderId?) → { orderId, orderNumber, sellerOrderId } \| null` | support (spec 16 UC-SU-1) | `null` when missing, another customer's, or the seller order isn't part of the order |
+| `getSellerOrderLink(sellerId, sellerOrderId) → { orderId, orderNumber, sellerOrderId } \| null` | support | `null` when missing or another seller's; `pending_payment` seller orders count as missing (§4.2) |
+| `getOrderNumbers(orderIds) → Map<orderId, orderNumber>` | support (ticket lists) | Batched |
+| `getReviewableItem(customerId, orderItemId) → ReviewableItem \| null` | reviews (spec 17 UC-RV-1) | `{ orderItemId, orderId, productId, variantId, sellerId, deliveredAt, openQuantity }`. `null` when not the customer's, or its seller order isn't `delivered` |
+| `listDeliveredItems(customerId, { deliveredAfter, cursor, limit }) → page of ReviewableItem & { orderNumber, productName, attributes }` | reviews (`GET /me/reviewable-items`) | Items with `openQuantity > 0` of `delivered` seller orders, `delivered_at >= deliveredAfter`, newest delivery first (cursor `delivered_at, id`) |
+| `getDashboardStats(range) → OrderingStats` | backoffice (spec 20 §3.2) | Read-only aggregates, defined in spec 20 |
+
+All of them are reads without locks and accept no `trx`; none of the callers needs one.
+
+### 8.2 `seller_order.accepted`
+UC-OR-3 (accept) writes the outbox event `seller_order.accepted` (payload in spec 02 §6.2) in the same transaction. Nothing consumes it for money or stock; realtime and notifications use it.
+
+### 8.3 Order-item image snapshot
+- New column `order_items.image_media_id` (nullable FK → `media_objects`, `RESTRICT`; `null` = the variant had no image at checkout, the stated reason for a nullable column). Checkout copies `catalog.getVariantsForPurchase(…).imageMediaId` (spec 06 §8.3).
+- The snapshot does not `claim` the media: catalog owns the claim. When the seller later removes the image, catalog releases it, and the media cleanup job finds the order-item FK and keeps the objects (`retained_at`, spec 14 UC-ME-4, ME-4). So order history keeps its picture.
+- `OrderItemDto` gains `image: ImageDto | null`, loaded with one `media.getImages` call per response.
+
+### 8.4 Admin cancellation (S-9, answered for R2 in overview §10.4)
+
+#### UC-OR-9 Admin cancels a seller order
+- From `placed`, `accepted`, `ready_for_pickup` (the seller's own window, Q-31). `pending_payment` → `409 SELLER_ORDER_NOT_CANCELLABLE` (the expiry job handles unpaid orders); `picked_up` or later → the same error.
+- The same effects as UC-OR-4, in the same lock order (§1.2): `cancelled` with the new `cancel_reason = admin_cancelled` (the `CHECK` gains the value), `cancelled_by_user_id` = the admin, `inventory.release` of the open quantities, a history row with actor `admin` and the reason, outbox `seller_order.cancelled`, order re-derived and closed if terminal (§3.9).
+- Money follows from `seller_order.cancelled` exactly as for a seller cancel: payments flags a Kashier refund (spec 10), delivery cancels the shipment (spec 11 §3.5). Nothing new in those modules.
+- The audit row (spec 20) is written in the same transaction.
+
+#### UC-OR-10 Admin cancels a whole order
+- Lock the order, then every seller order (§1.2). Every seller order that is not terminal must be cancellable (UC-OR-9) → else `409 ORDER_NOT_CANCELLABLE` with the blocking seller-order ids in `details`, and nothing is cancelled (OR-17).
+- Each cancellable seller order is cancelled as in UC-OR-9, in id order, in the same transaction; one `seller_order.cancelled` per seller order, then the close step.
+- An order with no open seller order → `409 ORDER_NOT_CANCELLABLE`.
+
+#### Endpoints   auth: admin · rate: general · idem: **required**
+| Endpoint | Body | Success | Errors |
+|---|---|---|---|
+| `POST /admin/seller-orders/:sellerOrderId/cancel` | `reason str(3..500)` (OR-18) | `200` admin order detail (§4.3) | `SELLER_ORDER_NOT_FOUND` 404, `SELLER_ORDER_NOT_CANCELLABLE` 409 |
+| `POST /admin/orders/:orderId/cancel` | `reason str(3..500)` | `200` admin order detail | `ORDER_NOT_FOUND` 404, `ORDER_NOT_CANCELLABLE` 409 |
+
+The customer sees the seller order as cancelled with `cancelReason = admin_cancelled`; the admin's free-text reason is shown to admins only (OR-19). The seller is notified (spec 13 §8.2 "not cancelled by the seller").
+
+New error code: `ORDER_NOT_CANCELLABLE` 409 (whole-order admin cancel with a seller order past `ready_for_pickup`, or nothing open).
+
+### 8.5 Following parts of v2.0
+Returns (spec 18: `returned_quantity` per item, return-aware totals) and coupons (spec 19: discount snapshots per seller order and item) extend this section when those specs are written.
+
+### 8.6 Open questions
+
+| # | Topic | Options / recommendation |
+|---|---|---|
+| OR-17 | Admin whole-order cancel when one seller order is already picked up | **Rec:** all or nothing: `409 ORDER_NOT_CANCELLABLE` naming the blocking seller orders; the admin cancels the others one by one if that is what they want · or cancel what can be cancelled and report the rest |
+| OR-18 | Admin cancel reason | **Rec:** required free text (3..500), stored in the history and the audit log · or an enum of reasons plus an optional note |
+| OR-19 | What the customer sees | **Rec:** `cancelReason = admin_cancelled` only, the free text stays internal (it may mention fraud checks or the seller) · or show the admin's text to the customer |
