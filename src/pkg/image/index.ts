@@ -8,4 +8,5 @@ export {
   type ProcessedImage,
   type ProcessedOutput,
   type ProcessImageOptions,
+  WEBP_MAX_DIMENSION,
 } from './image-processor';

@@ -11,6 +11,7 @@ import {
   workerEnvSchema,
 } from '../../src/lib/config';
 import { testEnvInput } from './test-env';
+import { createTestBucket, TEST_STORAGE_REGION } from './test-storage';
 
 const RABBIT_AUTH = `Basic ${Buffer.from('guest:guest').toString('base64')}`;
 const TEMPLATE_DB = 'nile_template';
@@ -58,7 +59,7 @@ async function createDatabaseFromTemplate(database: string): Promise<void> {
 
 /**
  * Isolated resources for ONE test file (P0-Q9): its own database (cloned from the migrated template),
- * Redis key prefix and RabbitMQ vhost. Returns a complete, validated env pointing at them.
+ * Redis key prefix, RabbitMQ vhost and MinIO bucket. Returns a complete, validated env pointing at them.
  */
 export async function createTestResources(overrides: Record<string, string> = {}): Promise<TestResources> {
   const id = randomUUID().replace(/-/g, '').slice(0, 16);
@@ -68,6 +69,8 @@ export async function createTestResources(overrides: Record<string, string> = {}
   await createDatabaseFromTemplate(database);
   await rabbitApi('PUT', `/vhosts/${vhost}`);
   await rabbitApi('PUT', `/permissions/${vhost}/guest`, { configure: '.*', write: '.*', read: '.*' });
+  const bucket = await createTestBucket();
+  const storageEndpoint = inject('storageEndpoint');
 
   const databaseUrl = new URL(inject('pgAdminUrl'));
   databaseUrl.pathname = `/${database}`;
@@ -79,6 +82,13 @@ export async function createTestResources(overrides: Record<string, string> = {}
     REDIS_URL: inject('redisUrl'),
     REDIS_KEY_PREFIX: `t:${id}:`,
     RABBITMQ_URL: amqpUrl.toString(),
+    STORAGE_BUCKET: bucket.bucket,
+    STORAGE_REGION: TEST_STORAGE_REGION,
+    STORAGE_ENDPOINT: storageEndpoint,
+    STORAGE_PUBLIC_ENDPOINT: storageEndpoint,
+    STORAGE_ACCESS_KEY_ID: inject('storageAccessKeyId'),
+    STORAGE_SECRET_ACCESS_KEY: inject('storageSecretAccessKey'),
+    MEDIA_PUBLIC_BASE_URL: `${storageEndpoint}/${bucket.bucket}`,
     ...overrides,
   });
 
@@ -96,6 +106,7 @@ export async function createTestResources(overrides: Record<string, string> = {}
         await admin.destroy();
       }
       await rabbitApi('DELETE', `/vhosts/${vhost}`);
+      await bucket.cleanup();
     },
   };
 }

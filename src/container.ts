@@ -9,6 +9,7 @@ import { registerSellersModule } from './app/sellers';
 import { registerHealthModule } from './app/health';
 import { registerIdentityModule } from './app/identity';
 import { registerInventoryModule } from './app/inventory';
+import { registerMediaModule, registerMediaWorker } from './app/media';
 import { registerNotificationsModule } from './app/notifications';
 import { registerOrderingModule, registerOrderingWorker } from './app/ordering';
 import { registerPaymentsHttp, registerPaymentsModule } from './app/payments';
@@ -47,11 +48,13 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
   container.register(TOKENS.RateLimiters, { useValue: infra.rateLimiters });
   container.register(TOKENS.OpenApiRegistry, { useValue: infra.openApi });
   container.register(TOKENS.PaymentGateway, { useValue: infra.paymentGateway });
+  container.register(TOKENS.ObjectStorage, { useValue: infra.objectStorage });
 
   registerHealthModule(container);
   registerIdentityModule(container);
   // After identity: the audit-log views resolve actor emails through AccountService.
   registerAuditModule(container);
+  registerMediaModule(container);
   registerCustomersModule(container);
   registerSellersModule(container);
   registerDeliveryModule(container);
@@ -70,6 +73,8 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   const container = createCoreContainer(infra);
   container.register(TOKENS.EmailSender, { useValue: infra.emailSender });
   container.register(TOKENS.PaymentGateway, { useValue: infra.paymentGateway });
+  container.register(TOKENS.ObjectStorage, { useValue: infra.objectStorage });
+  container.register(TOKENS.ImageProcessor, { useValue: infra.imageProcessor });
 
   registerNotificationsModule(container);
   // catalog.listing-projections reads seller statuses and stock (spec 06 UC-CA-7).
@@ -85,5 +90,7 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   registerFinanceWorker(container);
   // audit-retention (spec 20 §2.4).
   registerAuditWorker(container);
+  // media.processing and media-cleanup (spec 14 UC-ME-3, UC-ME-4).
+  registerMediaWorker(container);
   return container;
 }

@@ -3,10 +3,10 @@ import { jobLockKey } from '../../jobs';
 import { ALL_EVENT_CONTRACTS, outboxBackoffMs } from '..';
 
 describe('lib/events', () => {
-  it('registers all 22 contracts of docs/spec/02-events.md with unique names and version 1', () => {
-    expect(ALL_EVENT_CONTRACTS).toHaveLength(22);
+  it('registers the 22 R1 contracts and the 3 media events of docs/spec/02-events.md with unique names and version 1', () => {
+    expect(ALL_EVENT_CONTRACTS).toHaveLength(25);
     const types = ALL_EVENT_CONTRACTS.map((contract) => contract.type);
-    expect(new Set(types).size).toBe(22);
+    expect(new Set(types).size).toBe(25);
     for (const contract of ALL_EVENT_CONTRACTS) {
       expect(contract.type).toMatch(/^[a-z_]+\.[a-z_]+$/);
       expect(contract.version).toBe(1);

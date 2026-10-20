@@ -1,7 +1,7 @@
 # System Design 01 — Architecture (Release 1)
 
 Status: **v1.10 APPROVED (2026-10-13).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). v1.4: catalog cache keys and TTLs (§8), "newest" sorts on `published_at` (§9) (Phase 3). v1.5: typo search matches words (§9, P3-O1). v1.6: edge `cart → customers` (§2, A-4, Phase 4). v1.7: checkout inserts the order rows before reserving stock (§7.1, A-3); one lock order across ordering, inventory and payments (§3.1); order jobs handle one order per transaction (§6); Kashier sessions and webhook signature (§7.2) (Phase 5). v1.8: the expiry job abandons no session (§6, spec 10 PA-11). v1.9: region `eu-central-1` (SD-3d), sizes, RabbitMQ 4.2, TLS to the data stores, secrets, network and egress IPs (K-7), deploy pipeline, alerting (§12.1, §13, Phase 8). v1.10: suspended-user deny entry in Redis (§8, §10, spec 03 I-11). Changes from now on need explicit approval and a version bump.
-**v2.2 APPROVED (2026-10-20):** §14.9 local / test MinIO image is the community build `pgsty/minio` (upstream MinIO no longer publishes images; R2-P1). **v2.1 APPROVED (2026-10-20):** §14.2 audit row per spec 20 BO-9 (R2-P1). **v2.0 APPROVED (2026-10-20):** §14 adds Release 2 (realtime process, media storage and CDN, new modules and edges, lock order, jobs, security, capacity, hosting, new dependencies). Kept as its own section, so every cross-reference stays valid (R2-Q1). §14.11 A-5…A-10 answered 2026-10-20 (every recommendation accepted).
+**v2.3 APPROVED (2026-10-20):** §14.4 per-queue prefetch on the consumer host; `HTTP_STATUS.ACCEPTED` (R2-P1). **v2.2 APPROVED (2026-10-20):** §14.9 local / test MinIO image is the community build `pgsty/minio` (upstream MinIO no longer publishes images; R2-P1). **v2.1 APPROVED (2026-10-20):** §14.2 audit row per spec 20 BO-9 (R2-P1). **v2.0 APPROVED (2026-10-20):** §14 adds Release 2 (realtime process, media storage and CDN, new modules and edges, lock order, jobs, security, capacity, hosting, new dependencies). Kept as its own section, so every cross-reference stays valid (R2-Q1). §14.11 A-5…A-10 answered 2026-10-20 (every recommendation accepted).
 Inputs: `CLAUDE.md` (engineering rules), `docs/spec/00-overview.md` v1.0 (business). Schema: `02-database.md`.
 
 ---
@@ -369,7 +369,9 @@ Inputs: `docs/spec/00-overview.md` v2.0 §10 (answers §10.8–§10.11), specs 0
 ### 14.4 Messaging
 - New queues and bindings: `docs/spec/02-events.md` §6 (the source of truth, A-1).
 - **Deploy order for changed payloads** (OR-22): payloads only gain fields or change meaning in a way equal to R1 when no coupon is used, and the consumers of a changed event ship **before** the publisher starts setting the new fields (release notes per R2 phase).
-- `media.processing` runs with prefetch 1 per worker task (CPU-heavy), the other queues keep their prefetch.
+- `media.processing` runs with prefetch 1 per worker task (CPU-heavy), the other queues keep their prefetch. Implemented as an optional `prefetch` on `EventHandlerDefinition` that overrides `RABBITMQ_PREFETCH` for that queue (v2.3).
+- Media deletes the original upload with `lib/db` `afterCommit` once the status change commits, so a rolled-back record never loses its input.
+- `lib/http` gains `HTTP_STATUS.ACCEPTED` (202), used only for real asynchronous work (CLAUDE.md §7; spec 14 ME-3).
 - Consumers with external effects (push sending, image processing) use the `beforeTransaction` step (§3.2).
 
 ### 14.5 Scheduled jobs (worker, advisory-locked)

@@ -30,6 +30,11 @@ variable "invite_url_base" {
   type        = string
 }
 
+variable "media_public_base_url" {
+  description = "https://media.<domain> of staging (the CDN, A-8); set when the cdn module lands (R2-P1). No trailing slash."
+  type        = string
+}
+
 variable "kashier_redirect_url" {
   description = "https app link Kashier sends the customer back to (P5-Q14)."
   type        = string

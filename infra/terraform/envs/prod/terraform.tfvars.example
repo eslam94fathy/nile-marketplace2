@@ -6,6 +6,7 @@ route53_zone_id                  = null
 alert_email                      = "ops@example.com"
 image_tag                        = "<git sha of the first pushed image>"
 invite_url_base                  = "https://example.com/invite"
+media_public_base_url            = "https://media.example.com"
 kashier_redirect_url             = "https://example.com/payment-return"
 mailjet_from_email               = "no-reply@example.com"
 jwt_active_kid                   = "prod-2026-10"

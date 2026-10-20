@@ -1,4 +1,4 @@
-/** Every event of docs/spec/02-events.md v1.0 §2. */
+/** Every event of docs/spec/02-events.md §2 (v1.0, plus the R2 events as their phases land). */
 export * from './define-event';
 export * from './shared-types';
 export * from './notification-email-requested.event';
@@ -23,9 +23,15 @@ export * from './shipment-attempt-failed.event';
 export * from './shipment-delivered.event';
 export * from './cod-remittance-confirmed.event';
 export * from './payout-recorded.event';
+export * from './media-uploaded.event';
+export * from './media-ready.event';
+export * from './media-failed.event';
 
 import { CodRemittanceConfirmed } from './cod-remittance-confirmed.event';
 import { InventoryStockStatusChanged } from './inventory-stock-status-changed.event';
+import { MediaFailed } from './media-failed.event';
+import { MediaReady } from './media-ready.event';
+import { MediaUploaded } from './media-uploaded.event';
 import { NotificationEmailRequested } from './notification-email-requested.event';
 import { OrderClosed } from './order-closed.event';
 import { OrderPlaced } from './order-placed.event';
@@ -70,4 +76,7 @@ export const ALL_EVENT_CONTRACTS = [
   ShipmentDelivered,
   CodRemittanceConfirmed,
   PayoutRecorded,
+  MediaUploaded,
+  MediaReady,
+  MediaFailed,
 ] as const;

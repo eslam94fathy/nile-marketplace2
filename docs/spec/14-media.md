@@ -1,6 +1,6 @@
 # Spec 14 — media
 
-Status: **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10 (R-1, R-2, R-9), `01-api-conventions.md` v1.4. §7 ME-1…ME-6 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.1 APPROVED (2026-10-20).** v1.1: R2-P1 implementation clarifications ME-7…ME-13 (§7.1). Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10 (R-1, R-2, R-9), `01-api-conventions.md` v1.4. §7 ME-1…ME-6 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md` (v1.2 adds the media events).
 
 ## 1. Scope & owned tables
@@ -161,3 +161,15 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | ME-4 | Cleanup of released media still referenced elsewhere | **Rec:** the FK `RESTRICT` decides (UC-ME-4): referenced → kept forever (`retained_at`) · or reference counting in media (needs every owner to report) |
 | ME-5 | Orphan objects after a failed delete | **Rec:** accept, with a `warn` log (storage cost only) · or a weekly bucket-listing reconcile job |
 | ME-6 | Upload rate limit | **Rec:** new class `upload`, keyed by user id, `RATE_LIMIT_UPLOAD_POINTS` / `_DURATION_SECONDS` (proposed 30 per 10 min) · or reuse `general` |
+
+### 7.1 Clarifications (R2-P1 implementation, confirmed 2026-10-20)
+
+| # | Clarification | Where |
+|---|---|---|
+| ME-7 | The worker checks the magic bytes **again** before decoding: the presigned form stays valid until it expires, so the object can be replaced after `complete` (e.g. by an SVG or TIFF that `sharp` would otherwise decode). A mismatch → `failed` (`unsupported_type`) | UC-ME-3 |
+| ME-8 | Config: rate-limit keys follow the existing naming, `RATE_LIMIT_UPLOAD_POINTS` / `RATE_LIMIT_UPLOAD_WINDOW_SECONDS` (30 per 600 s); the same `_WINDOW_SECONDS` naming applies to the R2 classes of specs 15, 16 and 19. New keys: `STORAGE_HTTP_TIMEOUT_MS` (api, worker; 5000), `STORAGE_PUBLIC_ENDPOINT` (api, MinIO only: the host browsers reach, used to sign presigned URLs, since inside docker-compose the api reaches `minio:9000`). `STORAGE_ENDPOINT` and the static keys belong to MinIO only; with `s3` they are unused. `MEDIA_PUBLIC_BASE_URL` has no trailing `/` and must be https once deployed. In AWS, `STORAGE_PROVIDER` (`s3`), `STORAGE_BUCKET` (`nile-<env>-media`) and `STORAGE_REGION` are derived by Terraform. Cleanup: every hour (`JOB_MEDIA_CLEANUP_INTERVAL_MS` 3600000), batches of 100 | §6 |
+| ME-9 | `GET /health/ready` also checks storage (`storage`: a HEAD of the bucket), like every other dependency (CLAUDE.md §12) | – |
+| ME-10 | `sizeBytes` above `MEDIA_MAX_UPLOAD_BYTES` → `400 VALIDATION_FAILED` (detail on `sizeBytes`). The declared size is informational; the size actually enforced is the presigned `content-length-range` | UC-ME-1 |
+| ME-11 | `claim` details: `field` `mediaIds[<index>]`, `constraint` one of `not_found` (missing or another user's: not told apart), `not_ready`, `wrong_purpose`, `already_claimed`, `duplicate`, `value` the id. `release` ignores ids that aren't claimed. `getImages` takes no viewer: the caller has authorised it | §2 |
+| ME-12 | Processing: an original missing while `processing` (e.g. removed by the lifecycle rule) → `failed` (`decode_failed`, `warn`). An output over 16 383 px on a side (the WebP limit; e.g. 200 × 20 000) → `dimensions_out_of_range`. Private outputs carry `Cache-Control: private, no-store`. `MEDIA_PROCESSING_STUCK` is logged on every cleanup run while a row stays stuck (count + up to 20 ids) | UC-ME-3, UC-ME-4 |
+| ME-13 | An invalid upload on `complete`: the row becomes `failed` first, then the object is deleted (a failed delete is `warn MEDIA_OBJECT_DELETE_FAILED`) | UC-ME-2 |

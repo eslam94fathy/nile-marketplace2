@@ -22,6 +22,10 @@ export const TOKENS = {
   JwtVerifier: Symbol.for('JwtVerifier'),
   RateLimiters: Symbol.for('RateLimiters'),
   OpenApiRegistry: Symbol.for('OpenApiRegistry'),
+  /** pkg/storage IObjectStorage, the media bucket (api, worker). */
+  ObjectStorage: Symbol.for('ObjectStorage'),
+  /** pkg/image IImageProcessor (worker). */
+  ImageProcessor: Symbol.for('ImageProcessor'),
   /** lib/audit IAuditRecorder, implemented by the audit module (spec 20 §2.2). */
   AuditRecorder: Symbol.for('AuditRecorder'),
 
@@ -186,6 +190,16 @@ export const TOKENS = {
   AuditViewService: Symbol.for('AuditViewService'),
   AuditRetentionJob: Symbol.for('AuditRetentionJob'),
   AuditController: Symbol.for('AuditController'),
+
+  // media module
+  MediaObjectRepository: Symbol.for('MediaObjectRepository'),
+  MediaUrls: Symbol.for('MediaUrls'),
+  /** Public API of media (spec 14 §2), injected into catalog, support, reviews and returns. */
+  MediaService: Symbol.for('MediaService'),
+  MediaUploadService: Symbol.for('MediaUploadService'),
+  MediaProcessingService: Symbol.for('MediaProcessingService'),
+  MediaCleanupJob: Symbol.for('MediaCleanupJob'),
+  MediaController: Symbol.for('MediaController'),
 
   // health module
   HealthService: Symbol.for('HealthService'),

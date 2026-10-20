@@ -30,6 +30,11 @@ variable "invite_url_base" {
   type        = string
 }
 
+variable "media_public_base_url" {
+  description = "https://media.<domain> (the CDN, A-8): required before go-live. No trailing slash."
+  type        = string
+}
+
 variable "kashier_redirect_url" {
   description = "The mobile team's https app link Kashier sends the customer back to (P5-Q14, OR-11)."
   type        = string

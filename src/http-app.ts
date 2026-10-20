@@ -3,6 +3,7 @@ import express, { type Express, type Router } from 'express';
 import helmet from 'helmet';
 import { type DependencyContainer } from 'tsyringe';
 import { createAuditRouter } from './app/audit';
+import { createMediaRouter } from './app/media';
 import { createHealthRouter, HEALTH_BASE_PATH } from './app/health';
 import { createCartRouter } from './app/cart';
 import { createCatalogRouter } from './app/catalog';
@@ -79,6 +80,7 @@ export function createApp(
   app.use(API_BASE_PATH, recordMountPath(), createPaymentsRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createFinanceRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createAuditRouter(container, API_BASE_PATH));
+  app.use(API_BASE_PATH, recordMountPath(), createMediaRouter(container, API_BASE_PATH));
   for (const { path, router } of options.extraRouters ?? []) app.use(path, recordMountPath(), router);
 
   // 8. 404, then the global error handler.

@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { createAuditJobs } from './app/audit';
 import { createDeliveryJobs } from './app/delivery';
 import { createIdentityJobs } from './app/identity';
+import { createMediaJobs } from './app/media';
 import { createOrderingJobs } from './app/ordering';
 import { createWorkerContainer } from './container';
 import { createEventHandlers } from './event-handlers';
@@ -47,6 +48,7 @@ async function main(): Promise<void> {
   for (const job of createOrderingJobs(container, env)) jobs.register(job);
   for (const job of createDeliveryJobs(container, env)) jobs.register(job);
   for (const job of createAuditJobs(container, env)) jobs.register(job);
+  for (const job of createMediaJobs(container, env)) jobs.register(job);
   jobs.start();
 
   logger.info('worker started');

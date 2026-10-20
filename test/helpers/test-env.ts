@@ -70,6 +70,9 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     RATE_LIMIT_REFRESH_WINDOW_SECONDS: '60',
     RATE_LIMIT_CHECKOUT_POINTS: '10',
     RATE_LIMIT_CHECKOUT_WINDOW_SECONDS: '60',
+    // Upload rate limit, per user (spec 14 ME-6)
+    RATE_LIMIT_UPLOAD_POINTS: '1000',
+    RATE_LIMIT_UPLOAD_WINDOW_SECONDS: '600',
     IDEMPOTENCY_TTL_HOURS: '24',
     IDEMPOTENCY_LOCK_TTL_SECONDS: '30',
     // identity (cost 10 = the minimum allowed, keeps tests fast)
@@ -101,6 +104,26 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     AUDIT_RETENTION_DAYS: '730',
     JOB_AUDIT_RETENTION_INTERVAL_MS: '86400000',
     AUDIT_RETENTION_BATCH_SIZE: '1000',
+    // Object storage (spec 14 §6; STORAGE_PROVIDER, _BUCKET, _REGION are derived in AWS)
+    STORAGE_HTTP_TIMEOUT_MS: '5000',
+    // Per test file: createTestResources points these at the file's own MinIO bucket.
+    STORAGE_PROVIDER: 'minio',
+    STORAGE_BUCKET: 'test-media',
+    STORAGE_REGION: 'us-east-1',
+    STORAGE_ENDPOINT: 'http://localhost:9000',
+    STORAGE_PUBLIC_ENDPOINT: 'http://localhost:9000',
+    STORAGE_ACCESS_KEY_ID: 'minioadmin',
+    STORAGE_SECRET_ACCESS_KEY: 'minioadmin',
+    // Media uploads (spec 14 §1, §6)
+    MEDIA_PUBLIC_BASE_URL: 'http://localhost:9000/test-media',
+    MEDIA_MAX_UPLOAD_BYTES: '5242880',
+    MEDIA_UPLOAD_URL_TTL_SECONDS: '300',
+    MEDIA_PRIVATE_URL_TTL_SECONDS: '600',
+    MEDIA_MAX_OPEN_UPLOADS_PER_USER: '20',
+    // Media cleanup job (spec 14 UC-ME-4)
+    MEDIA_PENDING_RETENTION_HOURS: '24',
+    JOB_MEDIA_CLEANUP_INTERVAL_MS: '3600000',
+    MEDIA_CLEANUP_BATCH_SIZE: '100',
     // payments: the fake gateway, signing webhooks with TEST_KASHIER_API_KEY
     PAYMENT_GATEWAY: 'fake',
     KASHIER_API_KEY: TEST_KASHIER_API_KEY,

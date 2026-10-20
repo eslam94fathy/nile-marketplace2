@@ -13,6 +13,8 @@ export const RateLimitClass = {
   STRICT_AUTH: 'strict-auth',
   REFRESH: 'refresh',
   CHECKOUT: 'checkout',
+  /** Media uploads, keyed by user (spec 14 ME-6); fails open like general. */
+  UPLOAD: 'upload',
 } as const;
 export type RateLimitClass = (typeof RateLimitClass)[keyof typeof RateLimitClass];
 
@@ -33,6 +35,8 @@ type RateEnv = Pick<
   | 'RATE_LIMIT_REFRESH_WINDOW_SECONDS'
   | 'RATE_LIMIT_CHECKOUT_POINTS'
   | 'RATE_LIMIT_CHECKOUT_WINDOW_SECONDS'
+  | 'RATE_LIMIT_UPLOAD_POINTS'
+  | 'RATE_LIMIT_UPLOAD_WINDOW_SECONDS'
 >;
 
 /**
@@ -78,6 +82,7 @@ export class RateLimiters {
       ),
       make(RateLimitClass.REFRESH, env.RATE_LIMIT_REFRESH_POINTS, env.RATE_LIMIT_REFRESH_WINDOW_SECONDS),
       make(RateLimitClass.CHECKOUT, env.RATE_LIMIT_CHECKOUT_POINTS, env.RATE_LIMIT_CHECKOUT_WINDOW_SECONDS),
+      make(RateLimitClass.UPLOAD, env.RATE_LIMIT_UPLOAD_POINTS, env.RATE_LIMIT_UPLOAD_WINDOW_SECONDS),
     ]);
   }
 

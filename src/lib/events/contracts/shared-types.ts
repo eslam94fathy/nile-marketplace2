@@ -55,3 +55,8 @@ export interface DropoffSnapshot {
   apartment: string | null;
   landmark: string | null;
 }
+
+export type MediaPurposeValue =
+  'product_image' | 'category_image' | 'support_attachment' | 'review_image' | 'return_photo';
+
+export type MediaFailureReasonValue = 'decode_failed' | 'unsupported_type' | 'dimensions_out_of_range';

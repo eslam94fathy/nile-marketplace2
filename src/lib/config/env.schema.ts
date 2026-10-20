@@ -73,6 +73,7 @@ export const LogLevelName = {
 export const EmailProvider = { MAILJET: 'mailjet', MAILPIT: 'mailpit' } as const;
 export const PaymentGatewayName = { KASHIER: 'kashier', FAKE: 'fake' } as const;
 export const KashierMode = { TEST: 'test', LIVE: 'live' } as const;
+export const StorageProvider = { S3: 's3', MINIO: 'minio' } as const;
 
 /** The Kashier host each mode must use (spec 10 PA-14). */
 const KASHIER_HOST_BY_MODE = {
@@ -166,6 +167,8 @@ const rateLimitShape = {
   RATE_LIMIT_REFRESH_WINDOW_SECONDS: positiveInt(),
   RATE_LIMIT_CHECKOUT_POINTS: positiveInt(),
   RATE_LIMIT_CHECKOUT_WINDOW_SECONDS: positiveInt(),
+  RATE_LIMIT_UPLOAD_POINTS: positiveInt(),
+  RATE_LIMIT_UPLOAD_WINDOW_SECONDS: positiveInt(),
 };
 
 const idempotencyShape = {
@@ -254,6 +257,44 @@ const auditJobsShape = {
   AUDIT_RETENTION_DAYS: positiveInt(36_500),
   JOB_AUDIT_RETENTION_INTERVAL_MS: positiveInt(604_800_000),
   AUDIT_RETENTION_BATCH_SIZE: positiveInt(100_000),
+};
+
+/**
+ * Object storage, api and worker (spec 14 §6). In AWS the ECS task role signs; the endpoint and the
+ * static keys exist for MinIO only and are checked in `refineStorage`.
+ */
+const storageShape = {
+  STORAGE_PROVIDER: z.enum([StorageProvider.S3, StorageProvider.MINIO]),
+  STORAGE_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/),
+  STORAGE_REGION: z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d$/),
+  STORAGE_HTTP_TIMEOUT_MS: positiveInt(60_000),
+  STORAGE_ENDPOINT: z.url().optional(),
+  STORAGE_ACCESS_KEY_ID: z.string().min(1).optional(),
+  STORAGE_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+};
+
+/** api only (spec 14 §1, §6, ME-8). */
+const mediaApiShape = {
+  /** MinIO: the endpoint browsers reach, for presigned URLs (docker-compose: localhost, not `minio`). */
+  STORAGE_PUBLIC_ENDPOINT: z.url().optional(),
+  /** Public images: the CloudFront origin, or the MinIO bucket URL locally. No trailing slash. */
+  MEDIA_PUBLIC_BASE_URL: z
+    .url()
+    .refine(
+      (url) => /^https?:\/\//.test(url) && !url.endsWith('/'),
+      'must be an http(s) URL without a trailing /',
+    ),
+  MEDIA_MAX_UPLOAD_BYTES: positiveInt(100 * 1024 * 1024),
+  MEDIA_UPLOAD_URL_TTL_SECONDS: positiveInt(3_600),
+  MEDIA_PRIVATE_URL_TTL_SECONDS: positiveInt(86_400),
+  MEDIA_MAX_OPEN_UPLOADS_PER_USER: positiveInt(1_000),
+};
+
+/** media cleanup job (spec 14 UC-ME-4), worker only. */
+const mediaJobsShape = {
+  MEDIA_PENDING_RETENTION_HOURS: positiveInt(24 * 30),
+  JOB_MEDIA_CLEANUP_INTERVAL_MS: positiveInt(86_400_000),
+  MEDIA_CLEANUP_BATCH_SIZE: positiveInt(10_000),
 };
 
 /** Invites are also created by the seed-admin CLI. */
@@ -365,6 +406,26 @@ function refineEmail(env: z.output<z.ZodObject<typeof emailShape>> & { NODE_ENV:
   }
 }
 
+type StorageEnv = z.output<z.ZodObject<typeof storageShape>> & {
+  NODE_ENV: string;
+  STORAGE_PUBLIC_ENDPOINT?: string;
+};
+
+/** MinIO keys only with MinIO, and MinIO never once deployed (F-3 pattern, spec 14 §6). */
+function refineStorage(env: StorageEnv, ctx: Ctx, signsForBrowsers: boolean): void {
+  if (env.STORAGE_PROVIDER === StorageProvider.S3) return;
+  if (isDeployed(env.NODE_ENV)) issue(ctx, 'STORAGE_PROVIDER', 'minio is for development and tests only');
+  const required = [
+    'STORAGE_ENDPOINT',
+    'STORAGE_ACCESS_KEY_ID',
+    'STORAGE_SECRET_ACCESS_KEY',
+    ...(signsForBrowsers ? (['STORAGE_PUBLIC_ENDPOINT'] as const) : []),
+  ] as const;
+  for (const key of required) {
+    if (!env[key]) issue(ctx, key, 'required when STORAGE_PROVIDER=minio');
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Per-process schemas
 // ---------------------------------------------------------------------------------------------
@@ -402,12 +463,18 @@ export const apiEnvSchema = z
     ...kashierSessionShape,
     ...inviteShape,
     ...secretsShape,
+    ...storageShape,
+    ...mediaApiShape,
   })
   .superRefine((env, ctx) => {
     refinePool(env, ctx);
     refineSecrets(env, ctx);
     refinePayments(env, ctx, true);
     refineInvite(env, ctx);
+    refineStorage(env, ctx, true);
+    if (isDeployed(env.NODE_ENV) && !env.MEDIA_PUBLIC_BASE_URL.startsWith('https://')) {
+      issue(ctx, 'MEDIA_PUBLIC_BASE_URL', 'must be an https URL in staging and production');
+    }
     // P0-Q4: the API docs are never served in production (review F-3).
     if (env.NODE_ENV === NodeEnv.PRODUCTION && env.API_DOCS_ENABLED) {
       issue(ctx, 'API_DOCS_ENABLED', 'must be false in production');
@@ -430,6 +497,8 @@ export const workerEnvSchema = z
     ...orderJobsShape,
     ...deliveryJobsShape,
     ...auditJobsShape,
+    ...mediaJobsShape,
+    ...storageShape,
     // The payment consumer sets the acceptance deadline when a Kashier order is placed (OR-8).
     ...orderingShape,
     ...paymentGatewayShape,
@@ -441,6 +510,7 @@ export const workerEnvSchema = z
     refineSecrets(env, ctx);
     refineEmail(env, ctx);
     refinePayments(env, ctx, false);
+    refineStorage(env, ctx, false);
   });
 
 export type MigrateEnv = z.output<typeof migrateEnvSchema>;

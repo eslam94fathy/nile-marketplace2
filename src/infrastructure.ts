@@ -1,7 +1,13 @@
 import { type Redis } from 'ioredis';
 import { type ISuspendedUsers, JwtSigner, JwtVerifier, SuspendedUsers } from './lib/auth';
 import { type IClock, SystemClock } from './lib/clock';
-import { type ApiEnv, EmailProvider, PaymentGatewayName, type WorkerEnv } from './lib/config';
+import {
+  type ApiEnv,
+  EmailProvider,
+  PaymentGatewayName,
+  StorageProvider,
+  type WorkerEnv,
+} from './lib/config';
 import { createKnex, Database } from './lib/db';
 import { PgErrorMapper } from './lib/error';
 import { OpenApiRegistry } from './lib/http';
@@ -13,7 +19,9 @@ import { AesGcmSecretBox, type ISecretBox } from './pkg/crypto';
 import { type IEmailSender, MailjetEmailSender, MailpitEmailSender } from './pkg/email';
 import { FakePaymentGateway, type IPaymentGateway, KashierPaymentGateway } from './pkg/payments';
 import { BcryptPasswordHasher, type IPasswordHasher } from './pkg/hashing';
+import { type IImageProcessor, SharpImageProcessor } from './pkg/image';
 import { type IMessageBroker, RabbitMqBroker } from './pkg/messaging';
+import { S3ObjectStorage } from './pkg/storage';
 import { toSeconds, TimeUnit } from './pkg/time';
 
 const BROKER_HEARTBEAT_SECONDS = toSeconds(30, TimeUnit.SECOND);
@@ -41,12 +49,17 @@ export interface ApiInfrastructure extends CoreInfrastructure<ApiEnv> {
   passwordHasher: IPasswordHasher;
   rateLimiters: RateLimiters;
   openApi: OpenApiRegistry;
+  /** The media bucket: presigning, upload checks, readiness (spec 14). */
+  objectStorage: S3ObjectStorage;
 }
 
 /** Background process: outbox drain, consumers, jobs, email. No Redis, no JWT, no HTTP. */
 export interface WorkerInfrastructure extends CoreInfrastructure<WorkerEnv> {
   emailSender: IEmailSender;
   paymentGateway: IPaymentGateway;
+  /** The media bucket: image processing and cleanup (spec 14 UC-ME-3, UC-ME-4). */
+  objectStorage: S3ObjectStorage;
+  imageProcessor: IImageProcessor;
 }
 
 type CoreEnv = Pick<
@@ -131,6 +144,7 @@ export async function createApiInfrastructure(
     rateLimiters: new RateLimiters(redis, env, logger),
     openApi: new OpenApiRegistry(),
     paymentGateway: createPaymentGateway(env),
+    objectStorage: createObjectStorage(env, env.STORAGE_PUBLIC_ENDPOINT),
   };
 }
 
@@ -142,7 +156,45 @@ export async function createWorkerInfrastructure(
     ...(await createCore(env, logger)),
     emailSender: createEmailSender(env),
     paymentGateway: createPaymentGateway(env),
+    objectStorage: createObjectStorage(env, undefined),
+    imageProcessor: new SharpImageProcessor(),
   };
+}
+
+type StorageEnv = Pick<
+  WorkerEnv,
+  | 'STORAGE_PROVIDER'
+  | 'STORAGE_BUCKET'
+  | 'STORAGE_REGION'
+  | 'STORAGE_HTTP_TIMEOUT_MS'
+  | 'STORAGE_ENDPOINT'
+  | 'STORAGE_ACCESS_KEY_ID'
+  | 'STORAGE_SECRET_ACCESS_KEY'
+>;
+
+/**
+ * Spec 14 §6: S3 through the task role in AWS; MinIO locally and in tests with its endpoint and keys
+ * (the env schema requires them). `publicEndpoint` signs the URLs browsers use (api only).
+ */
+export function createObjectStorage(
+  env: Readonly<StorageEnv>,
+  publicEndpoint: string | undefined,
+): S3ObjectStorage {
+  const common = {
+    bucket: env.STORAGE_BUCKET,
+    region: env.STORAGE_REGION,
+    timeoutMs: env.STORAGE_HTTP_TIMEOUT_MS,
+  };
+  if (env.STORAGE_PROVIDER === StorageProvider.S3) return new S3ObjectStorage(common);
+  if (!env.STORAGE_ENDPOINT || !env.STORAGE_ACCESS_KEY_ID || !env.STORAGE_SECRET_ACCESS_KEY) {
+    throw new Error('MinIO storage configuration is incomplete');
+  }
+  return new S3ObjectStorage({
+    ...common,
+    endpoint: env.STORAGE_ENDPOINT,
+    publicEndpoint,
+    credentials: { accessKeyId: env.STORAGE_ACCESS_KEY_ID, secretAccessKey: env.STORAGE_SECRET_ACCESS_KEY },
+  });
 }
 
 /** P1-Q2: Mailjet in staging/production, Mailpit locally (the env schema enforces the required keys). */
@@ -195,6 +247,7 @@ type WorkerEnvPaymentKeys = Pick<
 /** Each close is independent, so one failure doesn't block the rest. */
 export async function closeInfrastructure(infra: ApiInfrastructure | WorkerInfrastructure): Promise<void> {
   const closing: Promise<unknown>[] = [infra.broker.close(), infra.db.close()];
+  infra.objectStorage.close();
   if ('redis' in infra) closing.push(infra.redis.quit());
   const results = await Promise.allSettled(closing);
   for (const result of results) {

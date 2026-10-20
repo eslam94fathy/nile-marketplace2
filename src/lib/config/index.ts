@@ -5,6 +5,7 @@ export {
   EmailProvider,
   PaymentGatewayName,
   KashierMode,
+  StorageProvider,
   apiEnvSchema,
   workerEnvSchema,
   migrateEnvSchema,

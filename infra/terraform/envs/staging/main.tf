@@ -91,6 +91,8 @@ module "environment" {
     RATE_LIMIT_REFRESH_WINDOW_SECONDS     = "300"
     RATE_LIMIT_CHECKOUT_POINTS            = "10"
     RATE_LIMIT_CHECKOUT_WINDOW_SECONDS    = "60"
+    RATE_LIMIT_UPLOAD_POINTS              = "30"
+    RATE_LIMIT_UPLOAD_WINDOW_SECONDS      = "600"
     IDEMPOTENCY_TTL_HOURS                 = "24"
     IDEMPOTENCY_LOCK_TTL_SECONDS          = "60" # above the longest request (review F-9)
 
@@ -135,6 +137,15 @@ module "environment" {
     AUDIT_RETENTION_DAYS                      = "730"
     JOB_AUDIT_RETENTION_INTERVAL_MS           = "86400000"
     AUDIT_RETENTION_BATCH_SIZE                = "1000"
+    STORAGE_HTTP_TIMEOUT_MS                   = "5000"
+    MEDIA_PUBLIC_BASE_URL                     = var.media_public_base_url
+    MEDIA_MAX_UPLOAD_BYTES                    = "5242880"
+    MEDIA_UPLOAD_URL_TTL_SECONDS              = "300"
+    MEDIA_PRIVATE_URL_TTL_SECONDS             = "600"
+    MEDIA_MAX_OPEN_UPLOADS_PER_USER           = "20"
+    MEDIA_PENDING_RETENTION_HOURS             = "24"
+    JOB_MEDIA_CLEANUP_INTERVAL_MS             = "3600000"
+    MEDIA_CLEANUP_BATCH_SIZE                  = "100"
 
     EMAIL_HTTP_TIMEOUT_MS = "10000"
     MAILJET_FROM_EMAIL    = var.mailjet_from_email

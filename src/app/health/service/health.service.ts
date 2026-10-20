@@ -5,6 +5,7 @@ import { type IDatabase } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import { type ICache } from '../../../pkg/cache';
 import { type IMessageBroker } from '../../../pkg/messaging';
+import { type IObjectStorage } from '../../../pkg/storage';
 import { Dependency, DependencyStatus } from '../enums';
 
 export interface DependencyCheck {
@@ -28,22 +29,25 @@ export class HealthService {
     @inject(TOKENS.Database) private readonly db: IDatabase,
     @inject(TOKENS.Cache) private readonly cache: ICache,
     @inject(TOKENS.MessageBroker) private readonly broker: IMessageBroker,
+    @inject(TOKENS.ObjectStorage) private readonly storage: IObjectStorage,
     @inject(TOKENS.Env) private readonly env: Pick<Env, 'HEALTH_CHECK_TIMEOUT_MS'>,
     @inject(TOKENS.Clock) private readonly clock: IClock,
   ) {}
 
   async readiness(): Promise<ReadinessReport> {
-    const [postgres, redis, rabbitmq] = await Promise.all([
+    const [postgres, redis, rabbitmq, storage] = await Promise.all([
       this.timed(() => this.db.ping()),
       this.timed(() => this.cache.ping()),
       this.timed(() =>
         this.broker.isConnected() ? Promise.resolve() : Promise.reject(new Error('broker not connected')),
       ),
+      this.timed(() => this.storage.ping()),
     ]);
     const checks = {
       [Dependency.POSTGRES]: postgres,
       [Dependency.REDIS]: redis,
       [Dependency.RABBITMQ]: rabbitmq,
+      [Dependency.STORAGE]: storage,
     };
     const allUp = Object.values(checks).every((check) => check.status === DependencyStatus.UP);
     return { status: allUp ? DependencyStatus.UP : DependencyStatus.DOWN, checks };

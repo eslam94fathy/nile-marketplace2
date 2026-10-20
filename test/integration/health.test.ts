@@ -27,7 +27,7 @@ describe('health probes (CLAUDE.md §12)', () => {
       checks: Record<string, { status: string; durationMs: number }>;
     }>(res).data;
     expect(data.status).toBe('up');
-    expect(Object.keys(data.checks).sort()).toEqual(['postgres', 'rabbitmq', 'redis']);
+    expect(Object.keys(data.checks).sort()).toEqual(['postgres', 'rabbitmq', 'redis', 'storage']);
     for (const check of Object.values(data.checks)) {
       expect(check.status).toBe('up');
       expect(Object.keys(check).sort()).toEqual(['durationMs', 'status']);

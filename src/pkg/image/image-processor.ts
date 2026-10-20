@@ -54,6 +54,9 @@ export interface IImageProcessor {
   process(input: Buffer, options: ProcessImageOptions): Promise<ProcessedImage>;
 }
 
+/** libwebp's limit per side: a taller or wider output can't be encoded. */
+export const WEBP_MAX_DIMENSION = 16_383;
+
 /** EXIF orientations 5–8 rotate by 90°, so width and height swap once `rotate()` applies them. */
 const SWAPPING_ORIENTATIONS = new Set([5, 6, 7, 8]);
 
@@ -78,6 +81,19 @@ export class SharpImageProcessor implements IImageProcessor {
         ImageRejection.DIMENSIONS_OUT_OF_RANGE,
         `image is ${width}x${height}, below ${options.minWidth}x${options.minHeight}`,
       );
+    }
+
+    // A very narrow, tall image keeps its height when resized down (or not at all): refuse it here
+    // rather than failing in the encoder.
+    for (const output of options.outputs) {
+      const outWidth = Math.min(output.width, width);
+      const outHeight = Math.round((height * outWidth) / width);
+      if (outHeight > WEBP_MAX_DIMENSION || outWidth > WEBP_MAX_DIMENSION) {
+        throw new ImageRejectedError(
+          ImageRejection.DIMENSIONS_OUT_OF_RANGE,
+          `a ${output.name} output of ${outWidth}x${outHeight} exceeds ${WEBP_MAX_DIMENSION} px`,
+        );
+      }
     }
 
     const outputs: ProcessedOutput[] = [];

@@ -20,7 +20,13 @@ const envKeys = JSON.parse(
 ) as EnvKeys;
 
 /** Keys a deployed environment never sets: local development only (refused in staging / production). */
-const DEV_ONLY = new Set(['MAILPIT_URL']);
+const DEV_ONLY = new Set([
+  'MAILPIT_URL',
+  'STORAGE_ENDPOINT',
+  'STORAGE_PUBLIC_ENDPOINT',
+  'STORAGE_ACCESS_KEY_ID',
+  'STORAGE_SECRET_ACCESS_KEY',
+]);
 
 function deployedKeys(process: 'api' | 'worker' | 'migrate'): string[] {
   const { derived, secrets } = envKeys;

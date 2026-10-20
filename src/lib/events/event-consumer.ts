@@ -18,6 +18,8 @@ export interface EventHandlerDefinition {
   /** Queue name = consumer name, `<module>.<purpose>` (docs/spec/02-events.md §2). */
   name: string;
   events: readonly EventContract<object>[];
+  /** Overrides `RABBITMQ_PREFETCH` for this queue (CPU-heavy work such as images: 1, architecture A-6). */
+  prefetch?: number;
   /**
    * Optional effect that must not run inside a DB transaction (an HTTP call, CLAUDE.md §6.4).
    * Runs first, outside the transaction, and is skipped when the event was already processed;
@@ -79,7 +81,7 @@ export class EventConsumerHost {
         exchange: this.env.RABBITMQ_EXCHANGE,
         bindingKeys: [...supported.keys()],
         retryDelaysMs: this.env.MQ_RETRY_DELAYS_MS,
-        prefetch: this.env.RABBITMQ_PREFETCH,
+        prefetch: definition.prefetch ?? this.env.RABBITMQ_PREFETCH,
       },
       (message) => this.handle(definition, supported, logger, message),
       (info) => logger.error('message dead-lettered', { event: 'MQ_DEAD_LETTERED', ...info }),

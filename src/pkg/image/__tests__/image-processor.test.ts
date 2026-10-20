@@ -8,6 +8,7 @@ import {
   MAGIC_BYTES_LENGTH,
   type ProcessImageOptions,
   SharpImageProcessor,
+  WEBP_MAX_DIMENSION,
 } from '..';
 
 const OPTIONS: ProcessImageOptions = {
@@ -96,6 +97,14 @@ describe('SharpImageProcessor', () => {
     expect(bomb.length).toBeLessThan(100_000);
     const error = await rejection(bomb);
     expect(error.reason).toBe(ImageRejection.DIMENSIONS_OUT_OF_RANGE);
+  });
+
+  it('an output taller than WebP can encode → dimensions_out_of_range, before encoding', async () => {
+    // 200 x 20000 = 4 MP: under the pixel limit, but every output stays 20000 px tall.
+    const tall = await solid(200, 20_000).png({ compressionLevel: 9 }).toBuffer();
+    const error = await rejection(tall, { ...OPTIONS, maxPixels: 5_000_000 });
+    expect(error.reason).toBe(ImageRejection.DIMENSIONS_OUT_OF_RANGE);
+    expect(error.message).toContain(String(WEBP_MAX_DIMENSION));
   });
 
   it('corrupt or truncated bytes → decode_failed', async () => {

@@ -107,8 +107,12 @@ services:
       REDIS_URL: redis://redis:6379
       RABBITMQ_URL: amqp://nile:nile@rabbitmq:5672
       SERVICE_NAME: nile-api
+      # Presigned URLs stay signed for http://localhost:9100 (STORAGE_PUBLIC_ENDPOINT), what browsers reach.
+      STORAGE_ENDPOINT: http://minio:9000
     depends_on:
       migrate:
+        condition: service_completed_successfully
+      minio-init:
         condition: service_completed_successfully
     ports: ['3000:3000']
 
@@ -120,9 +124,12 @@ services:
       RABBITMQ_URL: amqp://nile:nile@rabbitmq:5672
       SERVICE_NAME: nile-worker
       MAILPIT_URL: http://mailpit:8025
+      STORAGE_ENDPOINT: http://minio:9000
     command: ['node', 'dist/worker.js']
     depends_on:
       migrate:
+        condition: service_completed_successfully
+      minio-init:
         condition: service_completed_successfully
       mailpit:
         condition: service_started

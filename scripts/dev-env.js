@@ -84,6 +84,9 @@ const values = {
   RATE_LIMIT_REFRESH_WINDOW_SECONDS: '300',
   RATE_LIMIT_CHECKOUT_POINTS: '10',
   RATE_LIMIT_CHECKOUT_WINDOW_SECONDS: '60',
+  // Upload rate limit, per user (spec 14 ME-6)
+  RATE_LIMIT_UPLOAD_POINTS: '30',
+  RATE_LIMIT_UPLOAD_WINDOW_SECONDS: '600',
   IDEMPOTENCY_TTL_HOURS: '24',
   IDEMPOTENCY_LOCK_TTL_SECONDS: '60',
   // identity / invites (P1-Q4)
@@ -116,6 +119,26 @@ const values = {
   AUDIT_RETENTION_DAYS: '730',
   JOB_AUDIT_RETENTION_INTERVAL_MS: '86400000',
   AUDIT_RETENTION_BATCH_SIZE: '1000',
+  // Object storage (spec 14 §6; STORAGE_PROVIDER, _BUCKET, _REGION are derived in AWS)
+  STORAGE_HTTP_TIMEOUT_MS: '5000',
+  // docker-compose MinIO; inside compose the api and worker reach it as http://minio:9000.
+  STORAGE_PROVIDER: 'minio',
+  STORAGE_BUCKET: 'nile-media',
+  STORAGE_REGION: 'us-east-1',
+  STORAGE_ENDPOINT: 'http://localhost:9100',
+  STORAGE_PUBLIC_ENDPOINT: 'http://localhost:9100',
+  STORAGE_ACCESS_KEY_ID: 'nile',
+  STORAGE_SECRET_ACCESS_KEY: 'nile-minio',
+  // Media uploads (spec 14 §1, §6)
+  MEDIA_PUBLIC_BASE_URL: 'http://localhost:9100/nile-media',
+  MEDIA_MAX_UPLOAD_BYTES: '5242880',
+  MEDIA_UPLOAD_URL_TTL_SECONDS: '300',
+  MEDIA_PRIVATE_URL_TTL_SECONDS: '600',
+  MEDIA_MAX_OPEN_UPLOADS_PER_USER: '20',
+  // Media cleanup job (spec 14 UC-ME-4)
+  MEDIA_PENDING_RETENTION_HOURS: '24',
+  JOB_MEDIA_CLEANUP_INTERVAL_MS: '3600000',
+  MEDIA_CLEANUP_BATCH_SIZE: '100',
   // payments (P5-Q9): the fake gateway locally; set PAYMENT_GATEWAY=kashier plus the Kashier keys
   // (test environment) to talk to Kashier. The fake signs webhooks with this key.
   PAYMENT_GATEWAY: 'fake',

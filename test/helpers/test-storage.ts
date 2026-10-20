@@ -4,6 +4,7 @@ import {
   DeleteBucketCommand,
   DeleteObjectsCommand,
   ListObjectsV2Command,
+  PutBucketPolicyCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
 import { inject } from 'vitest';
@@ -31,11 +32,27 @@ function adminClient(): S3Client {
   });
 }
 
+/** Anyone may read `public/*`, as through CloudFront (docker-compose sets the same, architecture §14.9). */
+function publicReadPolicy(bucket: string): string {
+  return JSON.stringify({
+    Version: '2012-10-17',
+    Statement: [
+      {
+        Effect: 'Allow',
+        Principal: { AWS: ['*'] },
+        Action: ['s3:GetObject'],
+        Resource: [`arn:aws:s3:::${bucket}/public/*`],
+      },
+    ],
+  });
+}
+
 /** One MinIO bucket per test file (the P0-Q9 isolation pattern), emptied and removed at cleanup. */
 export async function createTestBucket(): Promise<TestBucket> {
   const bucket = `test-${randomUUID().replace(/-/g, '').slice(0, 16)}`;
   const admin = adminClient();
   await admin.send(new CreateBucketCommand({ Bucket: bucket }));
+  await admin.send(new PutBucketPolicyCommand({ Bucket: bucket, Policy: publicReadPolicy(bucket) }));
   return {
     bucket,
     options: {
