@@ -5,7 +5,6 @@ import {
   type NotificationPreferenceDto,
   type UserNotificationDto,
 } from '../../src/app/notifications/dto/notification-response.dto';
-import { type NewUserNotification } from '../../src/app/notifications/model/user-notification.model';
 import { type NotificationRetentionJob } from '../../src/app/notifications/service/notification-center.service';
 import { type UserEventsService } from '../../src/app/notifications/service/user-events.service';
 import { createWorkerContainer } from '../../src/container';
@@ -348,8 +347,8 @@ describe('notification centre', () => {
         payload: { orderId: order.id },
       };
       for (let i = 0; i < 2; i += 1) {
-        const rows: NewUserNotification[] = await service.prepare(event);
-        await worker.db.run((trx) => service.record(rows, trx));
+        const prepared = await service.prepare(event);
+        await worker.db.run((trx) => service.record(prepared, trx));
       }
       // Customer + seller: two rows and two push requests, however often the event arrives.
       const fromThisEvent = knex()('user_notifications')

@@ -54,6 +54,7 @@ import * as m20261020170204 from './20261020170204_validate_order_items_image_me
 import * as m20261020170206 from './20261020170206_add_order_items_image_media_id_index';
 import * as m20261020194936 from './20261020194936_create_user_notifications';
 import * as m20261020194938 from './20261020194938_create_notification_preferences';
+import * as m20261020203245 from './20261020203245_create_push_subscriptions';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -113,5 +114,6 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261020170206_add_order_items_image_media_id_index', module: m20261020170206 },
   { name: '20261020194936_create_user_notifications', module: m20261020194936 },
   { name: '20261020194938_create_notification_preferences', module: m20261020194938 },
+  { name: '20261020203245_create_push_subscriptions', module: m20261020203245 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

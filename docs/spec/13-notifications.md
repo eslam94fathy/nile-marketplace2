@@ -1,7 +1,7 @@
 # Spec 13 — notifications (minimal)
 
 Status: **v1.1 APPROVED (2026-10-08).** Approved by the user. v1.1: Phase 1 implementation clarifications (§7.1, N-1…N-5). Changes from now on need explicit approval and a version bump.
-**v2.1 APPROVED (2026-10-20):** §8.10 R2-P2 implementation clarifications NO-12…NO-21 (every recommendation accepted). **v2.0 APPROVED (2026-10-20):** §8 adds Release 2 push (standard Web Push, R-20), the in-app notification centre and preferences (R-5…R-7). Kept as its own section, so every cross-reference stays valid (R2-Q1).
+**v2.2 APPROVED (2026-10-21):** §8.11 Web Push clarifications NO-22…NO-30 (every recommendation accepted). **v2.1 APPROVED (2026-10-20):** §8.10 R2-P2 implementation clarifications NO-12…NO-21 (every recommendation accepted). **v2.0 APPROVED (2026-10-20):** §8 adds Release 2 push (standard Web Push, R-20), the in-app notification centre and preferences (R-5…R-7). Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -215,4 +215,18 @@ RE-9 and PA-26 accepted 2026-10-20. All under `orders`:
 | NO-19 | Recipients are resolved before the transaction (the consumer host's `beforeTransaction`, P1-I4): ordering's parties (`getNotificationParties`) and the profile → user id lookups. An order that can't be found, or a profile without a user, is skipped with a `warn` | UC-NO-2 step 1 |
 | NO-20 | The push request and the `notification.created` message go only for rows this delivery inserted, so a redelivered event announces nothing. The message carries the source `eventId` and the row's `created_at` | UC-NO-2 steps 2–3 |
 | NO-21 | Step split inside R2-P2: the centre and preferences ship in step 5; subscriptions, sending, the VAPID config and the `user.suspended` / `user.sessions_revoked` clean-up in step 6, in the same PR. Until the `notifications.push` queue exists, a published `notification.push_requested` has no queue and is dropped | §8.3 |
+
+### 8.11 Clarifications (R2-P2 Web Push, approved 2026-10-21)
+
+| # | Clarification | Where |
+|---|---|---|
+| NO-22 | `PUSH_ENDPOINT_HOST_ALLOWLIST` entries are an exact host or `*.` + a domain (its subdomains only). An endpoint must be `https` on the default port, without credentials. Value in every environment: `fcm.googleapis.com`, `updates.push.services.mozilla.com`, `*.notify.windows.com`, `web.push.apple.com`. The worker re-checks each stored subscription before sending; one no longer allowed is deleted with a `warn` | UC-NO-4, §8.6 |
+| NO-23 | The register body is `PushSubscription.toJSON()` as the browser gives it: its `expirationTime` (number or null) is accepted and ignored; the keys are base64url. The answer is `201` with an empty object | §8.4 |
+| NO-24 | "At most 10 per user" holds under parallel registrations: they are serialised by a transaction-scoped advisory lock on the user id (notifications may not lock identity's `users` row, and a first subscription has no row of its own). Unregistering another user's endpoint changes nothing (`204`) | §8.1, UC-NO-4 |
+| NO-25 | Send outcomes: `403` (e.g. after a VAPID key change) counts like `400` / `413`: permanent, `warn PUSH_SEND_FAILED`, the subscription is kept (the browser replaces it when it resubscribes). The timeout `PUSH_HTTP_TIMEOUT_MS` covers the whole request. When no device got it (all gone or rejected), the message is acked and `push_sent_at` stays null | UC-NO-3 steps 3–5 |
+| NO-26 | A request whose notification is gone (retention), or whose category the user muted since, is acked without sending | UC-NO-3 step 1 |
+| NO-27 | `user.suspended` and `user.sessions_revoked` are handled on `notifications.user-events` (as spec 02 §6.1 lists), deleting the user's subscriptions in the dedupe transaction | UC-NO-4, §8.5 |
+| NO-28 | `GET /push/config` needs a token like every §8.4 endpoint (the web app asks for it after login) | §8.4 |
+| NO-29 | Terraform: `vapid_public_key` and `vapid_subject` (`mailto:` the ops address) are tfvars; `VAPID_PRIVATE_KEY` is a secret filled by hand. `docs/runbooks/secrets.md` covers generating the pair and its rotation, which drops every subscription (R2-Q7) | §8.6 |
+| NO-30 | The sender is `pkg/push` (`IPushSender`, a `web-push` adapter), so FCM can replace it later behind the same interface (R-20) | §8.1 |
 

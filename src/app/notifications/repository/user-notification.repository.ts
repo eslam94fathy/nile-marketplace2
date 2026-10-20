@@ -110,6 +110,20 @@ export class UserNotificationRepository {
     return result.rows[0]?.count ?? 0;
   }
 
+  /** One notification of a user (the push sender, UC-NO-3); null when gone (retention) or another user's. */
+  async findForUser(userId: string, id: string): Promise<UserNotification | null> {
+    const row = await this.db
+      .knex<UserNotificationRow>(T)
+      .select(...COLUMNS)
+      .where({ id, user_id: userId })
+      .first();
+    return row ? toModel(row) : null;
+  }
+
+  async markPushSent(id: string, at: Date, trx: DbTransaction): Promise<void> {
+    await trx<UserNotificationRow>(T).where({ id }).update({ push_sent_at: at, updated_at: trx.fn.now() });
+  }
+
   /** False when the user has no such notification. Reading it again changes nothing. */
   async markRead(userId: string, id: string, readAt: Date): Promise<boolean> {
     const found = await this.db.knex.raw<{ rows: { exists: boolean }[] }>(

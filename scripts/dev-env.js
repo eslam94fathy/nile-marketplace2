@@ -103,6 +103,11 @@ const values = {
   NOTIFICATION_RETENTION_DAYS: '90',
   JOB_NOTIFICATION_RETENTION_INTERVAL_MS: '86400000',
   NOTIFICATION_RETENTION_BATCH_SIZE: '1000',
+  // Web Push (spec 13 §8.6): the push services browsers use (NO-22)
+  PUSH_ENDPOINT_HOST_ALLOWLIST:
+    'fcm.googleapis.com,updates.push.services.mozilla.com,*.notify.windows.com,web.push.apple.com',
+  VAPID_SUBJECT: 'mailto:dev@nile.local',
+  PUSH_HTTP_TIMEOUT_MS: '10000',
   IDEMPOTENCY_TTL_HOURS: '24',
   IDEMPOTENCY_LOCK_TTL_SECONDS: '60',
   // identity / invites (P1-Q4)
@@ -176,6 +181,12 @@ if (!existing.has('JWT_PRIVATE_KEY') || !existing.has('JWT_PUBLIC_KEYS')) {
     [JWT_KID]: publicKey.export({ type: 'spki', format: 'pem' }).toString(),
   });
   values.JWT_ACTIVE_KID = JWT_KID;
+}
+// A local VAPID key pair, once (rotating it drops every browser subscription, R2-Q7).
+if (!existing.has('VAPID_PUBLIC_KEY') || !existing.has('VAPID_PRIVATE_KEY')) {
+  const vapid = require('web-push').generateVAPIDKeys();
+  values.VAPID_PUBLIC_KEY = vapid.publicKey;
+  values.VAPID_PRIVATE_KEY = vapid.privateKey;
 }
 if (!existing.has('SECRETS_ENCRYPTION_KEYS')) {
   values.SECRETS_ENCRYPTION_KEYS = JSON.stringify({ [SECRETS_KID]: randomBytes(32).toString('base64') });

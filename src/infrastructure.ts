@@ -23,6 +23,7 @@ import { FakePaymentGateway, type IPaymentGateway, KashierPaymentGateway } from 
 import { BcryptPasswordHasher, type IPasswordHasher } from './pkg/hashing';
 import { type IImageProcessor, SharpImageProcessor } from './pkg/image';
 import { type IMessageBroker, RabbitMqBroker } from './pkg/messaging';
+import { type IPushSender, WebPushSender } from './pkg/push';
 import { S3ObjectStorage } from './pkg/storage';
 import { toSeconds, TimeUnit } from './pkg/time';
 
@@ -60,6 +61,8 @@ export interface WorkerInfrastructure extends CoreInfrastructure<WorkerEnv> {
   /** Only for the realtime emitter (spec 15 §6); the worker caches nothing (spec 06 CA-8). */
   redis: Redis;
   realtimeEmitter: IRealtimeEmitter;
+  /** Web Push to the users' browsers (spec 13 UC-NO-3). */
+  pushSender: IPushSender;
   emailSender: IEmailSender;
   paymentGateway: IPaymentGateway;
   /** The media bucket: image processing and cleanup (spec 14 UC-ME-3, UC-ME-4). */
@@ -183,6 +186,12 @@ export async function createWorkerInfrastructure(
     ...core,
     redis,
     realtimeEmitter: new RedisRealtimeEmitter(redis, env.REDIS_KEY_PREFIX, core.clock, logger),
+    pushSender: new WebPushSender({
+      vapidPublicKey: env.VAPID_PUBLIC_KEY,
+      vapidPrivateKey: env.VAPID_PRIVATE_KEY,
+      vapidSubject: env.VAPID_SUBJECT,
+      timeoutMs: env.PUSH_HTTP_TIMEOUT_MS,
+    }),
     emailSender: createEmailSender(env),
     paymentGateway: createPaymentGateway(env),
     objectStorage: createObjectStorage(env, undefined),

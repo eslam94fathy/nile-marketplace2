@@ -1,4 +1,5 @@
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
+import webPush from 'web-push';
 
 /** One RSA key pair per test process, used to sign test JWTs and to configure JWT_PUBLIC_KEYS. */
 const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -6,6 +7,9 @@ const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 20
 export const TEST_JWT_KID = 'test-k1';
 export const TEST_JWT_PRIVATE_KEY_PEM = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
 export const TEST_JWT_PUBLIC_KEY_PEM = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+
+/** One VAPID key pair per test process (spec 13 §8.6). */
+export const TEST_VAPID_KEYS = webPush.generateVAPIDKeys();
 
 export const TEST_SECRETS_KEY_ID = 'test-s1';
 export const TEST_SECRETS_KEY = randomBytes(32);
@@ -81,6 +85,13 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     NOTIFICATION_RETENTION_DAYS: '90',
     JOB_NOTIFICATION_RETENTION_INTERVAL_MS: '86400000',
     NOTIFICATION_RETENTION_BATCH_SIZE: '1000',
+    // Web Push (spec 13 §8.6); tests swap the sender for a fake through DI
+    VAPID_PUBLIC_KEY: TEST_VAPID_KEYS.publicKey,
+    VAPID_PRIVATE_KEY: TEST_VAPID_KEYS.privateKey,
+    VAPID_SUBJECT: 'mailto:test@nile.test',
+    PUSH_HTTP_TIMEOUT_MS: '2000',
+    PUSH_ENDPOINT_HOST_ALLOWLIST:
+      'fcm.googleapis.com,updates.push.services.mozilla.com,*.notify.windows.com,web.push.apple.com',
     IDEMPOTENCY_TTL_HOURS: '24',
     IDEMPOTENCY_LOCK_TTL_SECONDS: '30',
     // identity (cost 10 = the minimum allowed, keeps tests fast)

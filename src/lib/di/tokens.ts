@@ -194,6 +194,11 @@ export const TOKENS = {
   NotificationRetentionJob: Symbol.for('NotificationRetentionJob'),
   NotificationCenterService: Symbol.for('NotificationCenterService'),
   NotificationController: Symbol.for('NotificationController'),
+  PushSubscriptionRepository: Symbol.for('PushSubscriptionRepository'),
+  PushSubscriptionService: Symbol.for('PushSubscriptionService'),
+  PushDeliveryService: Symbol.for('PushDeliveryService'),
+  PushSender: Symbol.for('PushSender'),
+  PushController: Symbol.for('PushController'),
 
   // audit module (spec 20 §2)
   AuditLogRepository: Symbol.for('AuditLogRepository'),

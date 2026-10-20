@@ -4,9 +4,15 @@ import { type OpenApiRegistry } from '../../lib/http';
 import { authenticate } from '../../lib/middleware';
 import { NOTIFICATION_PATHS as P } from './constants';
 import { type NotificationController } from './controller/notification.controller';
-import { UpdatePreferencesDto } from './dto/notification-request.dto';
+import { type PushController } from './controller/push.controller';
+import {
+  RegisterPushSubscriptionDto,
+  UnregisterPushSubscriptionDto,
+  UpdatePreferencesDto,
+} from './dto/notification-request.dto';
 import {
   NotificationPreferenceDto,
+  PushConfigDto,
   UnreadCountDto,
   UserNotificationDto,
 } from './dto/notification-response.dto';
@@ -16,6 +22,7 @@ const TAGS = ['notifications'] as const;
 
 export interface NotificationRouteDeps {
   notifications: NotificationController;
+  push: PushController;
   jwtVerifier: JwtVerifier;
   docs: OpenApiRegistry;
   /** Where the router is mounted (`/api/v1`), for the documented paths. */
@@ -35,6 +42,9 @@ export function notificationRoutes(deps: NotificationRouteDeps): Router {
   router.post(P.READ, auth, c.markRead);
   router.get(P.PREFERENCES, auth, c.getPreferences);
   router.put(P.PREFERENCES, auth, c.setPreferences);
+  router.get(P.PUSH_CONFIG, auth, deps.push.config);
+  router.post(P.PUSH_UNREGISTER, auth, deps.push.unregister);
+  router.post(P.PUSH_SUBSCRIPTIONS, auth, deps.push.register);
 
   const common = { tags: TAGS, auth: true } as const;
   const preferences = {
@@ -102,6 +112,30 @@ export function notificationRoutes(deps: NotificationRouteDeps): Router {
     summary: 'Change push for some categories; the others keep their value',
     requestBody: UpdatePreferencesDto,
     responses: preferences,
+  });
+  docs.add({
+    ...common,
+    method: 'get',
+    path: `${basePath}${P.PUSH_CONFIG}`,
+    summary: 'The VAPID public key for pushManager.subscribe',
+    responses: { 200: { description: 'Push configuration', body: PushConfigDto } },
+  });
+  docs.add({
+    ...common,
+    method: 'post',
+    path: `${basePath}${P.PUSH_SUBSCRIPTIONS}`,
+    summary:
+      "Register this browser for push (an upsert by endpoint; the 11th deletes the user's oldest) (PUSH_ENDPOINT_NOT_ALLOWED)",
+    requestBody: RegisterPushSubscriptionDto,
+    responses: { 201: { description: 'Registered' } },
+  });
+  docs.add({
+    ...common,
+    method: 'post',
+    path: `${basePath}${P.PUSH_UNREGISTER}`,
+    summary: 'Stop push to this browser (before logout; an unknown endpoint is fine)',
+    requestBody: UnregisterPushSubscriptionDto,
+    responses: { 204: { description: 'Unregistered' } },
   });
   return router;
 }

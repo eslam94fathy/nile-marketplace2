@@ -1,13 +1,18 @@
+import { toSeconds, TimeUnit } from '../../pkg/time';
 import { NotificationCategory } from './enums';
 
 export const NOTIFICATIONS_TABLES = {
   NOTIFICATION_LOG: 'notification_log',
   USER_NOTIFICATIONS: 'user_notifications',
   NOTIFICATION_PREFERENCES: 'notification_preferences',
+  PUSH_SUBSCRIPTIONS: 'push_subscriptions',
 } as const;
 
 /** Queue of the email consumer (docs/spec/02-events.md §2). */
 export const EMAIL_CONSUMER_QUEUE = 'notifications.email';
+
+/** Queue of the push sender (spec 13 UC-NO-3, NO-6). */
+export const PUSH_QUEUE = 'notifications.push';
 
 /** Queue of the notification-centre consumer (spec 13 UC-NO-2). */
 export const USER_EVENTS_QUEUE = 'notifications.user-events';
@@ -24,7 +29,22 @@ export const NOTIFICATION_PATHS = {
   READ: '/me/notifications/:notificationId/read',
   READ_ALL: '/me/notifications/read-all',
   PREFERENCES: '/me/notification-preferences',
+  PUSH_CONFIG: '/push/config',
+  PUSH_SUBSCRIPTIONS: '/me/push-subscriptions',
+  PUSH_UNREGISTER: '/me/push-subscriptions/unregister',
 } as const;
+
+/** Column limits of `push_subscriptions` (spec 13 §8.1). */
+export const PUSH_ENDPOINT_MAX_LENGTH = 2_048;
+export const PUSH_P256DH_MAX_LENGTH = 100;
+export const PUSH_AUTH_MAX_LENGTH = 50;
+export const PUSH_USER_AGENT_MAX_LENGTH = 200;
+
+/** A user's browsers; registering one more deletes the oldest (spec 13 §8.1). */
+export const MAX_PUSH_SUBSCRIPTIONS_PER_USER = 10;
+
+/** How long a push service keeps a message for an offline device (UC-NO-3 step 2). */
+export const PUSH_TTL_SECONDS = toSeconds(24, TimeUnit.HOUR);
 
 /** `GET /me/notifications/unread-count` counts up to this (a badge shows "99+"). */
 export const UNREAD_COUNT_CAP = 100;

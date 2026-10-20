@@ -290,6 +290,34 @@ const mediaApiShape = {
   MEDIA_MAX_OPEN_UPLOADS_PER_USER: positiveInt(1_000),
 };
 
+/**
+ * Web Push (spec 13 §8.6, R-20). The api hands out the public key and checks subscription hosts; the
+ * worker signs and sends. VAPID keys are P-256: public 65 bytes, private 32 bytes, base64url.
+ */
+const pushHostPattern = /^(\*\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/;
+const pushApiShape = {
+  VAPID_PUBLIC_KEY: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{87}$/, 'must be a base64url P-256 public key (87 chars)'),
+  PUSH_ENDPOINT_HOST_ALLOWLIST: commaList.pipe(
+    z.array(z.string().regex(pushHostPattern, 'must be a host or *.domain')).min(1),
+  ),
+};
+const pushWorkerShape = {
+  ...pushApiShape,
+  VAPID_PRIVATE_KEY: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{43}$/, 'must be a base64url P-256 private key (43 chars)'),
+  VAPID_SUBJECT: z
+    .string()
+    .max(200)
+    .refine(
+      (value) => /^mailto:[^@\s]+@[^@\s]+$/.test(value) || /^https:\/\/\S+$/.test(value),
+      'must be mailto: or https:',
+    ),
+  PUSH_HTTP_TIMEOUT_MS: positiveInt(60_000),
+};
+
 /** notification-centre retention job (spec 13 UC-NO-5, NO-7), worker only. */
 const notificationJobsShape = {
   NOTIFICATION_RETENTION_DAYS: positiveInt(3_650),
@@ -479,6 +507,7 @@ export const apiEnvSchema = z
     ...secretsShape,
     ...storageShape,
     ...mediaApiShape,
+    ...pushApiShape,
   })
   .superRefine((env, ctx) => {
     refinePool(env, ctx);
@@ -515,6 +544,7 @@ export const workerEnvSchema = z
     ...auditJobsShape,
     ...mediaJobsShape,
     ...notificationJobsShape,
+    ...pushWorkerShape,
     ...storageShape,
     // The payment consumer sets the acceptance deadline when a Kashier order is placed (OR-8).
     ...orderingShape,

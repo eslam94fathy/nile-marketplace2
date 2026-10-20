@@ -63,3 +63,9 @@ export const toNotificationPreferenceDto = (p: NotificationPreference): Notifica
   category: p.category,
   pushEnabled: p.pushEnabled,
 });
+
+export class PushConfigDto {
+  /** The `applicationServerKey` for `pushManager.subscribe` (base64url). */
+  @IsString()
+  vapidPublicKey!: string;
+}

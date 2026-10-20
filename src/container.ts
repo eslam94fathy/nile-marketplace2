@@ -115,6 +115,7 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   registerMediaWorker(container);
   // realtime.fanout (spec 15 UC-RT-2): ordering's directory is registered with the ordering worker.
   container.register(TOKENS.RealtimeEmitter, { useValue: infra.realtimeEmitter });
+  container.register(TOKENS.PushSender, { useValue: infra.pushSender });
   registerRealtimeWorker(container);
   return container;
 }

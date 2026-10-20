@@ -10,6 +10,8 @@ import {
   ShipmentAssigned,
   ShipmentAttemptFailed,
   ShipmentOutForDelivery,
+  UserSessionsRevoked,
+  UserSuspended,
 } from '../../../lib/events';
 import { type NotificationParty, SellerOrderCancelReason, SellerOrderStatus } from '../../ordering';
 import { NotificationLink } from '../constants';
@@ -26,11 +28,22 @@ export const USER_EVENTS = [
   ShipmentAssigned,
   ShipmentOutForDelivery,
   ShipmentAttemptFailed,
+  // Not notifications: they drop the user's push subscriptions (UC-NO-4, NO-8).
+  UserSuspended,
+  UserSessionsRevoked,
 ] as const;
+
+/** Events that end a user's sessions: their browsers must stop showing lock-screen texts (NO-8). */
+export const SESSION_END_EVENTS: ReadonlySet<string> = new Set([
+  UserSuspended.type,
+  UserSessionsRevoked.type,
+]);
 
 /** Events whose mapping needs the order's parties (order number, customer, seller orders). */
 export const NEEDS_PARTY: ReadonlySet<string> = new Set(
-  USER_EVENTS.filter((contract) => contract !== ShipmentAssigned).map((contract) => contract.type),
+  USER_EVENTS.filter(
+    (contract) => contract !== ShipmentAssigned && !SESSION_END_EVENTS.has(contract.type),
+  ).map((contract) => contract.type),
 );
 
 export type RecipientKind = 'customer' | 'seller' | 'agent';

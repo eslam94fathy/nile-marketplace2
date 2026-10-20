@@ -1,7 +1,7 @@
 /**
  * notifications module (docs/spec/13-notifications.md): transactional email (worker), and from R2 the
  * notification centre (api endpoints, worker consumer and retention job; spec 13 §8).
- * Owns tables: notification_log, user_notifications, notification_preferences.
+ * Owns tables: notification_log, user_notifications, notification_preferences, push_subscriptions.
  * May call: customers, sellers, delivery (recipient user ids), ordering (parties; spec 02 §6.3).
  * Public API: none besides the composition-root functions below.
  */
@@ -10,20 +10,27 @@ import { type DependencyContainer } from 'tsyringe';
 import { type JwtVerifier } from '../../lib/auth';
 import { type Env } from '../../lib/config';
 import { TOKENS } from '../../lib/di';
-import { type EventHandlerDefinition, NotificationEmailRequested } from '../../lib/events';
+import {
+  type EventHandlerDefinition,
+  NotificationEmailRequested,
+  NotificationPushRequested,
+} from '../../lib/events';
 import { type OpenApiRegistry } from '../../lib/http';
 import { type JobDefinition } from '../../lib/jobs';
-import { EMAIL_CONSUMER_QUEUE, USER_EVENTS_QUEUE } from './constants';
+import { EMAIL_CONSUMER_QUEUE, PUSH_QUEUE, USER_EVENTS_QUEUE } from './constants';
 import { NotificationController } from './controller/notification.controller';
-import { type NewUserNotification } from './model/user-notification.model';
+import { PushController } from './controller/push.controller';
 import { NotificationLogRepository } from './repository/notification-log.repository';
 import { NotificationPreferenceRepository } from './repository/notification-preference.repository';
+import { PushSubscriptionRepository } from './repository/push-subscription.repository';
 import { UserNotificationRepository } from './repository/user-notification.repository';
 import { notificationRoutes } from './routes';
 import { EmailNotificationService, type SendOutcome } from './service/email-notification.service';
 import { NotificationCenterService, NotificationRetentionJob } from './service/notification-center.service';
+import { type PushDeliveryOutcome, PushDeliveryService } from './service/push-delivery.service';
+import { PushSubscriptionService } from './service/push-subscription.service';
 import { USER_EVENTS } from './service/user-event-mapping';
-import { UserEventsService } from './service/user-events.service';
+import { type PreparedUserEvent, UserEventsService } from './service/user-events.service';
 
 export { NotificationsErrorCode } from './errors';
 
@@ -38,6 +45,8 @@ export function registerNotificationsModule(container: DependencyContainer): voi
   container.registerSingleton(TOKENS.NotificationPreferenceRepository, NotificationPreferenceRepository);
   container.registerSingleton(TOKENS.UserEventsService, UserEventsService);
   container.registerSingleton(TOKENS.NotificationRetentionJob, NotificationRetentionJob);
+  container.registerSingleton(TOKENS.PushSubscriptionRepository, PushSubscriptionRepository);
+  container.registerSingleton(TOKENS.PushDeliveryService, PushDeliveryService);
 }
 
 /** api process: the notification-centre endpoints (spec 13 §8.4). */
@@ -46,12 +55,16 @@ export function registerNotificationsHttp(container: DependencyContainer): void 
   container.registerSingleton(TOKENS.NotificationPreferenceRepository, NotificationPreferenceRepository);
   container.registerSingleton(TOKENS.NotificationCenterService, NotificationCenterService);
   container.registerSingleton(TOKENS.NotificationController, NotificationController);
+  container.registerSingleton(TOKENS.PushSubscriptionRepository, PushSubscriptionRepository);
+  container.registerSingleton(TOKENS.PushSubscriptionService, PushSubscriptionService);
+  container.registerSingleton(TOKENS.PushController, PushController);
 }
 
 /** The module's HTTP routes, mounted by the composition root at `basePath` (`/api/v1`). */
 export function createNotificationsRouter(container: DependencyContainer, basePath: string): Router {
   return notificationRoutes({
     notifications: container.resolve<NotificationController>(TOKENS.NotificationController),
+    push: container.resolve<PushController>(TOKENS.PushController),
     jwtVerifier: container.resolve<JwtVerifier>(TOKENS.JwtVerifier),
     docs: container.resolve<OpenApiRegistry>(TOKENS.OpenApiRegistry),
     basePath,
@@ -65,6 +78,7 @@ export function createNotificationsRouter(container: DependencyContainer, basePa
 export function createNotificationHandlers(container: DependencyContainer): EventHandlerDefinition[] {
   const email = container.resolve<EmailNotificationService>(TOKENS.EmailNotificationService);
   const userEvents = container.resolve<UserEventsService>(TOKENS.UserEventsService);
+  const push = container.resolve<PushDeliveryService>(TOKENS.PushDeliveryService);
   return [
     {
       name: EMAIL_CONSUMER_QUEUE,
@@ -78,7 +92,14 @@ export function createNotificationHandlers(container: DependencyContainer): Even
       events: USER_EVENTS,
       // Recipient lookups are reads in other modules: done before the transaction opens.
       beforeTransaction: (envelope) => userEvents.prepare(envelope),
-      handle: (_envelope, trx, prepared) => userEvents.record(prepared as NewUserNotification[], trx),
+      handle: (_envelope, trx, prepared) => userEvents.record(prepared as PreparedUserEvent, trx),
+    },
+    {
+      name: PUSH_QUEUE,
+      events: [NotificationPushRequested],
+      // Sending is HTTP to the push services: outside the transaction (N-1, UC-NO-3 step 2).
+      beforeTransaction: (envelope) => push.send(envelope),
+      handle: (_envelope, trx, prepared) => push.record(prepared as PushDeliveryOutcome, trx),
     },
   ];
 }

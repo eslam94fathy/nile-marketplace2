@@ -11,6 +11,7 @@ import { type ISellerDirectory } from '../../sellers';
 import { DEFAULT_PUSH_ENABLED } from '../constants';
 import { type NewUserNotification, type UserNotification } from '../model/user-notification.model';
 import { type NotificationPreferenceRepository } from '../repository/notification-preference.repository';
+import { type PushSubscriptionRepository } from '../repository/push-subscription.repository';
 import { type UserNotificationRepository } from '../repository/user-notification.repository';
 import {
   idOf,
@@ -18,7 +19,11 @@ import {
   NEEDS_PARTY,
   type NotificationDraft,
   type RecipientKind,
+  SESSION_END_EVENTS,
 } from './user-event-mapping';
+
+/** What `prepare` hands to `record`: rows to store, or a user whose push subscriptions go (NO-8). */
+export type PreparedUserEvent = { rows: NewUserNotification[] } | { dropSubscriptionsOf: string };
 
 /**
  * Consumer `notifications.user-events` (spec 13 UC-NO-2). `prepare` maps the event and resolves the
@@ -36,12 +41,26 @@ export class UserEventsService {
     @inject(TOKENS.UserNotificationRepository) private readonly notifications: UserNotificationRepository,
     @inject(TOKENS.NotificationPreferenceRepository)
     private readonly preferences: NotificationPreferenceRepository,
+    @inject(TOKENS.PushSubscriptionRepository) private readonly subscriptions: PushSubscriptionRepository,
     @inject(TOKENS.Outbox) private readonly outbox: IOutbox,
     @inject(TOKENS.RealtimeEmitter) private readonly realtime: IRealtimeEmitter,
     @inject(TOKENS.Logger) private readonly logger: ILogger,
   ) {}
 
-  async prepare(envelope: EventEnvelope): Promise<NewUserNotification[]> {
+  async prepare(envelope: EventEnvelope): Promise<PreparedUserEvent> {
+    if (SESSION_END_EVENTS.has(envelope.eventType)) return { dropSubscriptionsOf: idOf(envelope, 'userId') };
+    return { rows: await this.rowsOf(envelope) };
+  }
+
+  async record(prepared: PreparedUserEvent, trx: DbTransaction): Promise<void> {
+    if ('dropSubscriptionsOf' in prepared) {
+      await this.subscriptions.deleteAllForUser(prepared.dropSubscriptionsOf, trx);
+      return;
+    }
+    await this.store(prepared.rows, trx);
+  }
+
+  private async rowsOf(envelope: EventEnvelope): Promise<NewUserNotification[]> {
     const party = NEEDS_PARTY.has(envelope.eventType) ? await this.partyOf(envelope) : undefined;
     if (NEEDS_PARTY.has(envelope.eventType) && !party) {
       // Orders are never deleted: a payload naming a missing order can't be notified.
@@ -68,7 +87,7 @@ export class UserEventsService {
     });
   }
 
-  async record(rows: readonly NewUserNotification[], trx: DbTransaction): Promise<void> {
+  private async store(rows: readonly NewUserNotification[], trx: DbTransaction): Promise<void> {
     const inserted = await this.notifications.insertMany(rows, trx);
     if (inserted.length === 0) return;
     const pushable = await this.pushable(inserted, trx);
