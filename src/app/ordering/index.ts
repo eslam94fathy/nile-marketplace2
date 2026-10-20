@@ -3,8 +3,9 @@
  * per-seller split, snapshots, stored statuses and the money of each seller order.
  * Owns tables: orders, seller_orders, order_items, order_item_cancellations, order_status_history,
  * seller_order_status_history. No other module reads or writes them.
- * May call: customers, cart, catalog, sellers, inventory, payments, delivery, media. Nobody calls ordering
- * (architecture §2): it has no public service API, only event contracts and its routes.
+ * May call: customers, cart, catalog, sellers, inventory, payments, delivery, media. From R2 its public
+ * API (`IOrderingDirectory`, spec 09 §8.1) is read by realtime, notifications and support; ordering calls
+ * none of them, so the graph stays acyclic (architecture v2.0 §14.2).
  */
 import { type Router } from 'express';
 import { type DependencyContainer } from 'tsyringe';
@@ -40,12 +41,16 @@ import { CheckoutService } from './service/checkout.service';
 import { OrderActionService } from './service/order-action.service';
 import { OrderLifecycleService } from './service/order-lifecycle.service';
 import { OrderViewService } from './service/order-view.service';
+import { OrderingDirectory } from './service/ordering-directory.service';
 import { PaymentExpiryJob } from './service/payment-expiry.job';
 import { PaymentUpdateService } from './service/payment-update.service';
 import { ShipmentUpdateService } from './service/shipment-update.service';
 
 export { OrderingErrorCode } from './errors';
 export { OrderStatus, SellerOrderStatus } from './enums';
+export type { NotificationParty, OrderLink } from './model/notification-party.model';
+/** Inject with `TOKENS.OrderingDirectory`. */
+export type { IOrderingDirectory } from './service/ordering-directory.service';
 
 /** What both processes need: the repositories and the shared order write path. Needs inventory first. */
 function registerOrderingCore(container: DependencyContainer): void {
@@ -55,6 +60,7 @@ function registerOrderingCore(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.StatusHistoryRepository, StatusHistoryRepository);
   container.registerSingleton(TOKENS.OrderItemCancellationRepository, OrderItemCancellationRepository);
   container.registerSingleton(TOKENS.OrderLifecycleService, OrderLifecycleService);
+  container.registerSingleton(TOKENS.OrderingDirectory, OrderingDirectory);
 }
 
 /** api process. Needs customers, cart, catalog, sellers, inventory, payments, delivery and media registered first. */

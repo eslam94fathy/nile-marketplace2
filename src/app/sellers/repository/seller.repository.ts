@@ -130,6 +130,16 @@ export class SellerRepository {
   }
 
   /** Batched lookup for other modules (no N+1, G20). Unknown ids are left out. */
+  /** Profile id → user id, one batched query on the primary key; unknown ids are left out. */
+  async findUserIds(ids: readonly string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.db
+      .knex<{ id: string; user_id: string }>(T)
+      .select('id', 'user_id')
+      .whereIn('id', [...new Set(ids)]);
+    return new Map(rows.map((row) => [row.id, row.user_id]));
+  }
+
   async findByIds(ids: readonly string[], trx?: DbTransaction): Promise<Seller[]> {
     if (ids.length === 0) return [];
     const rows = await this.exec(trx)<SellerRow>(T)

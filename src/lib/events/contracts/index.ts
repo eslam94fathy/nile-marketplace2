@@ -28,6 +28,7 @@ export * from './media-ready.event';
 export * from './media-failed.event';
 export * from './user-suspended.event';
 export * from './user-sessions-revoked.event';
+export * from './seller-order-accepted.event';
 
 import { CodRemittanceConfirmed } from './cod-remittance-confirmed.event';
 import { InventoryStockStatusChanged } from './inventory-stock-status-changed.event';
@@ -43,6 +44,7 @@ import { PaymentPaid } from './payment-paid.event';
 import { PaymentRefundRecorded } from './payment-refund-recorded.event';
 import { PayoutRecorded } from './payout-recorded.event';
 import { SellerApproved } from './seller-approved.event';
+import { SellerOrderAccepted } from './seller-order-accepted.event';
 import { SellerOrderCancelled } from './seller-order-cancelled.event';
 import { SellerOrderDelivered } from './seller-order-delivered.event';
 import { SellerOrderItemsCancelled } from './seller-order-items-cancelled.event';
@@ -85,4 +87,5 @@ export const ALL_EVENT_CONTRACTS = [
   MediaFailed,
   UserSuspended,
   UserSessionsRevoked,
+  SellerOrderAccepted,
 ] as const;

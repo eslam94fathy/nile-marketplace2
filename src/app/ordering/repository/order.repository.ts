@@ -231,6 +231,16 @@ export class OrderRepository {
       .where({ id });
   }
 
+  /** Order numbers only, one batched query on the primary key (spec 09 §8.1 `getOrderNumbers`). */
+  async findOrderNumbers(ids: readonly string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.db
+      .knex<OrderTable>(T)
+      .select('id', 'order_number')
+      .whereIn('id', [...new Set(ids)]);
+    return new Map(rows.map((row) => [row.id, row.order_number]));
+  }
+
   /** One batched `id IN (...)` query (G20). */
   async findByIds(ids: readonly string[], trx?: DbTransaction): Promise<Order[]> {
     if (ids.length === 0) return [];

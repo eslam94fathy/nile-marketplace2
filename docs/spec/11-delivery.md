@@ -1,7 +1,7 @@
 # Spec 11 — delivery
 
 Status: **v1.2 APPROVED (2026-10-12).** v1.0 (2026-10-09): the reference-data part, with the clarifications in §7.1. v1.1: the whole spec (agents, shipments, assignment) approved with the Phase 6 clarifications in §7.2. v1.2: how the consumer orders item cancellations and returns (DE-15, DE-16). Changes from now on need explicit approval and a version bump.
-**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 return shipments (spec 18), a dashboard method, and the paid-amount payload change (spec 09 §8.8). Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.6 DE-17…DE-19 answered 2026-10-20.
+**v2.1 APPROVED (2026-10-20):** §8.4 `getUserIds` (DE-20). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 return shipments (spec 18), a dashboard method, and the paid-amount payload change (spec 09 §8.8). Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.6 DE-17…DE-19 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -232,6 +232,7 @@ Consumed: `seller_order.ready_for_pickup`, `seller_order.items_cancelled`, `sell
 ### 8.4 Other changes
 - `seller_order.items_cancelled` consumer uses `newPaidSubtotal` for `cod_items_amount` (spec 09 §8.8); `codItemsAmount` of `ready_for_pickup` is already the paid amount.
 - New public method `getDashboardStats() → { awaitingAssignment, outForDelivery, returnsInProgress }` (spec 20 §3.2), one aggregate.
+- **DE-20 (v2.1, approved 2026-10-20):** new public method `getUserIds(agentIds) → Map<agentId, userId>` on `IDeliveryAgentDirectory`, batched, unknown ids left out. Spec 02 §6.3 and spec 13 §8 resolve agent recipients "through the owning module" (and plan R2-P2 step 3 lists it), but this section had not named the method. Realtime does not need it (it joins `agent:<agentId>` rooms); notifications does (push to an agent's user, NO-10).
 
 ### 8.5 Events
 Published (new): `return_shipment.picked_up`, `return_shipment.delivered`, `return_shipment.failed` → returns (`returns.shipment-updates`), realtime. `shipment.assigned` gains `kind` and `returnId`. Ordering's `ordering.shipment-updates` never receives return events (different names), so R1 consumers are untouched.

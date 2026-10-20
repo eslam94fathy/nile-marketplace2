@@ -176,6 +176,16 @@ export class SellerOrderRepository {
     return rows.map(toModel);
   }
 
+  /** One batched query on the primary key (G20); unknown ids are left out. */
+  async findByIds(ids: readonly string[]): Promise<SellerOrder[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .knex<SellerOrderTable>(T)
+      .select(...COLUMNS)
+      .whereIn('id', [...new Set(ids)]);
+    return rows.map(toModel);
+  }
+
   /** Locks the seller orders of a locked order, in id order (spec 09 §1.2, OR-3). */
   async lockByOrderId(orderId: string, trx: DbTransaction): Promise<SellerOrder[]> {
     const rows = await trx<SellerOrderTable>(T)

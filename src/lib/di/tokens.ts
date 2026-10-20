@@ -147,6 +147,7 @@ export const TOKENS = {
   PaymentExpiryJob: Symbol.for('PaymentExpiryJob'),
   CheckoutService: Symbol.for('CheckoutService'),
   OrderViewService: Symbol.for('OrderViewService'),
+  OrderingDirectory: Symbol.for('OrderingDirectory'),
   OrderController: Symbol.for('OrderController'),
   SellerOrderController: Symbol.for('SellerOrderController'),
   AdminOrderController: Symbol.for('AdminOrderController'),

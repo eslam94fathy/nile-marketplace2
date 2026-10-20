@@ -46,6 +46,16 @@ export class CustomerRepository {
     return trx ?? this.db.knex;
   }
 
+  /** Profile id → user id, one batched query on the primary key; unknown ids are left out. */
+  async findUserIds(ids: readonly string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.db
+      .knex<{ id: string; user_id: string }>(T)
+      .select('id', 'user_id')
+      .whereIn('id', [...new Set(ids)]);
+    return new Map(rows.map((row) => [row.id, row.user_id]));
+  }
+
   async findByUserId(userId: string, trx?: DbTransaction): Promise<Customer | undefined> {
     const row = await this.exec(trx)<CustomerRow>(T)
       .select(...COLUMNS)

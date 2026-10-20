@@ -11,6 +11,8 @@ export interface ICustomerDirectory {
   getCustomerIdByUserId(userId: string): Promise<string | null>;
   /** Checkout copy of an address. ADDRESS_NOT_FOUND if missing, deleted or another customer's. */
   getAddressSnapshot(customerId: string, addressId: string, trx?: DbTransaction): Promise<AddressSnapshot>;
+  /** Recipient resolution for realtime and notifications (spec 04 §8.3); unknown ids are left out. */
+  getUserIds(customerIds: readonly string[]): Promise<Map<string, string>>;
 }
 
 @injectable()
@@ -30,5 +32,9 @@ export class CustomerDirectory implements ICustomerDirectory {
     trx?: DbTransaction,
   ): Promise<AddressSnapshot> {
     return (await this.addresses.get(customerId, addressId, trx)).toSnapshot();
+  }
+
+  getUserIds(customerIds: readonly string[]): Promise<Map<string, string>> {
+    return this.customers.findUserIds(customerIds);
   }
 }

@@ -44,6 +44,8 @@ export interface ISellerDirectory {
   /** Display names (catalog, cart, ordering). */
   getSummaries(sellerIds: readonly string[]): Promise<{ sellerId: string; businessName: string }[]>;
   getCheckoutSnapshots(sellerIds: readonly string[], trx: DbTransaction): Promise<SellerCheckoutSnapshot[]>;
+  /** Recipient resolution for realtime and notifications (spec 05 §8.2); unknown ids are left out. */
+  getUserIds(sellerIds: readonly string[]): Promise<Map<string, string>>;
 }
 
 @injectable()
@@ -80,5 +82,9 @@ export class SellerDirectory implements ISellerDirectory {
       commissionRate: s.commissionRate.toString(),
       pickup: { ...s.pickup, phone: s.contactPhone },
     }));
+  }
+
+  getUserIds(sellerIds: readonly string[]): Promise<Map<string, string>> {
+    return this.sellers.findUserIds(sellerIds);
   }
 }

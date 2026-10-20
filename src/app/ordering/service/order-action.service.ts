@@ -3,6 +3,7 @@ import { type DbTransaction, type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import {
   type IOutbox,
+  SellerOrderAccepted,
   SellerOrderItemsCancelled,
   SellerOrderReadyForPickup,
   SellerOrderReturned,
@@ -82,7 +83,10 @@ export class OrderActionService {
     });
   }
 
-  /** UC-OR-3: placed → accepted. Allowed after the deadline until the timeout job has run. */
+  /**
+   * UC-OR-3: placed → accepted, published as `seller_order.accepted` (spec 09 §8.2). Allowed after the
+   * deadline until the timeout job has run.
+   */
   accept(seller: SellerCaller, sellerOrderId: string): Promise<void> {
     return this.asSeller(seller, sellerOrderId, async (locked, target, actor, trx) => {
       const now = this.lifecycle.now();
@@ -96,6 +100,18 @@ export class OrderActionService {
         trx,
       );
       if (!done) throw sellerOrderInvalidStatusTransition(target.status);
+      await this.outbox.add(trx, {
+        contract: SellerOrderAccepted,
+        aggregateId: done.id,
+        payload: {
+          sellerOrderId: done.id,
+          orderId: locked.order.id,
+          orderNumber: locked.order.orderNumber,
+          sellerId: done.sellerId,
+          customerId: locked.order.customerId,
+          acceptedAt: now.toISOString(),
+        },
+      });
     });
   }
 
