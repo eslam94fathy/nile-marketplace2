@@ -1,4 +1,5 @@
 import { inject, injectable } from 'tsyringe';
+import { type IAuditRecorder } from '../../../lib/audit';
 import { type IClock } from '../../../lib/clock';
 import { type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
@@ -40,6 +41,7 @@ export class PayoutService {
     @inject(TOKENS.PayoutRepository) private readonly payouts: PayoutRepository,
     @inject(TOKENS.SellerDirectory) private readonly sellers: ISellerDirectory,
     @inject(TOKENS.DeliveryAgentDirectory) private readonly agents: IDeliveryAgentDirectory,
+    @inject(TOKENS.AuditRecorder) private readonly audit: IAuditRecorder,
   ) {}
 
   /**
@@ -68,6 +70,19 @@ export class PayoutService {
                 entryType,
               },
             ],
+          },
+          trx,
+        );
+        await this.audit.record(
+          {
+            action: 'payout.recorded',
+            targetId: created.id,
+            after: {
+              amount: created.amount.toString(),
+              payeeType: created.payeeType,
+              payeeId: created.payeeId,
+              externalReference: created.externalReference,
+            },
           },
           trx,
         );

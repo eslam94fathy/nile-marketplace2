@@ -249,6 +249,13 @@ const deliveryJobsShape = {
   SHIPMENT_JOBS_BATCH_SIZE: positiveInt(1_000),
 };
 
+/** audit retention job (spec 20 §2.4, R-19: kept 2 years), worker only. */
+const auditJobsShape = {
+  AUDIT_RETENTION_DAYS: positiveInt(36_500),
+  JOB_AUDIT_RETENTION_INTERVAL_MS: positiveInt(604_800_000),
+  AUDIT_RETENTION_BATCH_SIZE: positiveInt(100_000),
+};
+
 /** Invites are also created by the seed-admin CLI. */
 const inviteShape = {
   INVITE_TTL_HOURS: positiveInt(24 * 30),
@@ -422,6 +429,7 @@ export const workerEnvSchema = z
     ...jobsShape,
     ...orderJobsShape,
     ...deliveryJobsShape,
+    ...auditJobsShape,
     // The payment consumer sets the acceptance deadline when a Kashier order is placed (OR-8).
     ...orderingShape,
     ...paymentGatewayShape,

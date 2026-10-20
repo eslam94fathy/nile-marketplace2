@@ -1,7 +1,7 @@
 # System Design 01 — Architecture (Release 1)
 
 Status: **v1.10 APPROVED (2026-10-13).** v1.1: event names and queue bindings now follow `docs/spec/02-events.md` v1.0 (A-1). v1.2: consumers with external effects run them before the dedupe transaction (§3.2, Phase 1). v1.3: dependency edges for customers, sellers, cart and finance (§2, A-2); governorates cache TTL (§8, Phase 2). v1.4: catalog cache keys and TTLs (§8), "newest" sorts on `published_at` (§9) (Phase 3). v1.5: typo search matches words (§9, P3-O1). v1.6: edge `cart → customers` (§2, A-4, Phase 4). v1.7: checkout inserts the order rows before reserving stock (§7.1, A-3); one lock order across ordering, inventory and payments (§3.1); order jobs handle one order per transaction (§6); Kashier sessions and webhook signature (§7.2) (Phase 5). v1.8: the expiry job abandons no session (§6, spec 10 PA-11). v1.9: region `eu-central-1` (SD-3d), sizes, RabbitMQ 4.2, TLS to the data stores, secrets, network and egress IPs (K-7), deploy pipeline, alerting (§12.1, §13, Phase 8). v1.10: suspended-user deny entry in Redis (§8, §10, spec 03 I-11). Changes from now on need explicit approval and a version bump.
-**v2.0 APPROVED (2026-10-20):** §14 adds Release 2 (realtime process, media storage and CDN, new modules and edges, lock order, jobs, security, capacity, hosting, new dependencies). Kept as its own section, so every cross-reference stays valid (R2-Q1). §14.11 A-5…A-10 answered 2026-10-20 (every recommendation accepted).
+**v2.1 APPROVED (2026-10-20):** §14.2 audit row per spec 20 BO-9 (R2-P1). **v2.0 APPROVED (2026-10-20):** §14 adds Release 2 (realtime process, media storage and CDN, new modules and edges, lock order, jobs, security, capacity, hosting, new dependencies). Kept as its own section, so every cross-reference stays valid (R2-Q1). §14.11 A-5…A-10 answered 2026-10-20 (every recommendation accepted).
 Inputs: `CLAUDE.md` (engineering rules), `docs/spec/00-overview.md` v1.0 (business). Schema: `02-database.md`.
 
 ---
@@ -354,10 +354,10 @@ Inputs: `docs/spec/00-overview.md` v2.0 §10 (answers §10.8–§10.11), specs 0
 | notifications | customers, sellers, delivery, ordering (recipient resolution, spec 02 §6.3) |
 | realtime (**new**) | customers, sellers, delivery, ordering, support |
 | backoffice (**new**) | identity, customers, sellers, ordering, support, finance, delivery, returns |
-| audit (**new**) | none |
+| audit (**new**) | identity (actor emails of the audit-log views, v2.1) |
 
 - **Ordering is no longer a sink.** In R1 nobody called ordering. In R2 support, reviews, returns, notifications, realtime and backoffice read it through its public API (spec 09 §8.1). None of them is reachable from ordering, so the graph stays acyclic; `module-graph.js` is updated with this table and keeps failing CI on a cycle.
-- **audit** is a leaf every module with admin writes depends on; `record(entry, trx)` runs in the caller's transaction (spec 20 §2.2).
+- **Audit writes go through `lib/audit`** (v2.1, spec 20 BO-9): `IAuditRecorder` and the action catalogue are shared-kernel contracts, like event contracts, so a module with admin writes depends on `lib`, not on the audit module. `record(entry, trx)` runs in the caller's transaction (spec 20 §2.2). The rows `… | audit` above therefore are not module edges.
 - **`lib/realtime`** (the Redis emitter behind `IRealtimeEmitter`) is infrastructure, not a module edge, like `lib/events`.
 
 ### 14.3 Lock order (supersedes §3.1's line)

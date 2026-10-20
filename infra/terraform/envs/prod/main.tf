@@ -133,6 +133,9 @@ module "environment" {
     ORDER_JOBS_BATCH_SIZE                     = "100"
     JOB_SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_MS = "60000"
     SHIPMENT_JOBS_BATCH_SIZE                  = "100"
+    AUDIT_RETENTION_DAYS                      = "730"
+    JOB_AUDIT_RETENTION_INTERVAL_MS           = "86400000"
+    AUDIT_RETENTION_BATCH_SIZE                = "1000"
 
     EMAIL_HTTP_TIMEOUT_MS = "10000"
     MAILJET_FROM_EMAIL    = var.mailjet_from_email

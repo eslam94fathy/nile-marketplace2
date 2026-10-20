@@ -112,6 +112,10 @@ const values = {
   // delivery jobs (P6-Q9)
   JOB_SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_MS: '60000',
   SHIPMENT_JOBS_BATCH_SIZE: '100',
+  // audit retention (worker, spec 20 §2.4)
+  AUDIT_RETENTION_DAYS: '730',
+  JOB_AUDIT_RETENTION_INTERVAL_MS: '86400000',
+  AUDIT_RETENTION_BATCH_SIZE: '1000',
   // payments (P5-Q9): the fake gateway locally; set PAYMENT_GATEWAY=kashier plus the Kashier keys
   // (test environment) to talk to Kashier. The fake signs webhooks with this key.
   PAYMENT_GATEWAY: 'fake',

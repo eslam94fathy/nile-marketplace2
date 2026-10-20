@@ -31,11 +31,13 @@ export class SellerSettingsRepository {
     return trx ?? this.db.knex;
   }
 
-  async get(trx?: DbTransaction): Promise<SellerSettings> {
-    const row = await this.exec(trx)<SellerSettingsTable>(T)
+  /** `forUpdate` (in `trx`) serialises changes, so the old value an audit row records is exact. */
+  async get(trx?: DbTransaction, options: { forUpdate?: boolean } = {}): Promise<SellerSettings> {
+    const qb = this.exec(trx)<SellerSettingsTable>(T)
       .select(...COLUMNS)
-      .where({ is_singleton: true })
-      .first();
+      .where({ is_singleton: true });
+    if (options.forUpdate) qb.forUpdate();
+    const row = await qb.first();
     if (!row) throw new Error(MISSING);
     return { defaultCommissionRate: Rate.of(row.default_commission_rate), updatedAt: row.updated_at };
   }

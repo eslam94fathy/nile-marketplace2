@@ -55,6 +55,7 @@ function setup(current: Seller | undefined, options: { emailVerified?: boolean }
     ),
   };
   const outbox = { add: vi.fn((_trx: DbTransaction, _event: OutboxEvent<object>) => Promise.resolve()) };
+  const audit = { record: vi.fn((_entry: unknown, _trx: DbTransaction) => Promise.resolve()) };
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), fatal: vi.fn() };
   const container = rootContainer.createChildContainer();
   container.register(TOKENS.SellerRepository, { useValue: sellers });
@@ -63,6 +64,7 @@ function setup(current: Seller | undefined, options: { emailVerified?: boolean }
   container.register(TOKENS.SellerSettingsRepository, { useValue: {} });
   container.register(TOKENS.AccountService, { useValue: accounts });
   container.register(TOKENS.Outbox, { useValue: outbox });
+  container.register(TOKENS.AuditRecorder, { useValue: audit });
   container.register(TOKENS.TransactionRunner, {
     useValue: { run: <T>(work: (trx: DbTransaction) => Promise<T>) => work(TRX) },
   });
@@ -72,6 +74,7 @@ function setup(current: Seller | undefined, options: { emailVerified?: boolean }
     statusHistory,
     commissionHistory,
     outbox,
+    audit,
     service: container.resolve(SellerAdminService),
   };
 }

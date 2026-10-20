@@ -1,6 +1,6 @@
 # Implementation Plan (Release 2)
 
-Status: **v1.0 APPROVED (2026-10-20).** §2.2 R2-Q1…R2-Q7 answered (every recommendation accepted); R2-P0 is done (§2.1). R2 code starts **after P9** (staging deploy of R1), as decided on 2026-10-19 (CLAUDE.md §14.1l).
+Status: **v1.0 APPROVED (2026-10-20).** §2.2 R2-Q1…R2-Q7 answered (every recommendation accepted); R2-P0 is done (§2.1). R2 code was to start after P9 (CLAUDE.md §14.1l); on 2026-10-20 the user started R2-P1 before P9. Because `main` does not hold R1 yet (P8-Q1), `r2-p1-media` is stacked on `r2-specs` instead of branching from `main` (R2-Q3), and the staging parts of each phase wait for P9.
 Inputs: `CLAUDE.md`, `docs/spec/00-overview.md` v2.0 §10 (answers §10.8–§10.12), specs 01–20 (Release 2 sections), `docs/design/01-architecture.md` v2.0 draft §14, `docs/design/02-database.md` v2.0 draft §14. Release 1 plan: `00-implementation-plan.md`.
 
 ---

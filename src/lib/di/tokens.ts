@@ -22,6 +22,8 @@ export const TOKENS = {
   JwtVerifier: Symbol.for('JwtVerifier'),
   RateLimiters: Symbol.for('RateLimiters'),
   OpenApiRegistry: Symbol.for('OpenApiRegistry'),
+  /** lib/audit IAuditRecorder, implemented by the audit module (spec 20 §2.2). */
+  AuditRecorder: Symbol.for('AuditRecorder'),
 
   // identity module
   UserRepository: Symbol.for('UserRepository'),
@@ -178,6 +180,12 @@ export const TOKENS = {
   // notifications module
   NotificationLogRepository: Symbol.for('NotificationLogRepository'),
   EmailNotificationService: Symbol.for('EmailNotificationService'),
+
+  // audit module (spec 20 §2)
+  AuditLogRepository: Symbol.for('AuditLogRepository'),
+  AuditViewService: Symbol.for('AuditViewService'),
+  AuditRetentionJob: Symbol.for('AuditRetentionJob'),
+  AuditController: Symbol.for('AuditController'),
 
   // health module
   HealthService: Symbol.for('HealthService'),

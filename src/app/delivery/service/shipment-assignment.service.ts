@@ -1,4 +1,5 @@
 import { inject, injectable } from 'tsyringe';
+import { type IAuditRecorder } from '../../../lib/audit';
 import { type IClock } from '../../../lib/clock';
 import { type DbTransaction, type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
@@ -35,6 +36,7 @@ export class ShipmentAssignmentService {
     @inject(TOKENS.ShipmentRepository) private readonly shipments: ShipmentRepository,
     @inject(TOKENS.DeliveryAgentRepository) private readonly agents: DeliveryAgentRepository,
     @inject(TOKENS.ShipmentHistoryRepository) private readonly history: ShipmentHistoryRepository,
+    @inject(TOKENS.AuditRecorder) private readonly audit: IAuditRecorder,
   ) {}
 
   /**
@@ -65,13 +67,23 @@ export class ShipmentAssignmentService {
       const agent = await this.agents.lockById(agentId, trx);
       if (!agent) throw agentReferenceNotFound();
       if (agent.status !== AgentStatus.ACTIVE) throw agentInactive();
-      return this.assign(
+      const assigned = await this.assign(
         shipment,
         agent.id,
         'admin',
         { role: DeliveryActorRole.ADMIN, userId: adminUserId },
         trx,
       );
+      await this.audit.record(
+        {
+          action: 'shipment.admin_assigned',
+          targetId: shipment.id,
+          before: { agentId: shipment.agentId },
+          after: { agentId: agent.id },
+        },
+        trx,
+      );
+      return assigned;
     });
   }
 

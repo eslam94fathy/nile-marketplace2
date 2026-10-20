@@ -1,4 +1,5 @@
 import { container as rootContainer, type DependencyContainer } from 'tsyringe';
+import { registerAuditModule, registerAuditRecorder, registerAuditWorker } from './app/audit';
 import { registerCartModule } from './app/cart';
 import { registerCatalogModule, registerCatalogProjections } from './app/catalog';
 import { registerCustomersModule } from './app/customers';
@@ -30,6 +31,8 @@ function createCoreContainer<E>(infra: CoreInfrastructure<E>): DependencyContain
   container.register(TOKENS.MessageBroker, { useValue: infra.broker });
   container.register(TOKENS.SecretBox, { useValue: infra.secretBox });
   container.register(TOKENS.Outbox, { useValue: new Outbox(infra.clock) });
+  // Every admin write records its audit row through this (spec 20 §2.2), in either process.
+  registerAuditRecorder(container);
   return container;
 }
 
@@ -47,6 +50,8 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
 
   registerHealthModule(container);
   registerIdentityModule(container);
+  // After identity: the audit-log views resolve actor emails through AccountService.
+  registerAuditModule(container);
   registerCustomersModule(container);
   registerSellersModule(container);
   registerDeliveryModule(container);
@@ -78,5 +83,7 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   registerDeliveryWorker(container);
   // finance.ledger (spec 12 §1.2, FI-10).
   registerFinanceWorker(container);
+  // audit-retention (spec 20 §2.4).
+  registerAuditWorker(container);
   return container;
 }

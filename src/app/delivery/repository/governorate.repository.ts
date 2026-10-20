@@ -45,6 +45,20 @@ export class GovernorateRepository {
     return rows.map(toModel);
   }
 
+  /** `forUpdate` (in `trx`): the row a fee change is about to write, read under its lock. */
+  async findById(
+    id: string,
+    trx?: DbTransaction,
+    options: { forUpdate?: boolean } = {},
+  ): Promise<Governorate | undefined> {
+    const qb = this.exec(trx)<GovernorateTable>(T)
+      .select(...COLUMNS)
+      .where({ id });
+    if (options.forUpdate) qb.forUpdate();
+    const row = await qb.first();
+    return row ? toModel(row) : undefined;
+  }
+
   /** Returns the updated governorate, or undefined if the id doesn't exist. */
   async updateDeliveryFee(
     id: string,

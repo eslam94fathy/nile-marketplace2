@@ -1,4 +1,5 @@
 import { inject, injectable } from 'tsyringe';
+import { type IAuditRecorder } from '../../../lib/audit';
 import { type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import { CodRemittanceConfirmed, type IOutbox } from '../../../lib/events';
@@ -22,6 +23,7 @@ export class CodRemittanceService {
     @inject(TOKENS.LedgerService) private readonly ledger: LedgerService,
     @inject(TOKENS.CodRemittanceRepository) private readonly remittances: CodRemittanceRepository,
     @inject(TOKENS.DeliveryAgentDirectory) private readonly agents: IDeliveryAgentDirectory,
+    @inject(TOKENS.AuditRecorder) private readonly audit: IAuditRecorder,
   ) {}
 
   /**
@@ -55,6 +57,14 @@ export class CodRemittanceService {
                 entryType: EntryType.COD_CASH_REMITTED,
               },
             ],
+          },
+          trx,
+        );
+        await this.audit.record(
+          {
+            action: 'cod_remittance.recorded',
+            targetId: created.id,
+            after: { amount: created.amount.toString(), agentId: created.agentId },
           },
           trx,
         );

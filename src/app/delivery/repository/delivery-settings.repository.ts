@@ -34,11 +34,13 @@ export class DeliverySettingsRepository {
     return trx ?? this.db.knex;
   }
 
-  async get(trx?: DbTransaction): Promise<DeliverySettings> {
-    const row = await this.exec(trx)<DeliverySettingsTable>(T)
+  /** `forUpdate` (in `trx`) serialises changes, so the old value an audit row records is exact. */
+  async get(trx?: DbTransaction, options: { forUpdate?: boolean } = {}): Promise<DeliverySettings> {
+    const qb = this.exec(trx)<DeliverySettingsTable>(T)
       .select(...COLUMNS)
-      .where({ is_singleton: true })
-      .first();
+      .where({ is_singleton: true });
+    if (options.forUpdate) qb.forUpdate();
+    const row = await qb.first();
     if (!row) throw new Error('delivery_settings row is missing (it is seeded by migration)');
     return toModel(row);
   }

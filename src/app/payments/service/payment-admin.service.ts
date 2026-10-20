@@ -1,11 +1,12 @@
 import { inject, injectable } from 'tsyringe';
+import { type IAuditRecorder } from '../../../lib/audit';
 import { type IClock } from '../../../lib/clock';
 import { type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import { type IOutbox, PaymentRefundRecorded } from '../../../lib/events';
 import { type PageMeta, type ParsedListQuery, toPage } from '../../../lib/http';
 import { type ILogger } from '../../../lib/logger';
-import { PaymentStatus } from '../enums';
+import { PaymentStatus, RefundStatus } from '../enums';
 import { paymentNotFound, refundAlreadyRecorded, refundNotFound } from '../errors';
 import { type Payment } from '../model/payment.model';
 import { type PaymentEventSummary, type PaymentRefund } from '../model/refund.model';
@@ -30,6 +31,7 @@ export class PaymentAdminService {
     @inject(TOKENS.PaymentRepository) private readonly payments: PaymentRepository,
     @inject(TOKENS.PaymentRefundRepository) private readonly refunds: PaymentRefundRepository,
     @inject(TOKENS.PaymentEventRepository) private readonly events: PaymentEventRepository,
+    @inject(TOKENS.AuditRecorder) private readonly audit: IAuditRecorder,
   ) {}
 
   async listRefunds(query: ParsedListQuery): Promise<{ items: PaymentRefund[]; meta: PageMeta }> {
@@ -65,6 +67,15 @@ export class PaymentAdminService {
         trx,
       );
       if (!recorded) throw refundAlreadyRecorded();
+      await this.audit.record(
+        {
+          action: 'payment_refund.recorded',
+          targetId: refundId,
+          before: { status: found.status, providerRefundRef: found.providerRefundRef },
+          after: { status: RefundStatus.RECORDED, providerRefundRef },
+        },
+        trx,
+      );
 
       const refundedAmount = payment.refundedAmount.plus(found.amount);
       const status = refundedAmount.equals(payment.collectedAmount)

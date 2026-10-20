@@ -1,6 +1,6 @@
 # Spec 20 — back-office and audit
 
-Status: **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (admin back-office and audit), R-19, S-9 (answered for R2), spec 09 v2.0 §8.4 (admin cancellation), spec 16 SU-5. §7 BO-1…BO-8 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.1 APPROVED (2026-10-20).** v1.1: R2-P1 implementation clarifications BO-9…BO-11 (§7.1, confirmed 2026-10-20). Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (admin back-office and audit), R-19, S-9 (answered for R2), spec 09 v2.0 §8.4 (admin cancellation), spec 16 SU-5. §7 BO-1…BO-8 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -192,3 +192,11 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | BO-6 | Admin product block (not in the overview §10.4 list) | **Rec:** add it to R2 (§3.4): a marketplace needs a way to take down a prohibited product without suspending the whole seller; small (two columns, two endpoints) · or leave it out (admins can only suspend the seller) |
 | BO-7 | GMV definition | **Rec:** show both placed GMV (current subtotals of seller orders placed that day, cancellations excluded) and delivered GMV (subtotals delivered that day); returns (spec 18) reduce delivered GMV on the day the return is received · or delivered GMV only |
 | BO-8 | Notify the seller of a block | **Rec:** in-app + push under `orders` ("A product was blocked by the platform"), with the reason only in the seller's product view · or no notification |
+
+### 7.1 Clarifications (R2-P1 implementation, confirmed 2026-10-20)
+
+| # | Clarification | Where |
+|---|---|---|
+| BO-9 | The audit **contract** (`IAuditRecorder`, `AuditEntry` and the action catalogue with each action's target type and allow-list) lives in the shared kernel `lib/audit`, like the event contracts in `lib/events`. Modules record through `TOKENS.AuditRecorder` and never import the audit module, so audit itself may call identity for the actor emails of §2.5 without a cycle (architecture v2.1 §14.2) | §2.2, §2.5 |
+| BO-10 | `AuditEntry` carries no `targetType`: it follows from the action (`seller.approved` → `seller`), so a caller can't pair an action with the wrong target. An update whose recorded fields didn't change stores `changes = null` | §2.2 |
+| BO-11 | `actor_user_id` is a foreign key to `users`: an admin write with a token whose user doesn't exist fails (422). Real tokens always have a user; only synthetic test tokens hit it | §2.1 |

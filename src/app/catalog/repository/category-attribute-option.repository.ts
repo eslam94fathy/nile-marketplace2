@@ -46,11 +46,17 @@ export class CategoryAttributeOptionRepository {
     return rows.map(toModel);
   }
 
-  async findById(id: string, trx?: DbTransaction): Promise<CategoryAttributeOption | null> {
-    const row = await this.exec(trx)<CategoryAttributeOptionTable>(T)
+  /** `forUpdate` (in `trx`): the option a write is about to change, read under its row lock. */
+  async findById(
+    id: string,
+    trx?: DbTransaction,
+    options: { forUpdate?: boolean } = {},
+  ): Promise<CategoryAttributeOption | null> {
+    const qb = this.exec(trx)<CategoryAttributeOptionTable>(T)
       .select(...COLUMNS)
-      .where({ id })
-      .first<OptionRow | undefined>();
+      .where({ id });
+    if (options.forUpdate) qb.forUpdate();
+    const row = await qb.first<OptionRow | undefined>();
     return row ? toModel(row) : null;
   }
 

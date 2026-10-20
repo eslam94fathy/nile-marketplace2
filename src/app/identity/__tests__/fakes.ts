@@ -114,6 +114,7 @@ export function createFakes() {
     hash: vi.fn((plain: string) => Promise.resolve(`hash:${plain}`)),
     verify: vi.fn((plain: string, hash: string) => Promise.resolve(hash === `hash:${plain}`)),
   };
+  const audit = { record: vi.fn((_entry: unknown, _trx: DbTransaction) => Promise.resolve()) };
   const logger = new SpyLogger();
   const transactions = { run: <T>(work: (trx: DbTransaction) => Promise<T>) => work(FAKE_TRX) };
   const clock = { now: () => new Date(NOW) };
@@ -128,5 +129,6 @@ export function createFakes() {
   container.register(TOKENS.TransactionRunner, { useValue: transactions });
   container.register(TOKENS.Clock, { useValue: clock });
   container.register(TOKENS.PasswordHasher, { useValue: hasher });
-  return { container, refreshTokens, users, codes, signer, outbox, logger, hasher };
+  container.register(TOKENS.AuditRecorder, { useValue: audit });
+  return { container, refreshTokens, users, codes, signer, outbox, logger, hasher, audit };
 }

@@ -45,6 +45,7 @@ import * as m20261013120002 from './20261013120002_create_ledger_entries';
 import * as m20261013120003 from './20261013120003_create_cod_remittances';
 import * as m20261013120004 from './20261013120004_create_payouts';
 import * as m20261013150001 from './20261013150001_add_products_min_price_id_index';
+import * as m20261020120001 from './20261020120001_create_admin_audit_log';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -95,5 +96,6 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261013120003_create_cod_remittances', module: m20261013120003 },
   { name: '20261013120004_create_payouts', module: m20261013120004 },
   { name: '20261013150001_add_products_min_price_id_index', module: m20261013150001 },
+  { name: '20261020120001_create_admin_audit_log', module: m20261020120001 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

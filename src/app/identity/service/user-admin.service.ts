@@ -1,4 +1,5 @@
 import { inject, injectable } from 'tsyringe';
+import { type IAuditRecorder } from '../../../lib/audit';
 import { type ISuspendedUsers, UserRole } from '../../../lib/auth';
 import { afterCommit, type DbTransaction, type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
@@ -42,11 +43,23 @@ export class UserAdminService {
     @inject(TOKENS.TransactionRunner) private readonly transactions: ITransactionRunner,
     @inject(TOKENS.Logger) private readonly logger: ILogger,
     @inject(TOKENS.SuspendedUsers) private readonly suspendedUsers: ISuspendedUsers,
+    @inject(TOKENS.AuditRecorder) private readonly audit: IAuditRecorder,
   ) {}
 
   /** §4.10. EMAIL_ALREADY_REGISTERED comes from the `uq_users_email` mapping. */
   async inviteAdmin(email: string, actorUserId: string): Promise<User> {
-    const user = await this.transactions.run((trx) => this.invitations.invite(email, UserRole.ADMIN, trx));
+    const user = await this.transactions.run(async (trx) => {
+      const invited = await this.invitations.invite(email, UserRole.ADMIN, trx);
+      await this.audit.record(
+        {
+          action: 'admin.invited',
+          targetId: invited.id,
+          after: { email: invited.email, role: invited.role },
+        },
+        trx,
+      );
+      return invited;
+    });
     this.logger.info('admin invited', { event: 'ADMIN_INVITED', userId: user.id, actorUserId });
     return user;
   }
@@ -59,12 +72,30 @@ export class UserAdminService {
 
   /** §4.12. */
   resendInvite(userId: string): Promise<void> {
-    return this.transactions.run((trx) => this.invitations.resendInvite(userId, trx));
+    return this.transactions.run(async (trx) => {
+      await this.invitations.resendInvite(userId, trx);
+      await this.audit.record({ action: 'user.invite_resent', targetId: userId }, trx);
+    });
   }
 
   /** §4.13 (admin endpoints): in its own transaction; the deny entry is in place before it answers. */
   async setStatus(userId: string, to: TargetStatus, change: StatusChange): Promise<User> {
-    const user = await this.transactions.run((trx) => this.changeStatus(userId, to, change, trx));
+    const user = await this.transactions.run(async (trx) => {
+      const changed = await this.changeStatus(userId, to, change, trx);
+      // Audited here, not in changeStatus: setUserStatus is also called by other modules' admin
+      // writes (agent deactivation), which record their own action.
+      await this.audit.record(
+        {
+          action: to === UserStatus.SUSPENDED ? 'user.suspended' : 'user.reactivated',
+          targetId: changed.id,
+          before: { status: TRANSITION_FROM[to][0] ?? null },
+          after: { status: changed.status },
+          reason: change.reason ?? null,
+        },
+        trx,
+      );
+      return changed;
+    });
     await this.syncDenyEntry(user.id, to);
     return user;
   }

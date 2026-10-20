@@ -1,6 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { container as rootContainer } from 'tsyringe';
+import { registerAuditRecorder } from './app/audit';
 import { inviteFirstAdmin } from './app/identity';
 import { SystemClock } from './lib/clock';
+import { runWithContext } from './lib/context';
 import { type SeedAdminEnv } from './lib/config';
 import { createKnex, Database } from './lib/db';
 import { TOKENS } from './lib/di';
@@ -52,9 +55,13 @@ export async function runSeedAdmin(
     }),
   });
   container.register(TOKENS.Outbox, { useValue: new Outbox(clock) });
+  registerAuditRecorder(container);
 
   try {
-    const { userId } = await inviteFirstAdmin(container, email);
+    // The run is audited with actor type `cli` (spec 20 §2.3, R-19); its correlation id ties the logs to the row.
+    const { userId } = await runWithContext({ correlationId: randomUUID(), cli: true }, () =>
+      inviteFirstAdmin(container, email),
+    );
     logger.info('admin invited; the worker sends the invite email', { event: 'ADMIN_SEEDED', userId });
     return 0;
   } catch (caught) {
