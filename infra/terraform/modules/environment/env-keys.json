@@ -53,6 +53,7 @@
     "MEDIA_MAX_OPEN_UPLOADS_PER_USER"
   ],
   "worker": [
+    "REDIS_KEY_PREFIX",
     "RABBITMQ_EXCHANGE",
     "RABBITMQ_PREFETCH",
     "MQ_RETRY_DELAYS_MS",
@@ -84,6 +85,15 @@
     "MAILJET_FROM_EMAIL",
     "MAILJET_FROM_NAME"
   ],
+  "realtime": [
+    "REDIS_KEY_PREFIX",
+    "CORS_ALLOWED_ORIGINS",
+    "JWT_ISSUER",
+    "JWT_AUDIENCE",
+    "RATE_LIMIT_REALTIME_CONNECT_POINTS",
+    "RATE_LIMIT_REALTIME_CONNECT_WINDOW_SECONDS",
+    "REALTIME_SIGNAL_RATE_PER_SECOND"
+  ],
   "migrate": ["INVITE_TTL_HOURS", "INVITE_URL_BASE", "SECRETS_ENCRYPTION_ACTIVE_KEY_ID"],
   "derived": {
     "common": ["NODE_ENV"],
@@ -107,6 +117,7 @@
       "STORAGE_BUCKET",
       "STORAGE_REGION"
     ],
+    "realtime": ["SERVICE_NAME", "PORT", "TRUST_PROXY_HOPS", "JWT_ALGORITHM"],
     "migrate": ["SERVICE_NAME"]
   },
   "secrets": {
@@ -123,12 +134,14 @@
     ],
     "worker": [
       "DATABASE_URL",
+      "REDIS_URL",
       "RABBITMQ_URL",
       "KASHIER_API_KEY",
       "SECRETS_ENCRYPTION_KEYS",
       "MAILJET_API_KEY",
       "MAILJET_SECRET_KEY"
     ],
+    "realtime": ["DATABASE_URL", "REDIS_URL", "JWT_PUBLIC_KEYS"],
     "migrate": ["DATABASE_URL", "SECRETS_ENCRYPTION_KEYS"]
   },
   "manual_secrets": [

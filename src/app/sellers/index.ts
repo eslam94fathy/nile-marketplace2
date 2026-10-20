@@ -35,6 +35,12 @@ export type {
 } from './service/seller-directory.service';
 
 /** api process. Needs identity's AccountService registered first. */
+/** The public lookups only (`ISellerDirectory`), for the realtime gateway. */
+export function registerSellersLookups(container: DependencyContainer): void {
+  container.registerSingleton(TOKENS.SellerRepository, SellerRepository);
+  container.registerSingleton(TOKENS.SellerDirectory, SellerDirectory);
+}
+
 export function registerSellersModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.SellerRepository, SellerRepository);
   container.registerSingleton(TOKENS.SellerStatusHistoryRepository, SellerStatusHistoryRepository);

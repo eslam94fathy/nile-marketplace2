@@ -137,6 +137,20 @@ services:
     healthcheck:
       disable: true
 
+  # The Socket.IO gateway (spec 15): ws://localhost:3001/realtime, probes on /health/*.
+  realtime:
+    <<: *app
+    environment:
+      DATABASE_URL: postgres://nile:nile@postgres:5432/nile
+      REDIS_URL: redis://redis:6379
+      SERVICE_NAME: nile-realtime
+      PORT: '3001'
+    command: ['node', 'dist/realtime.js']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports: ['3001:3001']
+
 volumes:
   pgdata:
   miniodata:

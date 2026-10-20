@@ -104,6 +104,12 @@ export function createDeliveryJobs(
 }
 
 /** api process. Needs Database, Cache, Env, Logger and identity's AccountService. */
+/** The agent lookups only (`IDeliveryAgentDirectory`), for the realtime gateway and the worker. */
+export function registerDeliveryAgentLookups(container: DependencyContainer): void {
+  container.registerSingleton(TOKENS.DeliveryAgentRepository, DeliveryAgentRepository);
+  container.registerSingleton(TOKENS.DeliveryAgentDirectory, DeliveryAgentDirectory);
+}
+
 export function registerDeliveryModule(container: DependencyContainer): void {
   registerDeliveryConstraintErrors(container.resolve<PgErrorMapper>(TOKENS.PgErrorMapper));
   registerDeliveryCore(container);

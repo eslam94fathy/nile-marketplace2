@@ -1,7 +1,7 @@
 # Spec 01 — API Conventions (shared by all module specs)
 
 Status: **v1.3 APPROVED (2026-10-10).** Approved by the user. v1.1: passwords are never trimmed; `opt` implemented by a shared `Optional()` decorator (Phase 1). v1.2: `GOVERNORATE_NOT_FOUND` is a common code (§6, P2-Q7). v1.3: an unmapped restrict violation (`23001`) is a `CONFLICT` too (§6, P3-Q11). Changes from now on need explicit approval and a version bump.
-**v1.4 APPROVED (2026-10-20):** §9 adds the Release 2 shared pieces (image shape, new rate-limit classes, realtime envelope, web client). Kept as its own section, so every cross-reference stays valid (R2-Q1).
+**v1.5 APPROVED (2026-10-20):** §9.3 duplicates are dropped by `eventId` + `type` (spec 15 RT-14). **v1.4 APPROVED (2026-10-20):** §9 adds the Release 2 shared pieces (image shape, new rate-limit classes, realtime envelope, web client). Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Inputs: `CLAUDE.md` §7–§10, `docs/design/01-architecture.md` v1.0, `docs/design/02-database.md` v1.0.
 
 Module specs: `03-identity.md` · `04-customers.md` · `05-sellers.md` · `06-catalog.md` · `07-inventory.md` · `08-cart.md` · `09-ordering.md` · `10-payments.md` · `11-delivery.md` · `12-finance.md` · `13-notifications.md`. Release 2 (drafts): `14-media.md` · `15-realtime.md` · `16-support.md` · `17-reviews.md` · `18-returns.md` · `19-promotions.md` · `20-backoffice.md`. Events: `02-events.md`.
@@ -152,7 +152,7 @@ Values come from env, with no defaults, like the R1 classes.
 ### 9.3 Realtime envelope
 The socket (spec 15) sends `{ type, eventId, occurredAt, data }`.
 - `type` comes from the realtime message catalogue.
-- `eventId` is the source domain event id; clients use it to drop duplicates.
+- `eventId` is the source domain event id. One event can give several messages (e.g. `order.updated` and `payment.updated`), so clients drop duplicates by `eventId` + `type` (v1.5, spec 15 RT-14).
 - `data` holds ids and statuses only, using the same enum values as the REST API.
 
 Connect errors and acks use the error codes of §6.

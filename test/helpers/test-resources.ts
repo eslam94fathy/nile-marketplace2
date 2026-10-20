@@ -9,6 +9,8 @@ import {
   seedAdminEnvSchema,
   type WorkerEnv,
   workerEnvSchema,
+  type RealtimeEnv,
+  realtimeEnvSchema,
 } from '../../src/lib/config';
 import { testEnvInput } from './test-env';
 import { createTestBucket, TEST_STORAGE_REGION } from './test-storage';
@@ -21,6 +23,7 @@ export interface TestResources {
   /** Same resources, seen by each process. */
   env: Readonly<ApiEnv>;
   workerEnv: Readonly<WorkerEnv>;
+  realtimeEnv: Readonly<RealtimeEnv>;
   seedAdminEnv: Readonly<SeedAdminEnv>;
   /** The raw key/values, e.g. to pass to a child process. */
   rawEnv: Record<string, string>;
@@ -95,6 +98,7 @@ export async function createTestResources(overrides: Record<string, string> = {}
   return {
     env: loadEnv(apiEnvSchema, rawEnv),
     workerEnv: loadEnv(workerEnvSchema, rawEnv),
+    realtimeEnv: loadEnv(realtimeEnvSchema, rawEnv),
     seedAdminEnv: loadEnv(seedAdminEnvSchema, rawEnv),
     rawEnv,
     id,

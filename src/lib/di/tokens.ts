@@ -148,6 +148,9 @@ export const TOKENS = {
   CheckoutService: Symbol.for('CheckoutService'),
   OrderViewService: Symbol.for('OrderViewService'),
   OrderingDirectory: Symbol.for('OrderingDirectory'),
+  RealtimeEmitter: Symbol.for('RealtimeEmitter'),
+  RealtimeFanoutService: Symbol.for('RealtimeFanoutService'),
+  ProfileRoomsService: Symbol.for('ProfileRoomsService'),
   OrderController: Symbol.for('OrderController'),
   SellerOrderController: Symbol.for('SellerOrderController'),
   AdminOrderController: Symbol.for('AdminOrderController'),
@@ -210,5 +213,6 @@ export const TOKENS = {
 
   // health module
   HealthService: Symbol.for('HealthService'),
+  HealthChecks: Symbol.for('HealthChecks'),
   HealthController: Symbol.for('HealthController'),
 } as const;

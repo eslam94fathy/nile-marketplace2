@@ -32,7 +32,8 @@ export function healthRoutes(controller: HealthController, docs: OpenApiRegistry
   docs.add({
     method: 'get',
     path: `${HEALTH_BASE_PATH}/ready`,
-    summary: 'Readiness probe: Postgres, Redis and RabbitMQ, each with a timeout (503 when any is down)',
+    summary:
+      'Readiness probe: every dependency of the process (api: Postgres, Redis, RabbitMQ, storage), each with a timeout (503 when any is down)',
     tags: ['health'],
     auth: false,
     responses: {
@@ -45,11 +46,12 @@ export function healthRoutes(controller: HealthController, docs: OpenApiRegistry
             status: { const: 'up' },
             checks: {
               type: 'object',
-              required: ['postgres', 'redis', 'rabbitmq'],
+              required: ['postgres', 'redis'],
               properties: {
                 postgres: DEPENDENCY_CHECK_SCHEMA,
                 redis: DEPENDENCY_CHECK_SCHEMA,
                 rabbitmq: DEPENDENCY_CHECK_SCHEMA,
+                storage: DEPENDENCY_CHECK_SCHEMA,
               },
             },
           },

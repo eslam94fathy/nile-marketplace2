@@ -25,6 +25,17 @@ export { CustomersErrorCode } from './errors';
 export type { ICustomerDirectory } from './service/customer-directory.service';
 export type { AddressSnapshot } from './model/customer-address.model';
 
+/**
+ * The public lookups only (`ICustomerDirectory`), for processes without the customer endpoints
+ * (the realtime gateway, the worker). Read-only use: no transaction is started.
+ */
+export function registerCustomersLookups(container: DependencyContainer): void {
+  container.registerSingleton(TOKENS.CustomerRepository, CustomerRepository);
+  container.registerSingleton(TOKENS.CustomerAddressRepository, CustomerAddressRepository);
+  container.registerSingleton(TOKENS.CustomerAddressService, CustomerAddressService);
+  container.registerSingleton(TOKENS.CustomerDirectory, CustomerDirectory);
+}
+
 /** api process. Needs identity's AccountService registered first. */
 export function registerCustomersModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.CustomerRepository, CustomerRepository);

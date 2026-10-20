@@ -1,9 +1,10 @@
-import { type Redis } from 'ioredis';
+import { Redis } from 'ioredis';
 import { type ISuspendedUsers, JwtSigner, JwtVerifier, SuspendedUsers } from './lib/auth';
 import { type IClock, SystemClock } from './lib/clock';
 import {
   type ApiEnv,
   EmailProvider,
+  type RealtimeEnv,
   PaymentGatewayName,
   StorageProvider,
   type WorkerEnv,
@@ -13,6 +14,7 @@ import { PgErrorMapper } from './lib/error';
 import { OpenApiRegistry } from './lib/http';
 import { type ILogger } from './lib/logger';
 import { RateLimiters } from './lib/middleware';
+import { type IRealtimeEmitter, RedisRealtimeEmitter } from './lib/realtime';
 import { createRedis } from './lib/redis';
 import { type ICache, RedisCache } from './pkg/cache';
 import { AesGcmSecretBox, type ISecretBox } from './pkg/crypto';
@@ -53,13 +55,32 @@ export interface ApiInfrastructure extends CoreInfrastructure<ApiEnv> {
   objectStorage: S3ObjectStorage;
 }
 
-/** Background process: outbox drain, consumers, jobs, email. No Redis, no JWT, no HTTP. */
+/** Background process: outbox drain, consumers, jobs, email, the realtime fan-out. No JWT, no HTTP. */
 export interface WorkerInfrastructure extends CoreInfrastructure<WorkerEnv> {
+  /** Only for the realtime emitter (spec 15 §6); the worker caches nothing (spec 06 CA-8). */
+  redis: Redis;
+  realtimeEmitter: IRealtimeEmitter;
   emailSender: IEmailSender;
   paymentGateway: IPaymentGateway;
   /** The media bucket: image processing and cleanup (spec 14 UC-ME-3, UC-ME-4). */
   objectStorage: S3ObjectStorage;
   imageProcessor: IImageProcessor;
+}
+
+/**
+ * The Socket.IO gateway (spec 15): Postgres for profile lookups; Redis for the rate limit and the
+ * suspended-user check, and two more connections for the adapter (a subscriber can run nothing else).
+ * No broker, no storage, no signing key.
+ */
+export interface RealtimeInfrastructure {
+  env: Readonly<RealtimeEnv>;
+  logger: ILogger;
+  clock: IClock;
+  db: Database;
+  redis: Redis;
+  cache: ICache;
+  adapterRedis: { pub: Redis; sub: Redis };
+  jwtVerifier: JwtVerifier;
 }
 
 type CoreEnv = Pick<
@@ -152,13 +173,73 @@ export async function createWorkerInfrastructure(
   env: Readonly<WorkerEnv>,
   logger: ILogger,
 ): Promise<WorkerInfrastructure> {
+  const redis = createRedis(env);
+  redis.on('error', (error: Error) => logger.warn('redis connection error', { error }));
+  const [core] = await Promise.all([
+    createCore(env, logger),
+    connectOrLog(logger, 'redis', () => redis.connect()),
+  ]);
   return {
-    ...(await createCore(env, logger)),
+    ...core,
+    redis,
+    realtimeEmitter: new RedisRealtimeEmitter(redis, env.REDIS_KEY_PREFIX, core.clock, logger),
     emailSender: createEmailSender(env),
     paymentGateway: createPaymentGateway(env),
     objectStorage: createObjectStorage(env, undefined),
     imageProcessor: new SharpImageProcessor(),
   };
+}
+
+export async function createRealtimeInfrastructure(
+  env: Readonly<RealtimeEnv>,
+  logger: ILogger,
+): Promise<RealtimeInfrastructure> {
+  const db = new Database(createKnex(env));
+  const redis = createRedis(env);
+  // The adapter's connections queue commands while reconnecting (its subscriptions must survive a blip).
+  const adapterRedis = {
+    pub: new Redis(env.REDIS_URL, { lazyConnect: true, connectTimeout: env.HEALTH_CHECK_TIMEOUT_MS }),
+    sub: new Redis(env.REDIS_URL, { lazyConnect: true, connectTimeout: env.HEALTH_CHECK_TIMEOUT_MS }),
+  };
+  for (const client of [redis, adapterRedis.pub, adapterRedis.sub]) {
+    client.on('error', (error: Error) => logger.warn('redis connection error', { error }));
+  }
+  await Promise.all([
+    connectOrLog(logger, 'postgres', () => db.ping()),
+    connectOrLog(logger, 'redis', () => redis.connect()),
+    connectOrLog(logger, 'redis-adapter-pub', () => adapterRedis.pub.connect()),
+    connectOrLog(logger, 'redis-adapter-sub', () => adapterRedis.sub.connect()),
+  ]);
+  const cache = new RedisCache(redis);
+  // The gateway only reads deny entries; the TTL is the api's business (it writes them).
+  const suspendedUsers = new SuspendedUsers(cache, 1);
+  return {
+    env,
+    logger,
+    clock: new SystemClock(),
+    db,
+    redis,
+    cache,
+    adapterRedis,
+    jwtVerifier: await JwtVerifier.create(env, {
+      isBlocked: (userId) => suspendedUsers.isBlocked(userId),
+      onBlockCheckError: (error) =>
+        logger.warn('suspended-user check unavailable, connection allowed', {
+          event: 'SUSPENSION_CHECK_UNAVAILABLE',
+          error,
+        }),
+    }),
+  };
+}
+
+/** Each close is independent, so one failure doesn't block the rest. */
+export async function closeRealtimeInfrastructure(infra: RealtimeInfrastructure): Promise<void> {
+  await settleAll(infra.logger, [
+    infra.db.close(),
+    infra.redis.quit(),
+    infra.adapterRedis.pub.quit(),
+    infra.adapterRedis.sub.quit(),
+  ]);
 }
 
 type StorageEnv = Pick<
@@ -246,13 +327,13 @@ type WorkerEnvPaymentKeys = Pick<
 
 /** Each close is independent, so one failure doesn't block the rest. */
 export async function closeInfrastructure(infra: ApiInfrastructure | WorkerInfrastructure): Promise<void> {
-  const closing: Promise<unknown>[] = [infra.broker.close(), infra.db.close()];
   infra.objectStorage.close();
-  if ('redis' in infra) closing.push(infra.redis.quit());
-  const results = await Promise.allSettled(closing);
-  for (const result of results) {
-    if (result.status === 'rejected') {
-      infra.logger.warn('error while closing a dependency', { error: result.reason });
-    }
+  await settleAll(infra.logger, [infra.broker.close(), infra.db.close(), infra.redis.quit()]);
+}
+
+async function settleAll(logger: ILogger, closing: readonly Promise<unknown>[]): Promise<void> {
+  for (const result of await Promise.allSettled(closing)) {
+    if (result.status === 'rejected')
+      logger.warn('error while closing a dependency', { error: result.reason });
   }
 }

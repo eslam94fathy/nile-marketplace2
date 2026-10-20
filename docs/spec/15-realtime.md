@@ -1,6 +1,6 @@
 # Spec 15 — realtime
 
-Status: **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.3 (realtime rules), R-4 (web client), R-5, R-21. §7 RT-1…RT-7 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.1 APPROVED (2026-10-20):** §9 R2-P2 implementation clarifications RT-8…RT-19 (every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.3 (realtime rules), R-4 (web client), R-5, R-21. §7 RT-1…RT-7 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -145,3 +145,20 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | `payment.updated` | as §3.1 | `customer:<id>` | `payment.refunded`, `payment.refund_recorded` |
 
 No re-read for returns: `return.status_changed` carries the customer and seller ids, and the message uses the payload's `to` status. That is safe because the client refetches the return on every message.
+
+## 9. Clarifications (R2-P2 implementation, approved 2026-10-20)
+
+| # | Clarification | Where |
+|---|---|---|
+| RT-8 | The server tells the client why it closes a socket: a `session.ended { reason }` message just before the disconnect (Socket.IO only reports `io server disconnect`). For `account_suspended` it travels on another Redis channel than the disconnect, so it can be lost; the refused reconnect (`UNAUTHENTICATED`) says the same. The Socket.IO event name is the message `type`, and its argument is the whole envelope | UC-RT-1 step 5, UC-RT-3, UC-RT-4, §6 |
+| RT-9 | `payment.updated.paymentStatus` and `shipment.updated.status` come from the event type (`shipment.attempt_failed` → `returning_to_seller` when `returningToSeller`, else `delivery_failed`). Realtime may read only ordering (architecture §14.2), and the client refetches on every message. The values are constants mirrored from the payments, delivery and media enums, kept equal by a test | §3.1 |
+| RT-10 | R2-P2 ships what exists by then. Support's rooms, signals and messages come with spec 16 (R2-P3), `notification.created` with spec 13 (step 5), returns and refunds with their phases. Until then the gateway handles no signal: an unknown one is ignored (`debug` log), and the signal rate limit applies to all | §3.1, §3.3, §5 |
+| RT-11 | A handshake **without** an `Origin` header is refused like a wrong one (`ORIGIN_NOT_ALLOWED`). Browsers always send it; a future native client will need its own decision | UC-RT-1 step 2 |
+| RT-12 | The adapter and emitter channels are prefixed with `REDIS_KEY_PREFIX` (`<prefix>socket.io`), so environments (and test files) sharing a Redis never mix. The worker gets `REDIS_URL` and `REDIS_KEY_PREFIX`, with the same prefix as the gateway. Its Redis fails fast (no offline queue): a publish during an outage is dropped with `warn REALTIME_EMIT_FAILED` (RT-3). The emitter's own publish promise is caught (plan §2.3) | §2, §6 |
+| RT-13 | Config: the rate keys are `RATE_LIMIT_REALTIME_CONNECT_POINTS` / `_WINDOW_SECONDS` (as every class, ME-8, not `_DURATION_SECONDS`); the limiter fails open. Staging and prod: 60 handshakes per 60 s per IP and per user, 5 signals / s. `PORT` 3001 in ECS and locally (`.env.realtime` next to `.env`, `docker compose` service `realtime`) | §6 |
+| RT-14 | One domain event can give several messages with the same `eventId` (e.g. `order.updated` and `payment.updated`): clients drop duplicates by **`eventId` + `type`** | UC-RT-2 step 4, conventions §9.3 |
+| RT-15 | The message catalogue (`RealtimeMessageType`, payload types, room names) lives in `src/lib/realtime/messages.ts`, not `src/app/realtime`: notifications emits `notification.created` too and may not import the realtime module (like the event contracts in `lib/events`) | RT-6 |
+| RT-16 | Two more connect error codes: `SERVICE_UNAVAILABLE` (the task is shutting down; retry) and `INTERNAL_ERROR` (a profile lookup failed; retry with backoff, logged at `error`) | §6 |
+| RT-17 | The fan-out runs on a **stateless** consumer kind of the consumer host: no transaction, no `processed_events` row, a throw retries as usual. A malformed payload or an unmapped event goes to the DLQ; an order the re-read can't find sends nothing (`warn`) | UC-RT-2 |
+| RT-18 | `seller_order.placed` is not sent for a seller order still `pending_payment` (it is hidden from sellers, spec 09 §4.2). A Kashier order publishes `order.placed` when it is paid, so its sellers get it then | §3.1 |
+| RT-19 | On shutdown the gateway waits up to 1 s for the `session.ended` frames to flush before it closes the server (closing at once dropped them) | UC-RT-4 |

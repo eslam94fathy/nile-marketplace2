@@ -13,7 +13,7 @@ export const TEST_SECRETS_KEY = randomBytes(32);
 export const TEST_KASHIER_API_KEY = 'test-kashier-api-key';
 
 /**
- * A complete, valid environment for EVERY process (api, worker, migrate, seed-admin):
+ * A complete, valid environment for EVERY process (api, worker, realtime, migrate, seed-admin):
  * each per-process schema keeps only its own keys. Integration tests override the connection URLs.
  */
 export function testEnvInput(overrides: Record<string, string> = {}): Record<string, string> {
@@ -73,6 +73,10 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     // Upload rate limit, per user (spec 14 ME-6)
     RATE_LIMIT_UPLOAD_POINTS: '1000',
     RATE_LIMIT_UPLOAD_WINDOW_SECONDS: '600',
+    // realtime gateway (spec 15 §6)
+    RATE_LIMIT_REALTIME_CONNECT_POINTS: '1000',
+    RATE_LIMIT_REALTIME_CONNECT_WINDOW_SECONDS: '60',
+    REALTIME_SIGNAL_RATE_PER_SECOND: '5',
     IDEMPOTENCY_TTL_HOURS: '24',
     IDEMPOTENCY_LOCK_TTL_SECONDS: '30',
     // identity (cost 10 = the minimum allowed, keeps tests fast)

@@ -22,6 +22,14 @@ function parseEnv(text) {
   return keys;
 }
 
+// The realtime gateway runs next to the api on the same .env, so it overrides the per-process keys
+// from this second file (`npm run dev:realtime` passes it after .env; the later file wins).
+const realtimeEnvFile = path.join(root, '.env.realtime');
+if (!fs.existsSync(realtimeEnvFile)) {
+  fs.writeFileSync(realtimeEnvFile, 'PORT=3001\nSERVICE_NAME=nile-realtime\n', { mode: 0o600 });
+  console.log('Created .env.realtime (PORT=3001, SERVICE_NAME=nile-realtime)');
+}
+
 const existingText = fs.existsSync(envFile) ? fs.readFileSync(envFile, 'utf8') : '';
 const existing = parseEnv(existingText);
 
@@ -87,6 +95,10 @@ const values = {
   // Upload rate limit, per user (spec 14 ME-6)
   RATE_LIMIT_UPLOAD_POINTS: '30',
   RATE_LIMIT_UPLOAD_WINDOW_SECONDS: '600',
+  // realtime gateway (spec 15 §6, RT-5)
+  RATE_LIMIT_REALTIME_CONNECT_POINTS: '60',
+  RATE_LIMIT_REALTIME_CONNECT_WINDOW_SECONDS: '60',
+  REALTIME_SIGNAL_RATE_PER_SECOND: '5',
   IDEMPOTENCY_TTL_HOURS: '24',
   IDEMPOTENCY_LOCK_TTL_SECONDS: '60',
   // identity / invites (P1-Q4)

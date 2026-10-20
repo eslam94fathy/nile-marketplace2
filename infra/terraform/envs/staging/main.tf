@@ -96,6 +96,11 @@ module "environment" {
     IDEMPOTENCY_TTL_HOURS                 = "24"
     IDEMPOTENCY_LOCK_TTL_SECONDS          = "60" # above the longest request (review F-9)
 
+    # realtime gateway (spec 15 §6): a reconnect per tab every 15 min, plus deploy storms (RT-5).
+    RATE_LIMIT_REALTIME_CONNECT_POINTS         = "60"
+    RATE_LIMIT_REALTIME_CONNECT_WINDOW_SECONDS = "60"
+    REALTIME_SIGNAL_RATE_PER_SECOND            = "5"
+
     BCRYPT_COST                 = "12"
     OTP_TTL_MINUTES             = "10"
     OTP_MAX_ATTEMPTS            = "5"

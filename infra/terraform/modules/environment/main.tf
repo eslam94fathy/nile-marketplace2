@@ -21,6 +21,8 @@ locals {
   image    = "${module.ecr.repository_url}:${var.image_tag}"
   log_days = var.sizes.log_retention_days
   api_url  = "https://${var.domain_name}"
+  # The Socket.IO gateway (spec 15, RT-1); its ECS service and ALB rule come with R2-P2 step 7.
+  realtime_port = 3001
   # The media bucket's name (the s3-media module creates it, architecture §14.9).
   media_bucket = "${local.name}-media"
   # S3 through the task role; MinIO is refused once deployed (spec 14 §6).
@@ -42,16 +44,22 @@ locals {
     worker = merge(local.storage, {
       SERVICE_NAME = "nile-worker", PAYMENT_GATEWAY = "kashier", EMAIL_PROVIDER = "mailjet"
     })
+    realtime = {
+      SERVICE_NAME     = "nile-realtime"
+      PORT             = tostring(local.realtime_port)
+      TRUST_PROXY_HOPS = "1" # the ALB, as the api
+      JWT_ALGORITHM    = "RS256"
+    }
     migrate = { SERVICE_NAME = "nile-migrate" }
   }
 
   # Every key the processes read from `settings` (the derived ones excluded).
   settings_keys = toset(distinct(concat(
     local.key_lists.common, local.key_lists.database, local.key_lists.api,
-    local.key_lists.worker, local.key_lists.migrate,
+    local.key_lists.worker, local.key_lists.realtime, local.key_lists.migrate,
   )))
 
-  pick = { for process in ["api", "worker", "migrate"] : process => merge(
+  pick = { for process in ["api", "worker", "realtime", "migrate"] : process => merge(
     # lookup: a missing key is reported by settings_check below, not as an index error.
     { for key in concat(local.key_lists.common, local.key_lists.database, local.key_lists[process]) : key => lookup(var.settings, key, "") },
     local.derived.common, local.derived.database, local.derived[process],

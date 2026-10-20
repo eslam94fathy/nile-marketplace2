@@ -297,6 +297,13 @@ const mediaJobsShape = {
   MEDIA_CLEANUP_BATCH_SIZE: positiveInt(10_000),
 };
 
+/** realtime gateway only (spec 15 §6, RT-5; rate keys named as every class, ME-8). */
+const realtimeShape = {
+  RATE_LIMIT_REALTIME_CONNECT_POINTS: positiveInt(),
+  RATE_LIMIT_REALTIME_CONNECT_WINDOW_SECONDS: positiveInt(),
+  REALTIME_SIGNAL_RATE_PER_SECOND: positiveInt(100),
+};
+
 /** Invites are also created by the seed-admin CLI. */
 const inviteShape = {
   INVITE_TTL_HOURS: positiveInt(24 * 30),
@@ -491,6 +498,8 @@ export const workerEnvSchema = z
   .object({
     ...commonShape,
     ...databaseShape,
+    // The realtime fan-out publishes through the Redis emitter (spec 15 §6, reverses CA-8).
+    ...redisShape,
     ...brokerConnectionShape,
     ...messagingShape,
     ...jobsShape,
@@ -513,10 +522,28 @@ export const workerEnvSchema = z
     refineStorage(env, ctx, false);
   });
 
+/**
+ * The Socket.IO gateway (spec 15 §6): Postgres for profile lookups, Redis for the adapter, rate limits
+ * and the suspended-user check, the api's JWT verification keys. No broker, no storage, no signing key.
+ */
+export const realtimeEnvSchema = z
+  .object({
+    ...commonShape,
+    ...databaseShape,
+    ...redisShape,
+    PORT: httpShape.PORT,
+    TRUST_PROXY_HOPS: httpShape.TRUST_PROXY_HOPS,
+    CORS_ALLOWED_ORIGINS: httpShape.CORS_ALLOWED_ORIGINS,
+    ...jwtVerifyShape,
+    ...realtimeShape,
+  })
+  .superRefine(refinePool);
+
 export type MigrateEnv = z.output<typeof migrateEnvSchema>;
 export type SeedAdminEnv = z.output<typeof seedAdminEnvSchema>;
 export type ApiEnv = z.output<typeof apiEnvSchema>;
 export type WorkerEnv = z.output<typeof workerEnvSchema>;
+export type RealtimeEnv = z.output<typeof realtimeEnvSchema>;
 
 /** Every key of every process: components declare what they need with `Pick<Env, …>`. */
-export type Env = ApiEnv & WorkerEnv & SeedAdminEnv & MigrateEnv;
+export type Env = ApiEnv & WorkerEnv & RealtimeEnv & SeedAdminEnv & MigrateEnv;

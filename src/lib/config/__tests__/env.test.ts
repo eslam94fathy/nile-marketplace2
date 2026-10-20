@@ -7,6 +7,7 @@ import {
   migrateEnvSchema,
   seedAdminEnvSchema,
   workerEnvSchema,
+  realtimeEnvSchema,
 } from '..';
 
 function invalidKeys(fn: () => unknown): string[] {
@@ -51,10 +52,23 @@ describe('lib/config per-process env schemas (P1-Q1)', () => {
     const worker: object = loadEnv(workerEnvSchema, input);
     const api: object = loadEnv(apiEnvSchema, input);
     const migrate: object = loadEnv(migrateEnvSchema, input);
+    const realtime: object = loadEnv(realtimeEnvSchema, input);
     expect(worker).not.toHaveProperty('JWT_PRIVATE_KEY');
-    expect(worker).not.toHaveProperty('REDIS_URL');
+    // The realtime emitter (spec 15 §6) reverses CA-8: the worker has Redis now.
+    expect(worker).toHaveProperty('REDIS_URL');
     expect(api).not.toHaveProperty('MAILJET_SECRET_KEY');
     expect(api).not.toHaveProperty('MAILJET_API_KEY');
+    // The gateway verifies tokens but never signs them, and holds no broker or storage keys.
+    for (const key of [
+      'JWT_PRIVATE_KEY',
+      'RABBITMQ_URL',
+      'SECRETS_ENCRYPTION_KEYS',
+      'STORAGE_BUCKET',
+      'KASHIER_API_KEY',
+    ]) {
+      expect(realtime).not.toHaveProperty(key);
+    }
+    expect(realtime).toHaveProperty('JWT_PUBLIC_KEYS');
     expect(Object.keys(migrate).sort()).toEqual(
       [
         'DATABASE_URL',
