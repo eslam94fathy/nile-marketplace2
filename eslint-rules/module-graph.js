@@ -13,10 +13,12 @@ const MODULE_GRAPH = {
   cart: ['catalog', 'customers', 'inventory', 'sellers', 'media'],
   ordering: ['customers', 'cart', 'catalog', 'sellers', 'inventory', 'payments', 'delivery', 'media'],
   finance: ['sellers', 'delivery'],
-  // R2-P2 (spec 15): profiles at connect, parties and statuses for the fan-out. support from spec 16.
-  realtime: ['customers', 'sellers', 'delivery', 'ordering'],
+  // R2-P2 (spec 15): profiles at connect, parties and statuses for the fan-out; R2-P3: support (canView).
+  realtime: ['customers', 'sellers', 'delivery', 'ordering', 'support'],
   // R2-P2 (spec 13 §8, spec 02 §6.3): recipient resolution.
   notifications: ['customers', 'sellers', 'delivery', 'ordering'],
+  // R2-P3 (spec 16): order links, opener names, assignees and admin emails, attachments.
+  support: ['ordering', 'customers', 'sellers', 'identity', 'media'],
   // R2 (architecture v2.0 §14.2). Modules record audit rows through lib/audit, not by importing audit.
   audit: ['identity'],
 };

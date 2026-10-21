@@ -13,6 +13,8 @@ export interface ICustomerDirectory {
   getAddressSnapshot(customerId: string, addressId: string, trx?: DbTransaction): Promise<AddressSnapshot>;
   /** Recipient resolution for realtime and notifications (spec 04 §8.3); unknown ids are left out. */
   getUserIds(customerIds: readonly string[]): Promise<Map<string, string>>;
+  /** "First Last" by user id, for support's admin views (spec 04 §8.7); unknown ids are left out. */
+  getFullNamesByUserIds(userIds: readonly string[]): Promise<Map<string, string>>;
 }
 
 @injectable()
@@ -36,5 +38,10 @@ export class CustomerDirectory implements ICustomerDirectory {
 
   getUserIds(customerIds: readonly string[]): Promise<Map<string, string>> {
     return this.customers.findUserIds(customerIds);
+  }
+
+  async getFullNamesByUserIds(userIds: readonly string[]): Promise<Map<string, string>> {
+    const customers = await this.customers.findByUserIds(userIds);
+    return new Map(customers.map((c) => [c.userId, `${c.firstName} ${c.lastName}`]));
   }
 }

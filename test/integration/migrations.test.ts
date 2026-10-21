@@ -1348,4 +1348,138 @@ describe('migrations on a real Postgres 18', () => {
       }
     });
   });
+
+  describe('support tickets, messages, attachments and reads (R2-P3, D-18)', () => {
+    const now = new Date();
+    const ticket = (row: Record<string, unknown>) =>
+      db('support_tickets')
+        .insert({
+          ticket_number: db.raw(`'T-' || lpad(nextval('support_ticket_number_seq')::text, 9, '0')`),
+          opener_role: 'customer',
+          category: 'other',
+          subject: 'Where is it?',
+          status: 'open',
+          last_message_at: now,
+          last_user_message_at: now,
+          awaiting_admin_since: now,
+          ...row,
+        })
+        .returning<{ id: string; ticket_number: string }[]>(['id', 'ticket_number']);
+    const ticketFails = async (row: Record<string, unknown>) =>
+      (await pgFailure(() => ticket(row))).constraint;
+
+    it('support_tickets: numbered T- + 9 digits, enum and length CHECKs, seller-only onboarding', async () => {
+      const opener = await insertUser();
+      const [first] = await ticket({ opener_user_id: opener });
+      expect(first?.ticket_number).toMatch(/^T-\d{9}$/);
+      expect(await ticketFails({ opener_user_id: opener, opener_role: 'admin' })).toBe(
+        'chk_support_tickets_opener_role',
+      );
+      expect(await ticketFails({ opener_user_id: opener, category: 'refund' })).toBe(
+        'chk_support_tickets_category',
+      );
+      expect(
+        await ticketFails({ opener_user_id: opener, status: 'pending', awaiting_admin_since: null }),
+      ).toBe('chk_support_tickets_status');
+      expect(await ticketFails({ opener_user_id: opener, subject: 'ab' })).toBe(
+        'chk_support_tickets_subject_length',
+      );
+      expect(await ticketFails({ opener_user_id: opener, category: 'seller_onboarding' })).toBe(
+        'chk_support_tickets_seller_onboarding',
+      );
+      const seller = await insertUser({ role: 'seller' });
+      await ticket({ opener_user_id: seller, opener_role: 'seller', category: 'seller_onboarding' });
+    });
+
+    it('support_tickets: status consistency (SU-11, SU-12), a seller order needs its order (SU-10)', async () => {
+      const opener = await insertUser();
+      // awaiting_admin_since is set exactly while open / awaiting_admin.
+      expect(await ticketFails({ opener_user_id: opener, awaiting_admin_since: null })).toBe(
+        'chk_support_tickets_awaiting_admin_since',
+      );
+      expect(await ticketFails({ opener_user_id: opener, status: 'awaiting_user' })).toBe(
+        'chk_support_tickets_awaiting_admin_since',
+      );
+      // resolved needs resolved_at, an unfinished ticket has none, a close keeps it.
+      const resolved = { opener_user_id: opener, status: 'resolved', awaiting_admin_since: null };
+      expect(await ticketFails(resolved)).toBe('chk_support_tickets_resolved_at');
+      expect(await ticketFails({ opener_user_id: opener, resolved_at: now })).toBe(
+        'chk_support_tickets_resolved_at',
+      );
+      await ticket({ ...resolved, resolved_at: now });
+      // closed_at is set exactly when closed.
+      const closed = { opener_user_id: opener, status: 'closed', awaiting_admin_since: null };
+      expect(await ticketFails(closed)).toBe('chk_support_tickets_closed_at');
+      expect(await ticketFails({ ...resolved, resolved_at: now, closed_at: now })).toBe(
+        'chk_support_tickets_closed_at',
+      );
+      await ticket({ ...closed, closed_at: now, resolved_at: now });
+
+      const chain = await orderFixtures(db).insertOrderChain();
+      expect(await ticketFails({ opener_user_id: opener, seller_order_id: chain.sellerOrderId })).toBe(
+        'chk_support_tickets_seller_order_needs_order',
+      );
+      await ticket({ opener_user_id: opener, order_id: chain.orderId, seller_order_id: chain.sellerOrderId });
+    });
+
+    it('support_messages: the sender matches the kind, notes only by admins; attachments and reads', async () => {
+      const opener = await insertUser();
+      const admin = await insertUser({ role: 'admin' });
+      const [created] = await ticket({ opener_user_id: opener });
+      const ticketId = created?.id ?? '';
+      const message = (row: Record<string, unknown>) =>
+        db('support_messages')
+          .insert({ ticket_id: ticketId, kind: 'message', sender_role: 'customer', body: 'Hi', ...row })
+          .returning<{ id: string }[]>('id');
+      const messageFails = async (row: Record<string, unknown>) =>
+        (await pgFailure(() => message(row))).constraint;
+
+      const [userMessage] = await message({ sender_user_id: opener });
+      await message({ kind: 'system', sender_user_id: null, sender_role: 'system' });
+      await message({ kind: 'internal_note', sender_user_id: admin, sender_role: 'admin' });
+      expect(await messageFails({ sender_user_id: null })).toBe('chk_support_messages_sender');
+      expect(await messageFails({ kind: 'system', sender_user_id: null, sender_role: 'admin' })).toBe(
+        'chk_support_messages_sender',
+      );
+      expect(await messageFails({ kind: 'internal_note', sender_user_id: opener })).toBe(
+        'chk_support_messages_internal_note_by_admin',
+      );
+      expect(await messageFails({ kind: 'note', sender_user_id: opener })).toBe('chk_support_messages_kind');
+      expect(await messageFails({ sender_user_id: opener, sender_role: 'agent' })).toBe(
+        'chk_support_messages_sender_role',
+      );
+      expect(await messageFails({ sender_user_id: opener, body: '' })).toBe(
+        'chk_support_messages_body_length',
+      );
+
+      const [media] = await db('media_objects')
+        .insert({
+          owner_user_id: opener,
+          purpose: 'support_attachment',
+          status: 'pending',
+          declared_content_type: 'image/png',
+          declared_size_bytes: 10,
+        })
+        .returning<{ id: string }[]>('id');
+      const mediaId = media?.id ?? '';
+      const attach = (row: Record<string, unknown>) =>
+        db('support_message_attachments').insert({ message_id: userMessage?.id, media_id: mediaId, ...row });
+      expect((await pgFailure(() => attach({ position: 3 }))).constraint).toBe(
+        'chk_support_message_attachments_position',
+      );
+      await attach({ position: 0 });
+      expect((await pgFailure(() => attach({ position: 1 }))).constraint).toBe(
+        'uq_support_message_attachments_media_id',
+      );
+      // The attachment holds its media row (RESTRICT).
+      expect((await pgFailure(() => db('media_objects').where({ id: mediaId }).delete())).constraint).toBe(
+        'fk_support_message_attachments_media_id',
+      );
+
+      const read = () =>
+        db('support_ticket_reads').insert({ ticket_id: ticketId, user_id: opener, last_read_at: now });
+      await read();
+      expect((await pgFailure(read)).constraint).toBe('pk_support_ticket_reads');
+    });
+  });
 });

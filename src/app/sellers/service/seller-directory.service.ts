@@ -46,6 +46,10 @@ export interface ISellerDirectory {
   getCheckoutSnapshots(sellerIds: readonly string[], trx: DbTransaction): Promise<SellerCheckoutSnapshot[]>;
   /** Recipient resolution for realtime and notifications (spec 05 §8.2); unknown ids are left out. */
   getUserIds(sellerIds: readonly string[]): Promise<Map<string, string>>;
+  /** By user id, any seller status, for support's admin views (spec 05 §8.3); unknown ids are left out. */
+  getSummariesByUserIds(
+    userIds: readonly string[],
+  ): Promise<Map<string, { sellerId: string; businessName: string }>>;
 }
 
 @injectable()
@@ -86,5 +90,12 @@ export class SellerDirectory implements ISellerDirectory {
 
   getUserIds(sellerIds: readonly string[]): Promise<Map<string, string>> {
     return this.sellers.findUserIds(sellerIds);
+  }
+
+  async getSummariesByUserIds(
+    userIds: readonly string[],
+  ): Promise<Map<string, { sellerId: string; businessName: string }>> {
+    const sellers = await this.sellers.findByUserIds(userIds);
+    return new Map(sellers.map((s) => [s.userId, { sellerId: s.id, businessName: s.businessName }]));
   }
 }

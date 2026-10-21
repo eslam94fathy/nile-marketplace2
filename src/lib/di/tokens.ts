@@ -222,6 +222,11 @@ export const TOKENS = {
   MediaCleanupJob: Symbol.for('MediaCleanupJob'),
   MediaController: Symbol.for('MediaController'),
 
+  // support module (spec 16)
+  SupportTicketRepository: Symbol.for('SupportTicketRepository'),
+  /** Public API of support (spec 16 §2), read by realtime and the back-office. */
+  SupportDirectory: Symbol.for('SupportDirectory'),
+
   // health module
   HealthService: Symbol.for('HealthService'),
   HealthChecks: Symbol.for('HealthChecks'),

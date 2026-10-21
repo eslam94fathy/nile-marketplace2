@@ -140,6 +140,16 @@ export class SellerRepository {
     return new Map(rows.map((row) => [row.id, row.user_id]));
   }
 
+  /** Batched lookup by user id (support admin views, spec 05 §8.3); unknown ids are left out. */
+  async findByUserIds(userIds: readonly string[]): Promise<Seller[]> {
+    if (userIds.length === 0) return [];
+    const rows = await this.db
+      .knex<SellerRow>(T)
+      .select(...COLUMNS)
+      .whereIn('user_id', [...new Set(userIds)]);
+    return rows.map(toModel);
+  }
+
   async findByIds(ids: readonly string[], trx?: DbTransaction): Promise<Seller[]> {
     if (ids.length === 0) return [];
     const rows = await this.exec(trx)<SellerRow>(T)

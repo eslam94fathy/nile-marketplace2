@@ -55,6 +55,10 @@ import * as m20261020170206 from './20261020170206_add_order_items_image_media_i
 import * as m20261020194936 from './20261020194936_create_user_notifications';
 import * as m20261020194938 from './20261020194938_create_notification_preferences';
 import * as m20261020203245 from './20261020203245_create_push_subscriptions';
+import * as m20261021100001 from './20261021100001_create_support_tickets';
+import * as m20261021100002 from './20261021100002_create_support_messages';
+import * as m20261021100003 from './20261021100003_create_support_message_attachments';
+import * as m20261021100004 from './20261021100004_create_support_ticket_reads';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -115,5 +119,9 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261020194936_create_user_notifications', module: m20261020194936 },
   { name: '20261020194938_create_notification_preferences', module: m20261020194938 },
   { name: '20261020203245_create_push_subscriptions', module: m20261020203245 },
+  { name: '20261021100001_create_support_tickets', module: m20261021100001 },
+  { name: '20261021100002_create_support_messages', module: m20261021100002 },
+  { name: '20261021100003_create_support_message_attachments', module: m20261021100003 },
+  { name: '20261021100004_create_support_ticket_reads', module: m20261021100004 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

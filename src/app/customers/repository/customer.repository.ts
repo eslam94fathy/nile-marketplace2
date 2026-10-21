@@ -56,6 +56,16 @@ export class CustomerRepository {
     return new Map(rows.map((row) => [row.id, row.user_id]));
   }
 
+  /** Batched lookup by user id (support admin views, spec 04 §8.7); unknown ids are left out. */
+  async findByUserIds(userIds: readonly string[]): Promise<Customer[]> {
+    if (userIds.length === 0) return [];
+    const rows = await this.db
+      .knex<CustomerRow>(T)
+      .select(...COLUMNS)
+      .whereIn('user_id', [...new Set(userIds)]);
+    return rows.map(toModel);
+  }
+
   async findByUserId(userId: string, trx?: DbTransaction): Promise<Customer | undefined> {
     const row = await this.exec(trx)<CustomerRow>(T)
       .select(...COLUMNS)

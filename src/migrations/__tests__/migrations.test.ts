@@ -67,6 +67,10 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261020194936_create_user_notifications',
       '20261020194938_create_notification_preferences',
       '20261020203245_create_push_subscriptions',
+      '20261021100001_create_support_tickets',
+      '20261021100002_create_support_messages',
+      '20261021100003_create_support_message_attachments',
+      '20261021100004_create_support_ticket_reads',
     ]);
   });
 
