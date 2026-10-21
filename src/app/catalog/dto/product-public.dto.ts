@@ -5,6 +5,7 @@ import { FieldType, FilterOp, IsMoney, type ListSpec, SLUG_PATTERN } from '../..
 import { MAX_ATTRIBUTE_FILTERS, MAX_ATTRIBUTE_FILTER_VALUES, PRODUCT_SLUG_MAX_LENGTH } from '../constants';
 import { RELEVANCE_FIELD } from '../repository/product.repository';
 import { ImageDto, toImageDto } from '../../media';
+import { ProductRatingDto } from './product-card.dto';
 import { ProductImageDto, toProductImageDto } from './product-image.dto';
 import {
   type ProductListItem,
@@ -21,6 +22,8 @@ const BROWSE_FIELDS: ListSpec['fields'] = {
   publishedAt: { column: 'p.published_at', type: FieldType.DATE, ops: [], sortable: true },
   inStock: { column: 'p.in_stock', type: FieldType.BOOLEAN, ops: [FilterOp.EQ] },
   sellerId: { column: 'p.seller_id', type: FieldType.UUID, ops: [FilterOp.EQ] },
+  // Custom (spec 06 §9.3): `rating[gte]` on rating_avg; the sort on COALESCE(rating_avg, 0), unrated last.
+  [PRODUCT_LIST_PARAMS.RATING]: { type: FieldType.NUMBER, ops: [FilterOp.GTE], sortable: true },
 };
 const ATTRIBUTE_FILTERS: ListSpec['prefixFields'] = {
   [PRODUCT_LIST_PARAMS.ATTR_PREFIX]: {
@@ -79,6 +82,16 @@ export class ProductSellerRefDto {
   businessName!: string;
 }
 
+/** The seller on the product page, with its rating (spec 06 §9.3, spec 05 §8.2). */
+export class ProductDetailSellerDto extends ProductSellerRefDto {
+  @IsOptional()
+  @IsString()
+  ratingAvg!: string | null;
+
+  @IsInt()
+  ratingCount!: number;
+}
+
 export class ProductListItemDto {
   @IsUUID()
   id!: string;
@@ -97,6 +110,10 @@ export class ProductListItemDto {
 
   @IsBoolean()
   inStock!: boolean;
+
+  @ValidateNested()
+  @Type(() => ProductRatingDto)
+  rating!: ProductRatingDto;
 
   @ValidateNested()
   @Type(() => ProductCategoryRefDto)
@@ -204,8 +221,8 @@ export class ProductDetailDto {
   category!: ProductCategoryDto;
 
   @ValidateNested()
-  @Type(() => ProductSellerRefDto)
-  seller!: ProductSellerRefDto;
+  @Type(() => ProductDetailSellerDto)
+  seller!: ProductDetailSellerDto;
 
   @IsMoney()
   minPrice!: string;
@@ -215,6 +232,10 @@ export class ProductDetailDto {
 
   @IsBoolean()
   inStock!: boolean;
+
+  @ValidateNested()
+  @Type(() => ProductRatingDto)
+  rating!: ProductRatingDto;
 
   @ValidateNested({ each: true })
   @Type(() => ProductAttributeDto)
@@ -251,6 +272,7 @@ export function toProductListItemDto({
     minPrice: visibleMoney(product.minPrice),
     maxPrice: visibleMoney(product.maxPrice),
     inStock: product.inStock,
+    rating: { avg: product.ratingAvg, count: product.ratingCount },
     category,
     seller,
     primaryImage: primaryImage ? toImageDto(primaryImage) : null,
@@ -266,10 +288,11 @@ export function toProductDetailDto(detail: PublicProductDetail): ProductDetailDt
     name: product.name,
     description: product.description,
     category: detail.category,
-    seller: detail.seller,
+    seller: { ...detail.seller, ...detail.sellerRating },
     minPrice: visibleMoney(product.minPrice),
     maxPrice: visibleMoney(product.maxPrice),
     inStock: detail.inStock,
+    rating: { avg: product.ratingAvg, count: product.ratingCount },
     attributes: detail.attributes,
     variants: detail.variants.map((variant) => ({
       ...variant,

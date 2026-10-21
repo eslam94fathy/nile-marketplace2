@@ -1,9 +1,18 @@
 import { Type } from 'class-transformer';
-import { IsEmail, IsIn, IsISO8601, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
+import {
+  IsEmail,
+  IsIn,
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  IsUUID,
+  ValidateNested,
+} from 'class-validator';
 import { IsRate } from '../../../lib/http';
 import { UserStatus } from '../../identity';
 import { SellerStatus } from '../enums';
-import { type PickupAddress } from '../model/seller.model';
+import { type PickupAddress, type Seller } from '../model/seller.model';
 import { type SellerProfile } from '../service/seller.service';
 
 /* Response DTOs for spec 05 §4.1–§4.3 (decorators describe the OpenAPI shape only). */
@@ -78,6 +87,14 @@ export class SellerProfileDto {
   @IsISO8601()
   approvedAt!: string | null;
 
+  /** "4.30" over the published reviews of my products; null without any (spec 05 §8.2). */
+  @IsOptional()
+  @IsString()
+  ratingAvg!: string | null;
+
+  @IsInt()
+  ratingCount!: number;
+
   @IsISO8601()
   createdAt!: string;
 
@@ -112,7 +129,39 @@ export function toSellerProfileDto({ seller, email }: SellerProfile): SellerProf
     rejectionReason: seller.rejectionReason,
     commissionRate: seller.commissionRate.toString(),
     approvedAt: seller.approvedAt?.toISOString() ?? null,
+    ratingAvg: seller.ratingAvg,
+    ratingCount: seller.ratingCount,
     createdAt: seller.createdAt.toISOString(),
     updatedAt: seller.updatedAt.toISOString(),
+  };
+}
+
+/** `GET /sellers/:sellerId` (spec 05 §8.2): an approved seller's public page. */
+export class PublicSellerDto {
+  @IsUUID()
+  id!: string;
+
+  @IsString()
+  businessName!: string;
+
+  @IsOptional()
+  @IsString()
+  ratingAvg!: string | null;
+
+  @IsInt()
+  ratingCount!: number;
+
+  /** When the seller was approved. */
+  @IsISO8601()
+  memberSince!: string;
+}
+
+export function toPublicSellerDto(seller: Seller): PublicSellerDto {
+  return {
+    id: seller.id,
+    businessName: seller.businessName,
+    ratingAvg: seller.ratingAvg,
+    ratingCount: seller.ratingCount,
+    memberSince: (seller.approvedAt ?? seller.createdAt).toISOString(),
   };
 }

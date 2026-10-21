@@ -98,3 +98,7 @@ export const MAX_AVAILABLE_QUANTITY = 99;
 
 /** Queue = consumer name (spec 02 §2): seller.approved, seller.suspended, inventory.stock_status_changed. */
 export const CATALOG_LISTING_PROJECTIONS_QUEUE = 'catalog.listing-projections';
+
+/** The `rating[gte]` filter's range (spec 06 §9.3): ratings are 1..5. */
+export const RATING_MIN = 1;
+export const RATING_MAX = 5;

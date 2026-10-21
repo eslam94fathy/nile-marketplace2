@@ -32,6 +32,15 @@ export interface SellerLookupOptions {
   lockShared: boolean;
 }
 
+/** A seller as other modules show it (spec 05 §8.2): the name and the rating. */
+export interface SellerSummary {
+  sellerId: string;
+  businessName: string;
+  /** "4.30"; null without published reviews. */
+  ratingAvg: string | null;
+  ratingCount: number;
+}
+
 /** Public API of sellers (spec 05 §2). All lookups are batched; unknown ids are left out. */
 export interface ISellerDirectory {
   /**
@@ -41,8 +50,8 @@ export interface ISellerDirectory {
    */
   getSellerByUserId(userId: string, options?: SellerLookupOptions): Promise<SellerStatusSummary | null>;
   getStatuses(sellerIds: readonly string[]): Promise<SellerStatusSummary[]>;
-  /** Display names (catalog, cart, ordering). */
-  getSummaries(sellerIds: readonly string[]): Promise<{ sellerId: string; businessName: string }[]>;
+  /** Display names and the rating (catalog, cart, ordering; spec 05 §8.2). */
+  getSummaries(sellerIds: readonly string[]): Promise<SellerSummary[]>;
   getCheckoutSnapshots(sellerIds: readonly string[], trx: DbTransaction): Promise<SellerCheckoutSnapshot[]>;
   /** Recipient resolution for realtime and notifications (spec 05 §8.2); unknown ids are left out. */
   getUserIds(sellerIds: readonly string[]): Promise<Map<string, string>>;
@@ -68,10 +77,12 @@ export class SellerDirectory implements ISellerDirectory {
     return (await this.sellers.findByIds(sellerIds)).map((s) => ({ sellerId: s.id, status: s.status }));
   }
 
-  async getSummaries(sellerIds: readonly string[]): Promise<{ sellerId: string; businessName: string }[]> {
+  async getSummaries(sellerIds: readonly string[]): Promise<SellerSummary[]> {
     return (await this.sellers.findByIds(sellerIds)).map((s) => ({
       sellerId: s.id,
       businessName: s.businessName,
+      ratingAvg: s.ratingAvg,
+      ratingCount: s.ratingCount,
     }));
   }
 

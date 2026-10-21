@@ -22,6 +22,8 @@ const makeSeller = (status: SellerStatus, rate = '0.1000') =>
     commissionRate: Rate.of(rate),
     rejectionReason: null,
     approvedAt: null,
+    ratingCount: 0,
+    ratingAvg: null,
     createdAt: NOW,
     updatedAt: NOW,
   });

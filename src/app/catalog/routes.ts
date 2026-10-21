@@ -102,7 +102,7 @@ export function catalogRoutes(deps: CatalogRouteDeps): Router {
     method: 'get',
     path: `${basePath}${PP.PRODUCTS}`,
     summary:
-      'Browse and search visible products. Filters: categoryId[eq] (includes subcategories), price[gte|lte] (lowest variant price), inStock[eq], sellerId[eq], attr.<code>[in] (needs categoryId; all on the same variant; max 5). q = search text (2..100). Sort: publishedAt, minPrice, relevance (with q only); default -relevance with q, else -publishedAt',
+      'Browse and search visible products. Filters: categoryId[eq] (includes subcategories), price[gte|lte] (lowest variant price), inStock[eq], sellerId[eq], rating[gte] (1..5; unrated products never match), attr.<code>[in] (needs categoryId; all on the same variant; max 5). q = search text (2..100). Sort: publishedAt, minPrice, rating (unrated last on -rating), relevance (with q only); default -relevance with q, else -publishedAt',
     tags: TAGS,
     auth: false,
     query: [
@@ -112,10 +112,22 @@ export function catalogRoutes(deps: CatalogRouteDeps): Router {
       {
         name: 'sort',
         in: 'query',
-        schema: { enum: ['publishedAt', '-publishedAt', 'minPrice', '-minPrice', 'relevance', '-relevance'] },
+        schema: {
+          enum: [
+            'publishedAt',
+            '-publishedAt',
+            'minPrice',
+            '-minPrice',
+            'rating',
+            '-rating',
+            'relevance',
+            '-relevance',
+          ],
+        },
       },
       { name: 'categoryId[eq]', in: 'query', schema: { type: 'string', format: 'uuid' } },
       { name: 'price[gte]', in: 'query', schema: { type: 'string' } },
+      { name: 'rating[gte]', in: 'query', schema: { type: 'number', minimum: 1, maximum: 5 } },
       { name: 'price[lte]', in: 'query', schema: { type: 'string' } },
       { name: 'inStock[eq]', in: 'query', schema: { type: 'boolean' } },
       { name: 'sellerId[eq]', in: 'query', schema: { type: 'string', format: 'uuid' } },

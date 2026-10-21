@@ -6,7 +6,7 @@ import { registerCustomersLookups, registerCustomersModule } from './app/custome
 import { registerDeliveryAgentLookups, registerDeliveryModule, registerDeliveryWorker } from './app/delivery';
 import { registerFinanceModule, registerFinanceWorker } from './app/finance';
 import { registerReviewsModule } from './app/reviews';
-import { registerSellersLookups, registerSellersModule } from './app/sellers';
+import { registerSellersLookups, registerSellersModule, registerSellersWorker } from './app/sellers';
 import { registerSupportLookups, registerSupportModule, registerSupportWorker } from './app/support';
 import { Dependency, registerHealthModule } from './app/health';
 import { registerIdentityModule } from './app/identity';
@@ -106,6 +106,8 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   registerDeliveryAgentLookups(container);
   // catalog.listing-projections reads seller statuses and stock (spec 06 UC-CA-7).
   registerSellersModule(container);
+  // sellers.rating-projection (spec 05 §8.1).
+  registerSellersWorker(container);
   registerInventoryModule(container);
   registerCatalogProjections(container);
   registerPaymentsModule(container);

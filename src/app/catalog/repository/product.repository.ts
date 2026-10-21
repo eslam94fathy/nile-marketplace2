@@ -30,12 +30,18 @@ export interface ProductSearch {
   wordSimilarityThreshold: number;
 }
 
+/** The public list's rating sort (spec 06 §9.3), matching idx_products_rating_id. */
+export const RATING_SORT_FIELD = 'rating';
+const RATING_SORT_SQL = 'COALESCE(p.rating_avg, 0)';
+
 export interface PublicListCriteria {
   /** The filter category and its descendants; null = no category filter. */
   categoryIds: string[] | null;
   /** One entry per `attr.*` filter: the option ids it accepts. */
   attributeOptionIds: string[][];
   search: ProductSearch | null;
+  /** `rating[gte]`: unrated products (rating_avg null) never match. */
+  minRating: number | null;
 }
 
 export interface PublicListRow {
@@ -285,6 +291,7 @@ export class ProductRepository {
       .whereNull('p.deleted_at');
 
     if (criteria.categoryIds) void qb.whereIn('p.category_id', criteria.categoryIds);
+    if (criteria.minRating !== null) void qb.where('p.rating_avg', '>=', criteria.minRating);
 
     // Every attr.* condition must hold on the SAME active, live variant (spec 06 CA-5).
     if (criteria.attributeOptionIds.length > 0) {
@@ -319,6 +326,8 @@ export class ProductRepository {
       void qb.select(db.raw(`${RELEVANCE_SQL} AS relevance`, [q, q]));
       if (query.sort.field === RELEVANCE_FIELD) sortExpression = db.raw(RELEVANCE_SQL, [q, q]);
     }
+    // Unrated products last on -rating; idx_products_rating_id without a category (spec 06 §9.3).
+    if (query.sort.field === RATING_SORT_FIELD) sortExpression = db.raw(RATING_SORT_SQL);
 
     const rows = (await applyListQuery(qb, query, 'p.id', { sortExpression })) as (ProductRow & {
       relevance?: string;
@@ -347,6 +356,28 @@ export class ProductRepository {
       visible,
     ]);
     return result.rows[0]?.exists ?? false;
+  }
+
+  /**
+   * The rating projection (spec 06 §9.2): one conditional update, applied only when newer than the
+   * stored version (an older or duplicate event changes nothing). No product lock first, and it touches
+   * nothing CA-2 protects. False when it was not newer.
+   */
+  async applyRating(
+    id: string,
+    rating: { ratingCount: number; ratingAvg: string | null; version: number },
+    trx: DbTransaction,
+  ): Promise<boolean> {
+    const updated = await trx<ProductTable>(T)
+      .where({ id })
+      .andWhere('rating_version', '<', rating.version)
+      .update({
+        rating_count: rating.ratingCount,
+        rating_avg: rating.ratingAvg,
+        rating_version: String(rating.version),
+        updated_at: trx.fn.now(),
+      });
+    return updated > 0;
   }
 
   /** A visible (VIS) product by id or by slug (uq_products_slug); null when hidden, deleted or missing. */

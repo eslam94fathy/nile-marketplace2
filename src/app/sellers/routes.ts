@@ -23,7 +23,7 @@ import {
   CommissionSettingsDto,
 } from './dto/seller-admin-response.dto';
 import { RegisterSellerDto, UpdateSellerProfileDto } from './dto/seller-request.dto';
-import { RegisteredSellerDto, SellerProfileDto } from './dto/seller-response.dto';
+import { PublicSellerDto, RegisteredSellerDto, SellerProfileDto } from './dto/seller-response.dto';
 
 const AUTH_TAGS = ['auth'] as const;
 const TAGS = ['seller'] as const;
@@ -53,6 +53,16 @@ export function sellersRoutes(deps: SellersRouteDeps): Router {
   router.get(P.PROFILE, ...sellerOnly, sellers.getProfile);
   router.patch(P.PROFILE, ...sellerOnly, sellers.updateProfile);
   router.post(P.REAPPLY, ...sellerOnly, sellers.reapply);
+  router.get(P.PUBLIC, sellers.publicProfile);
+
+  docs.add({
+    method: 'get',
+    path: `${basePath}${P.PUBLIC}`,
+    summary: 'The public page of an approved seller: name, rating, member since (SELLER_NOT_FOUND 404)',
+    tags: ['sellers'],
+    auth: false,
+    responses: { 200: { description: 'The seller', body: PublicSellerDto } },
+  });
 
   docs.add({
     method: 'post',

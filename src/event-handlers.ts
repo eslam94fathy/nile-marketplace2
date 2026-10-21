@@ -7,6 +7,7 @@ import { createNotificationHandlers } from './app/notifications';
 import { createOrderingHandlers } from './app/ordering';
 import { createPaymentsHandlers } from './app/payments';
 import { createRealtimeHandlers } from './app/realtime';
+import { createSellersHandlers } from './app/sellers';
 import { type EventHandlerDefinition } from './lib/events';
 
 /**
@@ -23,5 +24,6 @@ export function createEventHandlers(container: DependencyContainer): EventHandle
     ...createFinanceHandlers(container),
     ...createMediaHandlers(container),
     ...createRealtimeHandlers(container),
+    ...createSellersHandlers(container),
   ];
 }

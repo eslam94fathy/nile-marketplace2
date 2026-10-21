@@ -1,6 +1,7 @@
 import { inject, injectable } from 'tsyringe';
 import { type DbTransaction } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
+import { type RatingProjection } from '../../../lib/events';
 import { type ILogger } from '../../../lib/logger';
 import { type ISellerDirectory, SellerStatus } from '../../sellers';
 import { type ProductVariantRepository } from '../repository/product-variant.repository';
@@ -51,5 +52,15 @@ export class ListingProjectionService {
       return;
     }
     await this.projections.recompute(product, trx);
+  }
+
+  /**
+   * `review.rating_changed` (spec 06 §9.2): the product's rating, newer versions only. The rating sits on
+   * the product row, read fresh on every request, so no cache is deleted (CA-8 holds).
+   */
+  async syncRating(productId: string, rating: RatingProjection, trx: DbTransaction): Promise<void> {
+    const applied = await this.products.applyRating(productId, rating, trx);
+    if (!applied)
+      this.logger.debug('product rating not newer, skipped', { productId, version: rating.version });
   }
 }

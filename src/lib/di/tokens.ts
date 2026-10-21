@@ -61,6 +61,7 @@ export const TOKENS = {
   SellerService: Symbol.for('SellerService'),
   /** Public API of sellers (spec 05 §2), injected into other modules. */
   SellerDirectory: Symbol.for('SellerDirectory'),
+  SellerRatingProjectionService: Symbol.for('SellerRatingProjectionService'),
   SellerCommissionHistoryRepository: Symbol.for('SellerCommissionHistoryRepository'),
   SellerAdminService: Symbol.for('SellerAdminService'),
   SellerController: Symbol.for('SellerController'),

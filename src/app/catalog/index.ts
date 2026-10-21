@@ -16,6 +16,8 @@ import {
   type EventHandlerDefinition,
   InventoryStockStatusChanged,
   PermanentEventError,
+  readRatingProjection,
+  ReviewRatingChanged,
   SellerApproved,
   SellerSuspended,
 } from '../../lib/events';
@@ -118,17 +120,23 @@ function uuidField(envelope: EventEnvelope, field: string): string {
   return value;
 }
 
-/** Consumer `catalog.listing-projections` (spec 06 UC-CA-7, spec 02 §2). */
+/** Consumer `catalog.listing-projections` (spec 06 UC-CA-7, §9.2, spec 02 §2, §6.4). */
 export function createCatalogHandlers(container: DependencyContainer): EventHandlerDefinition[] {
   const projections = container.resolve<ListingProjectionService>(TOKENS.ListingProjectionService);
   return [
     {
       name: CATALOG_LISTING_PROJECTIONS_QUEUE,
-      events: [SellerApproved, SellerSuspended, InventoryStockStatusChanged],
-      handle: (envelope, trx) =>
-        envelope.eventType === InventoryStockStatusChanged.type
-          ? projections.syncStock(uuidField(envelope, 'variantId'), trx)
-          : projections.syncSeller(uuidField(envelope, 'sellerId'), trx),
+      events: [SellerApproved, SellerSuspended, InventoryStockStatusChanged, ReviewRatingChanged],
+      handle: (envelope, trx) => {
+        if (envelope.eventType === InventoryStockStatusChanged.type) {
+          return projections.syncStock(uuidField(envelope, 'variantId'), trx);
+        }
+        if (envelope.eventType === ReviewRatingChanged.type) {
+          const { subjectId, projection } = readRatingProjection(envelope, 'product');
+          return projections.syncRating(subjectId, projection, trx);
+        }
+        return projections.syncSeller(uuidField(envelope, 'sellerId'), trx);
+      },
     },
   ];
 }

@@ -23,6 +23,8 @@ const COLUMNS = [
   'commission_rate',
   'rejection_reason',
   'approved_at',
+  'rating_count',
+  'rating_avg',
   'created_at',
   'updated_at',
 ] as const;
@@ -86,6 +88,8 @@ function toModel(row: Pick<SellerRow, (typeof COLUMNS)[number]>): Seller {
     commissionRate: Rate.of(row.commission_rate),
     rejectionReason: row.rejection_reason,
     approvedAt: row.approved_at,
+    ratingCount: row.rating_count,
+    ratingAvg: row.rating_avg,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   });
@@ -241,5 +245,26 @@ export class SellerRepository {
     const qb = this.exec(trx)<SellerRow>(T).select(...COLUMNS);
     const rows = (await applyListQuery(qb, query, 'id')) as SellerRow[];
     return rows.map(toModel);
+  }
+
+  /**
+   * The rating projection (spec 05 §8.1): applied only when newer than the stored version, so an older
+   * or duplicate `review.rating_changed` changes nothing. False when it was not newer.
+   */
+  async applyRating(
+    id: string,
+    rating: { ratingCount: number; ratingAvg: string | null; version: number },
+    trx: DbTransaction,
+  ): Promise<boolean> {
+    const updated = await trx<SellerRow>(T)
+      .where({ id })
+      .andWhere('rating_version', '<', rating.version)
+      .update({
+        rating_count: rating.ratingCount,
+        rating_avg: rating.ratingAvg,
+        rating_version: String(rating.version),
+        updated_at: trx.fn.now(),
+      });
+    return updated > 0;
   }
 }
