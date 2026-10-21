@@ -169,6 +169,8 @@ const rateLimitShape = {
   RATE_LIMIT_CHECKOUT_WINDOW_SECONDS: positiveInt(),
   RATE_LIMIT_UPLOAD_POINTS: positiveInt(),
   RATE_LIMIT_UPLOAD_WINDOW_SECONDS: positiveInt(),
+  RATE_LIMIT_SUPPORT_MESSAGE_POINTS: positiveInt(),
+  RATE_LIMIT_SUPPORT_MESSAGE_WINDOW_SECONDS: positiveInt(),
 };
 
 const idempotencyShape = {
@@ -271,6 +273,11 @@ const storageShape = {
   STORAGE_ENDPOINT: z.url().optional(),
   STORAGE_ACCESS_KEY_ID: z.string().min(1).optional(),
   STORAGE_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+};
+
+/** support (spec 16 §1 limits), api only. */
+const supportApiShape = {
+  SUPPORT_MAX_OPEN_TICKETS_PER_USER: positiveInt(1_000),
 };
 
 /** api only (spec 14 §1, §6, ME-8). */
@@ -508,6 +515,7 @@ export const apiEnvSchema = z
     ...storageShape,
     ...mediaApiShape,
     ...pushApiShape,
+    ...supportApiShape,
   })
   .superRefine((env, ctx) => {
     refinePool(env, ctx);

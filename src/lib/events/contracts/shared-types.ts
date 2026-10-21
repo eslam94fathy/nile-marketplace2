@@ -60,3 +60,13 @@ export type MediaPurposeValue =
   'product_image' | 'category_image' | 'support_attachment' | 'review_image' | 'return_photo';
 
 export type MediaFailureReasonValue = 'decode_failed' | 'unsupported_type' | 'dimensions_out_of_range';
+
+/** Spec 16 §1 (support). */
+export type TicketCategoryValue =
+  'order' | 'payment' | 'delivery' | 'return' | 'account' | 'seller_onboarding' | 'other';
+
+export type TicketStatusValue = 'open' | 'awaiting_admin' | 'awaiting_user' | 'resolved' | 'closed';
+
+export type TicketMessageKindValue = 'message' | 'internal_note' | 'system';
+
+export type TicketSenderRoleValue = 'customer' | 'seller' | 'admin' | 'system';

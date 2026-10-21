@@ -15,6 +15,8 @@ export const RateLimitClass = {
   CHECKOUT: 'checkout',
   /** Media uploads, keyed by user (spec 14 ME-6); fails open like general. */
   UPLOAD: 'upload',
+  /** Ticket opens and message posts, keyed by user (spec 16 §6); fails open like general. */
+  SUPPORT_MESSAGE: 'support-message',
 } as const;
 export type RateLimitClass = (typeof RateLimitClass)[keyof typeof RateLimitClass];
 
@@ -37,6 +39,8 @@ type RateEnv = Pick<
   | 'RATE_LIMIT_CHECKOUT_WINDOW_SECONDS'
   | 'RATE_LIMIT_UPLOAD_POINTS'
   | 'RATE_LIMIT_UPLOAD_WINDOW_SECONDS'
+  | 'RATE_LIMIT_SUPPORT_MESSAGE_POINTS'
+  | 'RATE_LIMIT_SUPPORT_MESSAGE_WINDOW_SECONDS'
 >;
 
 /**
@@ -83,6 +87,11 @@ export class RateLimiters {
       make(RateLimitClass.REFRESH, env.RATE_LIMIT_REFRESH_POINTS, env.RATE_LIMIT_REFRESH_WINDOW_SECONDS),
       make(RateLimitClass.CHECKOUT, env.RATE_LIMIT_CHECKOUT_POINTS, env.RATE_LIMIT_CHECKOUT_WINDOW_SECONDS),
       make(RateLimitClass.UPLOAD, env.RATE_LIMIT_UPLOAD_POINTS, env.RATE_LIMIT_UPLOAD_WINDOW_SECONDS),
+      make(
+        RateLimitClass.SUPPORT_MESSAGE,
+        env.RATE_LIMIT_SUPPORT_MESSAGE_POINTS,
+        env.RATE_LIMIT_SUPPORT_MESSAGE_WINDOW_SECONDS,
+      ),
     ]);
   }
 

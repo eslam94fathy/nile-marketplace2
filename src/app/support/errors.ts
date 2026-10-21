@@ -1,5 +1,6 @@
-import { AppError } from '../../lib/error';
+import { AppError, internalError } from '../../lib/error';
 import { HTTP_STATUS } from '../../lib/http';
+import { OrderingErrorCode } from '../ordering';
 
 /** support error codes (docs/spec/16-support.md §6). ORDER_NOT_FOUND / SELLER_ORDER_NOT_FOUND belong to ordering. */
 export const SupportErrorCode = {
@@ -49,3 +50,18 @@ export const supportAssigneeInvalid = () =>
     'The assignee is not an active admin',
     HTTP_STATUS.UNPROCESSABLE_ENTITY,
   );
+
+/** A missing or foreign order link: a body reference, so 422 (spec 16 §6, conventions §3). */
+export const orderLinkNotFound = () =>
+  new AppError(OrderingErrorCode.ORDER_NOT_FOUND, 'Order not found', HTTP_STATUS.UNPROCESSABLE_ENTITY);
+
+export const sellerOrderLinkNotFound = () =>
+  new AppError(
+    OrderingErrorCode.SELLER_ORDER_NOT_FOUND,
+    'Seller order not found',
+    HTTP_STATUS.UNPROCESSABLE_ENTITY,
+  );
+
+/** A customer- or seller-role account without its profile: a data defect, 500 (SU-9, as P4-Q9). */
+export const openerProfileMissing = (role: string, userId: string) =>
+  internalError(new Error(`${role}-role user ${userId} has no ${role} profile`));

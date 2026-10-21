@@ -25,3 +25,24 @@ export const TICKET_NUMBER = {
 export const SupportLogEvent = {
   SLA_BREACHED: 'SUPPORT_SLA_BREACHED',
 } as const;
+
+/** How users see every admin and the server (SU-3); admins see each other by email (SU-7). */
+export const SUPPORT_DISPLAY_NAME = 'Nile Support';
+
+/** The bodies of the server-written timeline lines (spec 16 §1.1). */
+export const SYSTEM_LINES = {
+  REOPENED: 'Ticket reopened',
+  ASSIGNED: 'Ticket assigned to a support agent',
+  UNASSIGNED: 'Ticket unassigned',
+  RESOLVED: 'Resolved by support',
+  CLOSED: 'Closed by support',
+  AUTO_CLOSED: 'Closed automatically after being resolved',
+} as const;
+
+/** Paths under /api/v1 (spec 16 §4.1). */
+export const SUPPORT_PATHS = {
+  TICKETS: '/support/tickets',
+  TICKET: '/support/tickets/:ticketId',
+  MESSAGES: '/support/tickets/:ticketId/messages',
+  READ: '/support/tickets/:ticketId/read',
+} as const;

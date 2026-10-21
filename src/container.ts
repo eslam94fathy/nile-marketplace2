@@ -6,6 +6,7 @@ import { registerCustomersLookups, registerCustomersModule } from './app/custome
 import { registerDeliveryAgentLookups, registerDeliveryModule, registerDeliveryWorker } from './app/delivery';
 import { registerFinanceModule, registerFinanceWorker } from './app/finance';
 import { registerSellersLookups, registerSellersModule } from './app/sellers';
+import { registerSupportModule } from './app/support';
 import { Dependency, registerHealthModule } from './app/health';
 import { registerIdentityModule } from './app/identity';
 import { registerInventoryModule } from './app/inventory';
@@ -84,6 +85,8 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
   registerFinanceModule(container);
   // The notification centre endpoints (spec 13 §8.4).
   registerNotificationsHttp(container);
+  // After ordering, media, customers and sellers: support reads them (spec 16 §1).
+  registerSupportModule(container);
   return container;
 }
 

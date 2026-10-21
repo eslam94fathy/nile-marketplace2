@@ -224,6 +224,12 @@ export const TOKENS = {
 
   // support module (spec 16)
   SupportTicketRepository: Symbol.for('SupportTicketRepository'),
+  SupportMessageRepository: Symbol.for('SupportMessageRepository'),
+  SupportAttachmentRepository: Symbol.for('SupportAttachmentRepository'),
+  SupportReadRepository: Symbol.for('SupportReadRepository'),
+  SupportViewService: Symbol.for('SupportViewService'),
+  SupportTicketService: Symbol.for('SupportTicketService'),
+  SupportTicketController: Symbol.for('SupportTicketController'),
   /** Public API of support (spec 16 §2), read by realtime and the back-office. */
   SupportDirectory: Symbol.for('SupportDirectory'),
 

@@ -97,6 +97,11 @@ module "environment" {
     IDEMPOTENCY_TTL_HOURS                 = "24"
     IDEMPOTENCY_LOCK_TTL_SECONDS          = "60" # above the longest request (review F-9)
 
+    # support (spec 16 §1, §6): ticket opens and message posts per user, open tickets per user (R-8).
+    RATE_LIMIT_SUPPORT_MESSAGE_POINTS         = "30"
+    RATE_LIMIT_SUPPORT_MESSAGE_WINDOW_SECONDS = "60"
+    SUPPORT_MAX_OPEN_TICKETS_PER_USER         = "20"
+
     # realtime gateway (spec 15 §6): a reconnect per tab every 15 min, plus deploy storms (RT-5).
     RATE_LIMIT_REALTIME_CONNECT_POINTS         = "60"
     RATE_LIMIT_REALTIME_CONNECT_WINDOW_SECONDS = "60"

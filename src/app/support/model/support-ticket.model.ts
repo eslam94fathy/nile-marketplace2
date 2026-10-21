@@ -22,6 +22,17 @@ export interface SupportTicket {
   createdAt: Date;
 }
 
+/** UC-SU-1: what the opener sets; the rest starts as an `open` ticket waiting since `at`. */
+export interface NewSupportTicket {
+  openerUserId: string;
+  openerRole: TicketOpenerRole;
+  category: TicketCategory;
+  subject: string;
+  orderId: string | null;
+  sellerOrderId: string | null;
+  at: Date;
+}
+
 /** Back-office dashboard counts (spec 16 §2, spec 20 §3.2). `slaBreached` = waiting now with the flag set (SU-11). */
 export interface SupportStats {
   open: number;

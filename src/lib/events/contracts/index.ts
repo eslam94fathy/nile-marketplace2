@@ -30,6 +30,10 @@ export * from './user-suspended.event';
 export * from './user-sessions-revoked.event';
 export * from './seller-order-accepted.event';
 export * from './notification-push-requested.event';
+export * from './support-ticket-opened.event';
+export * from './support-message-created.event';
+export * from './support-ticket-assigned.event';
+export * from './support-ticket-status-changed.event';
 
 import { CodRemittanceConfirmed } from './cod-remittance-confirmed.event';
 import { InventoryStockStatusChanged } from './inventory-stock-status-changed.event';
@@ -59,6 +63,10 @@ import { ShipmentDelivered } from './shipment-delivered.event';
 import { ShipmentOutForDelivery } from './shipment-out-for-delivery.event';
 import { ShipmentPickedUp } from './shipment-picked-up.event';
 import { UserSessionsRevoked } from './user-sessions-revoked.event';
+import { SupportMessageCreated } from './support-message-created.event';
+import { SupportTicketAssigned } from './support-ticket-assigned.event';
+import { SupportTicketOpened } from './support-ticket-opened.event';
+import { SupportTicketStatusChanged } from './support-ticket-status-changed.event';
 import { UserSuspended } from './user-suspended.event';
 
 export const ALL_EVENT_CONTRACTS = [
@@ -91,4 +99,8 @@ export const ALL_EVENT_CONTRACTS = [
   UserSessionsRevoked,
   SellerOrderAccepted,
   NotificationPushRequested,
+  SupportTicketOpened,
+  SupportMessageCreated,
+  SupportTicketAssigned,
+  SupportTicketStatusChanged,
 ] as const;

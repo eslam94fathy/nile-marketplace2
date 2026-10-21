@@ -77,6 +77,8 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     // Upload rate limit, per user (spec 14 ME-6)
     RATE_LIMIT_UPLOAD_POINTS: '1000',
     RATE_LIMIT_UPLOAD_WINDOW_SECONDS: '600',
+    RATE_LIMIT_SUPPORT_MESSAGE_POINTS: '1000',
+    RATE_LIMIT_SUPPORT_MESSAGE_WINDOW_SECONDS: '60',
     // realtime gateway (spec 15 §6)
     RATE_LIMIT_REALTIME_CONNECT_POINTS: '1000',
     RATE_LIMIT_REALTIME_CONNECT_WINDOW_SECONDS: '60',
@@ -139,6 +141,7 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     MEDIA_UPLOAD_URL_TTL_SECONDS: '300',
     MEDIA_PRIVATE_URL_TTL_SECONDS: '600',
     MEDIA_MAX_OPEN_UPLOADS_PER_USER: '20',
+    SUPPORT_MAX_OPEN_TICKETS_PER_USER: '20',
     // Media cleanup job (spec 14 UC-ME-4)
     MEDIA_PENDING_RETENTION_HOURS: '24',
     JOB_MEDIA_CLEANUP_INTERVAL_MS: '3600000',
