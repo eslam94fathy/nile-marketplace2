@@ -111,4 +111,15 @@ export class FinanceAccountRepository {
       .update({ balance: balance.toString(), updated_at: trx.fn.now() });
     if (updated !== 1) throw new Error(`finance account ${id} was not updated`);
   }
+
+  /** The dashboard sums per account type (spec 20 §3.2); `uq_finance_accounts_account_type_owner_id` leads with the type. */
+  async sumBalances(types: readonly AccountType[]): Promise<Map<AccountType, Money>> {
+    const rows = await this.db
+      .knex(T)
+      .select('account_type')
+      .sum<{ account_type: AccountType; total: string }[]>('balance as total')
+      .whereIn('account_type', types)
+      .groupBy('account_type');
+    return new Map(rows.map((row) => [row.account_type, Money.of(row.total)]));
+  }
 }

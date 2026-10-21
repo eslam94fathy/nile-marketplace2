@@ -149,6 +149,8 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     SUPPORT_MAX_OPEN_TICKETS_PER_USER: '20',
     REVIEW_WINDOW_DAYS: '60',
     REVIEW_EDIT_WINDOW_DAYS: '30',
+    // backoffice
+    DASHBOARD_CACHE_TTL_SECONDS: '60',
     // Media cleanup job (spec 14 UC-ME-4)
     MEDIA_PENDING_RETENTION_HOURS: '24',
     JOB_MEDIA_CLEANUP_INTERVAL_MS: '3600000',

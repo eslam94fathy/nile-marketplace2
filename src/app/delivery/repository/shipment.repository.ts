@@ -352,4 +352,15 @@ export class ShipmentRepository {
     const rows = (await applyListQuery(qb, query, 'id')) as ShipmentRow[];
     return rows.map(toModel);
   }
+
+  /** Dashboard counts (spec 20 §3.2), served by `idx_shipments_status_created_at_id`. Absent statuses are left out. */
+  async countByStatuses(statuses: readonly ShipmentStatus[]): Promise<Map<ShipmentStatus, number>> {
+    const rows = await this.db
+      .knex(T)
+      .select('status')
+      .count<{ status: ShipmentStatus; count: string }[]>('* as count')
+      .whereIn('status', statuses)
+      .groupBy('status');
+    return new Map(rows.map((row) => [row.status, Number(row.count)]));
+  }
 }

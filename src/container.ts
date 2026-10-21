@@ -6,6 +6,7 @@ import { registerCustomersLookups, registerCustomersModule } from './app/custome
 import { registerDeliveryAgentLookups, registerDeliveryModule, registerDeliveryWorker } from './app/delivery';
 import { registerFinanceModule, registerFinanceWorker } from './app/finance';
 import { registerReviewsModule } from './app/reviews';
+import { registerBackofficeModule } from './app/backoffice';
 import { registerSellersLookups, registerSellersModule, registerSellersWorker } from './app/sellers';
 import { registerSupportLookups, registerSupportModule, registerSupportWorker } from './app/support';
 import { Dependency, registerHealthModule } from './app/health';
@@ -90,6 +91,8 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
   registerSupportModule(container);
   // After ordering, catalog, customers, sellers and media: reviews reads them (spec 17 §1).
   registerReviewsModule(container);
+  // After ordering, sellers, support, finance and delivery: the dashboard reads them (spec 20 §3.2).
+  registerBackofficeModule(container);
   return container;
 }
 

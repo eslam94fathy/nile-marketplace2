@@ -1691,6 +1691,7 @@ describe('migrations on a real Postgres 18', () => {
         'idx_customers_phone',
         'idx_users_created_at_id',
         'idx_customers_created_at_id',
+        'idx_seller_orders_open_status',
       ];
       const valid = await db.raw<{ rows: { name: string; valid: boolean }[] }>(
         `SELECT c.relname AS name, i.indisvalid AS valid
@@ -1726,6 +1727,10 @@ describe('migrations on a real Postgres 18', () => {
         [
           `SELECT id FROM customers ORDER BY created_at DESC, id DESC LIMIT 21`,
           'idx_customers_created_at_id',
+        ],
+        [
+          `SELECT status, count(*) FROM seller_orders WHERE status IN ('placed', 'accepted') GROUP BY status`,
+          'idx_seller_orders_open_status',
         ],
       ] as const) {
         expect(await planOf(sql), sql).toContain(index);

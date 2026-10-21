@@ -1,7 +1,7 @@
 import { inject, injectable } from 'tsyringe';
 import { type DbTransaction } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
-import { type SellerStatus } from '../enums';
+import { SellerStatus } from '../enums';
 import { type SellerRepository } from '../repository/seller.repository';
 
 export interface SellerStatusSummary {
@@ -59,6 +59,8 @@ export interface ISellerDirectory {
   getSummariesByUserIds(
     userIds: readonly string[],
   ): Promise<Map<string, { sellerId: string; businessName: string }>>;
+  /** Sellers awaiting approval, for the back-office dashboard (spec 20 §3.2). */
+  countPendingApproval(): Promise<number>;
 }
 
 @injectable()
@@ -75,6 +77,10 @@ export class SellerDirectory implements ISellerDirectory {
 
   async getStatuses(sellerIds: readonly string[]): Promise<SellerStatusSummary[]> {
     return (await this.sellers.findByIds(sellerIds)).map((s) => ({ sellerId: s.id, status: s.status }));
+  }
+
+  countPendingApproval(): Promise<number> {
+    return this.sellers.countByStatus(SellerStatus.PENDING_APPROVAL);
   }
 
   async getSummaries(sellerIds: readonly string[]): Promise<SellerSummary[]> {

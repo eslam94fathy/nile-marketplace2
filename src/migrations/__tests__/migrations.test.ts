@@ -95,6 +95,7 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261021150001_customers_created_at_millisecond_precision',
       '20261021150002_add_users_created_at_id_index',
       '20261021150003_add_customers_created_at_id_index',
+      '20261021150004_add_seller_orders_open_status_index',
     ]);
   });
 

@@ -1,5 +1,6 @@
 import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '../../../lib/di';
+import { type DashboardStatsQuery, type OrderingDashboardStats } from '../model/dashboard-stats.model';
 import { type NotificationParty, type OrderLink } from '../model/notification-party.model';
 import {
   type DeliveredItem,
@@ -8,6 +9,7 @@ import {
 } from '../model/reviewable-item.model';
 import { type OrderItemRepository } from '../repository/order-item.repository';
 import { type OrderRepository } from '../repository/order.repository';
+import { type OrderingStatsRepository } from '../repository/ordering-stats.repository';
 import { type SellerOrderRepository } from '../repository/seller-order.repository';
 
 /**
@@ -38,6 +40,8 @@ export interface IOrderingDirectory {
   getReviewableItem(customerId: string, orderItemId: string): Promise<ReviewableItem | null>;
   /** Open delivered items for `GET /me/reviewable-items`, newest delivery first (OR-26). */
   listDeliveredItems(customerId: string, query: DeliveredItemsQuery): Promise<DeliveredItem[]>;
+  /** The back-office dashboard figures (spec 20 §3.2, BO-12, BO-13, BO-20, BO-22). */
+  getDashboardStats(query: DashboardStatsQuery): Promise<OrderingDashboardStats>;
 }
 
 @injectable()
@@ -46,7 +50,12 @@ export class OrderingDirectory implements IOrderingDirectory {
     @inject(TOKENS.OrderRepository) private readonly orders: OrderRepository,
     @inject(TOKENS.SellerOrderRepository) private readonly sellerOrders: SellerOrderRepository,
     @inject(TOKENS.OrderItemRepository) private readonly items: OrderItemRepository,
+    @inject(TOKENS.OrderingStatsRepository) private readonly stats: OrderingStatsRepository,
   ) {}
+
+  getDashboardStats(query: DashboardStatsQuery): Promise<OrderingDashboardStats> {
+    return this.stats.getDashboardStats(query);
+  }
 
   async getNotificationParties(ids: {
     orderIds?: readonly string[];

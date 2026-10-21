@@ -83,6 +83,7 @@ import * as m20261021140010 from './20261021140010_add_backoffice_audit_actions'
 import * as m20261021150001 from './20261021150001_customers_created_at_millisecond_precision';
 import * as m20261021150002 from './20261021150002_add_users_created_at_id_index';
 import * as m20261021150003 from './20261021150003_add_customers_created_at_id_index';
+import * as m20261021150004 from './20261021150004_add_seller_orders_open_status_index';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -171,5 +172,6 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261021150001_customers_created_at_millisecond_precision', module: m20261021150001 },
   { name: '20261021150002_add_users_created_at_id_index', module: m20261021150002 },
   { name: '20261021150003_add_customers_created_at_id_index', module: m20261021150003 },
+  { name: '20261021150004_add_seller_orders_open_status_index', module: m20261021150004 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

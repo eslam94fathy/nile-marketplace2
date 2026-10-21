@@ -38,6 +38,7 @@ import { ShipmentRepository } from './repository/shipment.repository';
 import { AssignmentRetryJob } from './service/assignment-retry.job';
 import { SellerOrderUpdateService } from './service/seller-order-update.service';
 import { ShipmentAssignmentService } from './service/shipment-assignment.service';
+import { ShipmentDirectory } from './service/shipment-directory.service';
 import { ShipmentViewService } from './service/shipment-view.service';
 import { DeliveryAgentDirectory } from './service/delivery-agent-directory.service';
 import { DeliveryAgentService } from './service/delivery-agent.service';
@@ -53,6 +54,8 @@ import { GovernorateService } from './service/governorate.service';
 export type { IDeliveryReferenceService, GovernorateFee } from './service/delivery-reference.service';
 /** Inject with `TOKENS.DeliveryAgentDirectory` (finance). */
 export type { IDeliveryAgentDirectory } from './service/delivery-agent-directory.service';
+/** Inject with `TOKENS.ShipmentDirectory` (backoffice). */
+export type { DeliveryDashboardStats, IShipmentDirectory } from './service/shipment-directory.service';
 export { AgentStatus, ShipmentStatus } from './enums';
 export { DeliveryErrorCode } from './errors';
 
@@ -114,6 +117,7 @@ export function registerDeliveryModule(container: DependencyContainer): void {
   registerDeliveryConstraintErrors(container.resolve<PgErrorMapper>(TOKENS.PgErrorMapper));
   registerDeliveryCore(container);
   container.registerSingleton(TOKENS.ShipmentViewService, ShipmentViewService);
+  container.registerSingleton(TOKENS.ShipmentDirectory, ShipmentDirectory);
   container.registerSingleton(TOKENS.ShipmentAdminController, ShipmentAdminController);
   container.registerSingleton(TOKENS.ShipmentWorkService, ShipmentWorkService);
   container.registerSingleton(TOKENS.AgentShipmentController, AgentShipmentController);

@@ -267,4 +267,13 @@ export class SellerRepository {
       });
     return updated > 0;
   }
+
+  /** Dashboard count (spec 20 §3.2), served by `idx_sellers_status_created_at_id`. */
+  async countByStatus(status: SellerStatus): Promise<number> {
+    const row = await this.db
+      .knex(T)
+      .where({ status })
+      .first<{ count: string }>(this.db.knex.raw('count(*) AS count'));
+    return Number(row.count);
+  }
 }

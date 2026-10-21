@@ -283,6 +283,11 @@ const reviewsApiShape = {
   REVIEW_EDIT_WINDOW_DAYS: positiveInt(3_650),
 };
 
+/** backoffice (spec 20 §3.2), api only: how old the dashboard may be. */
+const backofficeApiShape = {
+  DASHBOARD_CACHE_TTL_SECONDS: positiveInt(3_600),
+};
+
 /** support (spec 16 §1 limits), api only. */
 const supportApiShape = {
   SUPPORT_MAX_OPEN_TICKETS_PER_USER: positiveInt(1_000),
@@ -533,6 +538,7 @@ export const apiEnvSchema = z
     ...pushApiShape,
     ...supportApiShape,
     ...reviewsApiShape,
+    ...backofficeApiShape,
   })
   .superRefine((env, ctx) => {
     refinePool(env, ctx);

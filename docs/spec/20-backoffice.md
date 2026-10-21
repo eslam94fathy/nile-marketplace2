@@ -1,6 +1,6 @@
 # Spec 20 — back-office and audit
 
-Status: **v1.3 APPROVED (2026-10-21).** v1.3: BO-18, BO-19 the directory cursors (§7.2). v1.2: R2-P5 clarifications BO-12…BO-17 (§7.2, every recommendation accepted). v1.1: R2-P1 implementation clarifications BO-9…BO-11 (§7.1, confirmed 2026-10-20). Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (admin back-office and audit), R-19, S-9 (answered for R2), spec 09 v2.0 §8.4 (admin cancellation), spec 16 SU-5. §7 BO-1…BO-8 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.4 APPROVED (2026-10-21).** v1.4: BO-20…BO-23 the dashboard windows, status index, placed GMV and module edges (§7.2). v1.3: BO-18, BO-19 the directory cursors (§7.2). v1.2: R2-P5 clarifications BO-12…BO-17 (§7.2, every recommendation accepted). v1.1: R2-P1 implementation clarifications BO-9…BO-11 (§7.1, confirmed 2026-10-20). Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (admin back-office and audit), R-19, S-9 (answered for R2), spec 09 v2.0 §8.4 (admin cancellation), spec 16 SU-5. §7 BO-1…BO-8 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -213,3 +213,7 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | BO-17 | `GET /admin/users` is new in identity (R1 has only `/admin/admins`); `emailVerifiedAt` and `lastLoginAt` are existing columns; the email prefix filter is served by `idx_users_email_pattern` | §3.3 |
 | BO-18 | `customers.created_at` becomes `TIMESTAMPTZ(3)`, the cursor precision (CLAUDE.md §6.2, D-11); the rewrite is harmless before the first deployment. `users.created_at` already is (D-11) | §3.3 |
 | BO-19 | Both directories page on `(created_at, id)` with no filter required: `idx_users_created_at_id` and `idx_customers_created_at_id (created_at DESC, id DESC)`, concurrently (database D-21); `idx_users_role_created_at` serves only role-filtered pages | §3.3 |
+| BO-20 | Every window ends today (Cairo), today included: `gmv` is the 30 days ending today, zero-filled, oldest first; `placedToday` is today; `placedLast7Days` is today and the 6 days before; `topSellers` uses the same 30 days as `gmv` | §3.2 |
+| BO-21 | `orders.byStatus` is served by `idx_seller_orders_open_status (status) WHERE status IN (<the 8 open statuses>)`, concurrently (database D-22) | §3.2 |
+| BO-22 | Placed GMV counts every seller order of an order placed that day except `cancelled` ones (a failed delivery returned to the seller still counts); orders awaiting payment have no `placed_at` and count nowhere | §3.2 |
+| BO-23 | `backoffice` imports only the modules the dashboard reads: ordering, sellers, support, finance, delivery (returns joins in R2-P6); the user directory lives in identity and customers (architecture v2.4) | §3.2 |

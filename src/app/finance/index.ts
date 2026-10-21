@@ -27,11 +27,14 @@ import { PayoutRepository } from './repository/payout.repository';
 import { financeRoutes } from './routes';
 import { CodRemittanceService } from './service/cod-remittance.service';
 import { FinanceViewService } from './service/finance-view.service';
+import { FinanceDirectory } from './service/finance-directory.service';
 import { LedgerBookingService } from './service/ledger-booking.service';
 import { LedgerService } from './service/ledger.service';
 import { PayoutService } from './service/payout.service';
 
 export { FinanceErrorCode } from './errors';
+/** Inject with `TOKENS.FinanceDirectory` (backoffice). */
+export type { FinanceDashboardStats, IFinanceDirectory } from './service/finance-directory.service';
 
 /** What both processes need: the account and entry repositories and the ledger writer. */
 function registerFinanceCore(container: DependencyContainer): void {
@@ -68,6 +71,7 @@ export function registerFinanceModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.CodRemittanceRepository, CodRemittanceRepository);
   container.registerSingleton(TOKENS.PayoutRepository, PayoutRepository);
   container.registerSingleton(TOKENS.FinanceViewService, FinanceViewService);
+  container.registerSingleton(TOKENS.FinanceDirectory, FinanceDirectory);
   container.registerSingleton(TOKENS.CodRemittanceService, CodRemittanceService);
   container.registerSingleton(TOKENS.PayoutService, PayoutService);
   container.registerSingleton(TOKENS.FinanceAdminController, FinanceAdminController);

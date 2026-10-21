@@ -106,6 +106,9 @@ module "environment" {
     REVIEW_WINDOW_DAYS      = "60"
     REVIEW_EDIT_WINDOW_DAYS = "30"
 
+    # backoffice (spec 20 §3.2): the dashboard may be a minute old.
+    DASHBOARD_CACHE_TTL_SECONDS = "60"
+
     # realtime gateway (spec 15 §6): a reconnect per tab every 15 min, plus deploy storms (RT-5).
     RATE_LIMIT_REALTIME_CONNECT_POINTS         = "60"
     RATE_LIMIT_REALTIME_CONNECT_WINDOW_SECONDS = "60"

@@ -42,6 +42,7 @@ import { CheckoutService } from './service/checkout.service';
 import { OrderActionService } from './service/order-action.service';
 import { OrderLifecycleService } from './service/order-lifecycle.service';
 import { OrderViewService } from './service/order-view.service';
+import { OrderingStatsRepository } from './repository/ordering-stats.repository';
 import { OrderingDirectory } from './service/ordering-directory.service';
 import { PaymentExpiryJob } from './service/payment-expiry.job';
 import { PaymentUpdateService } from './service/payment-update.service';
@@ -51,6 +52,8 @@ export { OrderingErrorCode } from './errors';
 export { OrderStatus, SellerOrderStatus, SellerOrderCancelReason } from './enums';
 export type { NotificationParty, OrderLink } from './model/notification-party.model';
 export type { DeliveredItem, DeliveredItemsQuery, ReviewableItem } from './model/reviewable-item.model';
+export type { DashboardStatsQuery, OrderingDashboardStats } from './model/dashboard-stats.model';
+export { OPEN_SELLER_ORDER_STATUSES, type OpenSellerOrderStatus } from './enums';
 /** Inject with `TOKENS.OrderingDirectory`. */
 export type { IOrderingDirectory } from './service/ordering-directory.service';
 
@@ -62,6 +65,7 @@ function registerOrderingCore(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.StatusHistoryRepository, StatusHistoryRepository);
   container.registerSingleton(TOKENS.OrderItemCancellationRepository, OrderItemCancellationRepository);
   container.registerSingleton(TOKENS.OrderLifecycleService, OrderLifecycleService);
+  container.registerSingleton(TOKENS.OrderingStatsRepository, OrderingStatsRepository);
   container.registerSingleton(TOKENS.OrderingDirectory, OrderingDirectory);
 }
 

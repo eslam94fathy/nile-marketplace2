@@ -25,6 +25,19 @@ export const SellerOrderStatus = {
 } as const;
 export type SellerOrderStatus = (typeof SellerOrderStatus)[keyof typeof SellerOrderStatus];
 
+/** The non-terminal statuses the dashboard counts (spec 20 BO-13); `idx_seller_orders_open_status` lists the same. */
+export const OPEN_SELLER_ORDER_STATUSES = [
+  SellerOrderStatus.PENDING_PAYMENT,
+  SellerOrderStatus.PLACED,
+  SellerOrderStatus.ACCEPTED,
+  SellerOrderStatus.READY_FOR_PICKUP,
+  SellerOrderStatus.PICKED_UP,
+  SellerOrderStatus.OUT_FOR_DELIVERY,
+  SellerOrderStatus.DELIVERY_FAILED,
+  SellerOrderStatus.RETURNING_TO_SELLER,
+] as const;
+export type OpenSellerOrderStatus = (typeof OPEN_SELLER_ORDER_STATUSES)[number];
+
 /** Values match `chk_seller_orders_cancel_reason`. */
 export const SellerOrderCancelReason = {
   CUSTOMER_CANCELLED: 'customer_cancelled',
