@@ -227,4 +227,57 @@ describe('mapUserEvent (spec 13 §8.2)', () => {
       expect(() => mapUserEvent(message({ ticketNumber: 'X-1' }), undefined)).toThrow(PermanentEventError);
     });
   });
+
+  describe('reviews (spec 13 §8.8, NO-32)', () => {
+    const REVIEW = randomUUID();
+
+    it('review.created notifies the seller; review.replied the reviewer; no product names', () => {
+      expect(
+        rows(
+          mapUserEvent(
+            envelope('review.created', {
+              reviewId: REVIEW,
+              productId: randomUUID(),
+              sellerId: SELLER_A,
+              customerId: CUSTOMER,
+              rating: 2,
+            }),
+            undefined,
+          ),
+        ),
+      ).toEqual([
+        [
+          `seller:${SELLER_A}`,
+          'review_received',
+          'orders',
+          'New review',
+          'One of your products has a new review.',
+          '/seller/reviews',
+        ],
+      ]);
+      expect(
+        rows(
+          mapUserEvent(
+            envelope('review.replied', { reviewId: REVIEW, productId: randomUUID(), customerId: CUSTOMER }),
+            undefined,
+          ),
+        ),
+      ).toEqual([
+        [
+          `customer:${CUSTOMER}`,
+          'review_replied',
+          'orders',
+          'Seller replied',
+          'The seller replied to your review.',
+          `/me/reviews/${REVIEW}`,
+        ],
+      ]);
+    });
+
+    it('a malformed recipient is permanent', () => {
+      expect(() => mapUserEvent(envelope('review.created', { sellerId: 'x' }), undefined)).toThrow(
+        PermanentEventError,
+      );
+    });
+  });
 });

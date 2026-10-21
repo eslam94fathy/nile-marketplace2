@@ -151,7 +151,7 @@ describe('rating projections and reads', () => {
       await expect(apply(missing)).rejects.toBeInstanceOf(PermanentEventError);
     });
 
-    it('end to end: a review reaches the product and seller rows through the worker', async () => {
+    it('end to end: a review reaches the product and seller rows, and both notifications, through the worker', async () => {
       const listed = await api.listedVariant();
       const buyer = await api.customer();
       const orderId = await api.fx.insertOrder(buyer.customerId);
@@ -173,6 +173,30 @@ describe('rating projections and reads', () => {
         rating_avg: '4.00',
         rating_version: '1',
       });
+
+      // The seller hears of the review, the reviewer of the reply (spec 13 §8.8, NO-32).
+      const reviewId = (res.body as { data: { id: string } }).data.id;
+      const sellerUser = await knex()('sellers')
+        .where({ id: listed.sellerId })
+        .first<{ user_id: string }>('user_id');
+      const notificationsOf = (userId: string) =>
+        knex()('user_notifications')
+          .where({ user_id: userId })
+          .select<{ type: string; link: string }[]>('type', 'link');
+      await waitFor(async () => (await notificationsOf(sellerUser?.user_id ?? '')).length > 0, 10_000);
+      expect(await notificationsOf(sellerUser?.user_id ?? '')).toEqual([
+        { type: 'review_received', link: '/seller/reviews' },
+      ]);
+      const reply = await request(t.app)
+        .post(`${API}/seller/reviews/${reviewId}/reply`)
+        .set('Authorization', `Bearer ${listed.sellerToken}`)
+        .send({ body: 'Thank you!' });
+      expect(reply.status).toBe(201);
+      await drainer.drainOnce();
+      await waitFor(async () => (await notificationsOf(buyer.userId)).length > 0, 10_000);
+      expect(await notificationsOf(buyer.userId)).toEqual([
+        { type: 'review_replied', link: `/me/reviews/${reviewId}` },
+      ]);
     });
   });
 

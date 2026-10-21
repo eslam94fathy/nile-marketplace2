@@ -65,4 +65,7 @@ export const NotificationLink = {
   /** NO-31 (spec 16 SU-14). */
   supportTicket: (ticketId: string) => `/support/tickets/${ticketId}`,
   adminSupportTicket: (ticketId: string) => `/admin/support/tickets/${ticketId}`,
+  /** NO-32 (spec 17 RV-11): sellers have no single-review page. */
+  sellerReviews: () => '/seller/reviews',
+  myReview: (reviewId: string) => `/me/reviews/${reviewId}`,
 } as const;

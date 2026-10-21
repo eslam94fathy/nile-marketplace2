@@ -4,6 +4,8 @@ import {
   PaymentFailed,
   OrderPlaced,
   PermanentEventError,
+  ReviewCreated,
+  ReviewReplied,
   SellerOrderAccepted,
   SellerOrderCancelled,
   SellerOrderDelivered,
@@ -19,7 +21,7 @@ import { type NotificationParty, SellerOrderCancelReason, SellerOrderStatus } fr
 import { NotificationLink } from '../constants';
 import { NotificationCategory, NotificationType } from '../enums';
 
-/** The events of spec 13 §8.2 that exist by R2-P3 (reviews, returns come in their phases). */
+/** The events of spec 13 §8.2 and §8.8 that exist by R2-P4 (returns come in their phase). */
 export const USER_EVENTS = [
   OrderPlaced,
   SellerOrderAccepted,
@@ -32,6 +34,8 @@ export const USER_EVENTS = [
   ShipmentAttemptFailed,
   SupportMessageCreated,
   SupportTicketStatusChanged,
+  ReviewCreated,
+  ReviewReplied,
   // Not notifications: they drop the user's push subscriptions (UC-NO-4, NO-8).
   UserSuspended,
   UserSessionsRevoked,
@@ -43,10 +47,15 @@ export const SESSION_END_EVENTS: ReadonlySet<string> = new Set([
   UserSessionsRevoked.type,
 ]);
 
-/** Support events name their recipients by user id and carry the ticket number: no lookup (NO-31). */
-const SUPPORT_EVENTS: ReadonlySet<string> = new Set([
+/**
+ * Events that name their recipient themselves, with nothing of the order to show: support (user ids, the
+ * ticket number, NO-31) and reviews (the seller or customer profile, NO-32).
+ */
+const NO_PARTY_EVENTS: ReadonlySet<string> = new Set([
   SupportMessageCreated.type,
   SupportTicketStatusChanged.type,
+  ReviewCreated.type,
+  ReviewReplied.type,
 ]);
 
 /** Events whose mapping needs the order's parties (order number, customer, seller orders). */
@@ -55,7 +64,7 @@ export const NEEDS_PARTY: ReadonlySet<string> = new Set(
     (contract) =>
       contract !== ShipmentAssigned &&
       !SESSION_END_EVENTS.has(contract.type) &&
-      !SUPPORT_EVENTS.has(contract.type),
+      !NO_PARTY_EVENTS.has(contract.type),
   ).map((contract) => contract.type),
 );
 
@@ -198,6 +207,29 @@ export function mapUserEvent(
             },
           ]
         : [];
+    // Spec 13 §8.8 (RV-8): no product names in the text (R-7 style).
+    case ReviewCreated.type:
+      return [
+        {
+          recipient: { kind: 'seller', id: idOf(envelope, 'sellerId') },
+          category: NotificationCategory.ORDERS,
+          type: NotificationType.REVIEW_RECEIVED,
+          title: 'New review',
+          body: 'One of your products has a new review.',
+          link: NotificationLink.sellerReviews(),
+        },
+      ];
+    case ReviewReplied.type:
+      return [
+        {
+          recipient: { kind: 'customer', id: idOf(envelope, 'customerId') },
+          category: NotificationCategory.ORDERS,
+          type: NotificationType.REVIEW_REPLIED,
+          title: 'Seller replied',
+          body: 'The seller replied to your review.',
+          link: NotificationLink.myReview(idOf(envelope, 'reviewId')),
+        },
+      ];
     case SellerOrderDelivered.type:
       return [
         customer({

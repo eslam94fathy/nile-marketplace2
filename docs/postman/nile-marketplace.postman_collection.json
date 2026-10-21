@@ -1,8 +1,8 @@
 {
   "info": {
-    "name": "Nile Marketplace API (Release 1 + R2-P1…P3)",
+    "name": "Nile Marketplace API (Release 1 + R2-P1…P4)",
     "_postman_id": "c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01",
-    "description": "Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10), delivery (spec 11): governorates and fees, agents, shipments and the work of delivery agents, and finance (spec 12): balances, statements, COD remittances and payouts.\n\nVariables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.\n\nLocal first run (docker compose):\n1. `docker compose run --rm api node dist/seed-admin.js --email you@example.com`, then set the `email` variable to that address.\n2. Local helpers (Mailpit) → \"Latest email\" → \"Extract OTP / invite token\".\n3. Auth → \"Accept invite\" (sets your password and logs you in).\n4. Admin requests now work with the stored access token.\n\nCustomer / seller flow: set `email` to a fresh address → \"Register customer\" (or \"Register seller\") → Local helpers → \"Latest email\" → \"Extract OTP / invite token\" → Auth → \"Verify email\" (logs you in). \"Delivery\" → \"List governorates\" stores Cairo in `governorateId` first, because addresses and pickup addresses need one.\n\nSample delivery fees and a sample catalog for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees; the catalog has a category tree with attributes and an approved demo seller with active products).\n\nCatalog flow: \"Admin: catalog\" → Create category → Add attribute → Add option (stores `categoryId`, `attributeId`, `optionId`). Then log in as an approved seller → \"Seller: catalog\" → Create product → Add variant (put option ids in `optionIds`, or `[]` in a category without attributes) → Activate. \"Catalog\" (public) → List products / Product detail.\n\nCart flow: log in as a customer → \"Catalog\" → List products → Product detail (stores the first variant in `variantId`) → \"Cart\" → Add item (stores the line in `cartItemId`) → My cart → Change quantity / Remove item / Empty cart.\n\nOrder flow (COD): with items in the cart and an address (`addressId`) in a deliverable governorate → \"Checkout & orders\" → Checkout. The first send usually answers 409 ORDER_TOTAL_CHANGED and stores the current total in `expectedTotal`; send again. It stores `orderId`, `sellerOrderId` and `orderItemId`. Log in as that seller → \"Seller: orders\" → Accept → Ready (or Cancel item quantities / Cancel). Ready creates the shipment and assigns it to an on-shift agent of the pickup governorate (the worker must run).\n\nKashier flow (local, PAYMENT_GATEWAY=fake): set `paymentMethod` to kashier → Checkout (the order awaits payment; the fake payment page URL is not a real page). Pay it with `npm run dev:kashier-webhook -- {{orderId}}` (or `... failed`, or an amount to try a mismatch); the worker then places the order. \"Kashier payment page\" asks again for the page while the window is open. Unpaid orders are cancelled by the worker after KASHIER_PAYMENT_TTL_MINUTES. \"Admin: payments\" shows the payment, its webhook events and the refund queue.\n\nDelivery flow: as admin → \"Admin: delivery agents & shipments\" → Create agent (set `agentEmail` to a fresh address and `governorateId` to the seller's governorate). Set `email` to `agentEmail` → Local helpers → Latest email → Extract OTP / invite token → Auth → Accept invite (logs the agent in). \"Agent\" → Go on shift. After a seller marks an order ready: My shipments → Picked up → Out for delivery (stores `amountToCollect`) → Delivered, or Failed attempt. `npm run seed:dev` also creates a demo agent in Cairo.\n\nFinance flow: once an order is delivered (the worker books it in the ledger) → \"Admin: finance\" → List accounts (stores the first in `accountId`) → Account statement; \"Entries of a seller order\" uses `sellerOrderId`. \"Confirm COD remittance\" takes cash from `agentId`; \"Record payout\" pays `sellerId` (set it to the seller's id) with a fresh `payoutReference`. Log in as the seller → \"Seller: finance\", or as the agent → \"Agent: finance\", to see the same money from their side.\n\nRelease 2 so far: the audit log (spec 20 §2), image uploads (spec 14) with product and category images (spec 06 §8), the notification centre and Web Push (spec 13 §8), the web refresh cookie (spec 03 §8) and support tickets (spec 16). The live socket (spec 15) is not HTTP: see docs/realtime.md.\n\nImage flow: \"Media\" → Request upload (stores `mediaId`) → POST the file to the returned `upload.url` with every `upload.fields` entry first and the file last as `file` (multipart/form-data; in Postman a new request, Body → form-data) → Complete upload → poll Get media until `ready` (the worker processes it). Then attach it: \"Seller: product images\" → Add image, or \"Admin: category images\" → Set image.\n\nSupport flow: log in as a customer or seller → \"Support\" → Open ticket (stores `ticketId`) → Messages / Post message. Log in as an admin → \"Admin: support\" → Queue → Reply (the first reply assigns the ticket to you) or Internal note → Resolve / Close. Attachments: upload with purpose support_attachment first, then pass the `mediaId` in `attachmentMediaIds`.\n\nTokens are per account: log in as the admin again (Auth → Login) before the \"Admin: …\" folders.\n\nErrors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.",
+    "description": "Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10), delivery (spec 11): governorates and fees, agents, shipments and the work of delivery agents, and finance (spec 12): balances, statements, COD remittances and payouts.\n\nVariables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.\n\nLocal first run (docker compose):\n1. `docker compose run --rm api node dist/seed-admin.js --email you@example.com`, then set the `email` variable to that address.\n2. Local helpers (Mailpit) → \"Latest email\" → \"Extract OTP / invite token\".\n3. Auth → \"Accept invite\" (sets your password and logs you in).\n4. Admin requests now work with the stored access token.\n\nCustomer / seller flow: set `email` to a fresh address → \"Register customer\" (or \"Register seller\") → Local helpers → \"Latest email\" → \"Extract OTP / invite token\" → Auth → \"Verify email\" (logs you in). \"Delivery\" → \"List governorates\" stores Cairo in `governorateId` first, because addresses and pickup addresses need one.\n\nSample delivery fees and a sample catalog for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees; the catalog has a category tree with attributes and an approved demo seller with active products).\n\nCatalog flow: \"Admin: catalog\" → Create category → Add attribute → Add option (stores `categoryId`, `attributeId`, `optionId`). Then log in as an approved seller → \"Seller: catalog\" → Create product → Add variant (put option ids in `optionIds`, or `[]` in a category without attributes) → Activate. \"Catalog\" (public) → List products / Product detail.\n\nCart flow: log in as a customer → \"Catalog\" → List products → Product detail (stores the first variant in `variantId`) → \"Cart\" → Add item (stores the line in `cartItemId`) → My cart → Change quantity / Remove item / Empty cart.\n\nOrder flow (COD): with items in the cart and an address (`addressId`) in a deliverable governorate → \"Checkout & orders\" → Checkout. The first send usually answers 409 ORDER_TOTAL_CHANGED and stores the current total in `expectedTotal`; send again. It stores `orderId`, `sellerOrderId` and `orderItemId`. Log in as that seller → \"Seller: orders\" → Accept → Ready (or Cancel item quantities / Cancel). Ready creates the shipment and assigns it to an on-shift agent of the pickup governorate (the worker must run).\n\nKashier flow (local, PAYMENT_GATEWAY=fake): set `paymentMethod` to kashier → Checkout (the order awaits payment; the fake payment page URL is not a real page). Pay it with `npm run dev:kashier-webhook -- {{orderId}}` (or `... failed`, or an amount to try a mismatch); the worker then places the order. \"Kashier payment page\" asks again for the page while the window is open. Unpaid orders are cancelled by the worker after KASHIER_PAYMENT_TTL_MINUTES. \"Admin: payments\" shows the payment, its webhook events and the refund queue.\n\nDelivery flow: as admin → \"Admin: delivery agents & shipments\" → Create agent (set `agentEmail` to a fresh address and `governorateId` to the seller's governorate). Set `email` to `agentEmail` → Local helpers → Latest email → Extract OTP / invite token → Auth → Accept invite (logs the agent in). \"Agent\" → Go on shift. After a seller marks an order ready: My shipments → Picked up → Out for delivery (stores `amountToCollect`) → Delivered, or Failed attempt. `npm run seed:dev` also creates a demo agent in Cairo.\n\nFinance flow: once an order is delivered (the worker books it in the ledger) → \"Admin: finance\" → List accounts (stores the first in `accountId`) → Account statement; \"Entries of a seller order\" uses `sellerOrderId`. \"Confirm COD remittance\" takes cash from `agentId`; \"Record payout\" pays `sellerId` (set it to the seller's id) with a fresh `payoutReference`. Log in as the seller → \"Seller: finance\", or as the agent → \"Agent: finance\", to see the same money from their side.\n\nRelease 2 so far: the audit log (spec 20 §2), image uploads (spec 14) with product and category images (spec 06 §8), the notification centre and Web Push (spec 13 §8), the web refresh cookie (spec 03 §8), support tickets (spec 16), reviews and ratings (spec 17) and the wishlist (spec 04 §8). The live socket (spec 15) is not HTTP: see docs/realtime.md.\n\nImage flow: \"Media\" → Request upload (stores `mediaId`) → POST the file to the returned `upload.url` with every `upload.fields` entry first and the file last as `file` (multipart/form-data; in Postman a new request, Body → form-data) → Complete upload → poll Get media until `ready` (the worker processes it). Then attach it: \"Seller: product images\" → Add image, or \"Admin: category images\" → Set image.\n\nSupport flow: log in as a customer or seller → \"Support\" → Open ticket (stores `ticketId`) → Messages / Post message. Log in as an admin → \"Admin: support\" → Queue → Reply (the first reply assigns the ticket to you) or Internal note → Resolve / Close. Attachments: upload with purpose support_attachment first, then pass the `mediaId` in `attachmentMediaIds`.\n\nReview flow: a customer with a delivered order → \"Reviews\" → Reviewable items (stores `orderItemId`) → Write a review (stores `reviewId`); the worker moves the product and seller ratings. Log in as the seller → \"Seller: reviews\" → Reply. As an admin → \"Admin: reviews\" → Hide / Unhide. \"Catalog\" → Product reviews / Review summary show the public side.\n\nTokens are per account: log in as the admin again (Auth → Login) before the \"Admin: …\" folders.\n\nErrors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -203,6 +203,10 @@
     },
     {
       "key": "assigneeUserId",
+      "value": ""
+    },
+    {
+      "key": "reviewId",
       "value": ""
     }
   ],
@@ -2552,6 +2556,11 @@
                   "disabled": true
                 },
                 {
+                  "key": "rating[gte]",
+                  "value": "4",
+                  "disabled": true
+                },
+                {
                   "key": "attr.color[in]",
                   "value": "black,white",
                   "disabled": true
@@ -2568,7 +2577,7 @@
                 }
               ]
             },
-            "description": "Filters: categoryId[eq] (includes subcategories), price[gte|lte] (lowest variant price), inStock[eq], sellerId[eq], attr.<code>[in] (needs categoryId; all attr filters must match the same variant; max 5). q: search text 2..100 (full text + typo tolerant). Sort: publishedAt, minPrice, relevance (with q only). Default: -relevance with q, else -publishedAt."
+            "description": "Filters: categoryId[eq] (includes subcategories), price[gte|lte] (lowest variant price), inStock[eq], sellerId[eq], rating[gte] (1..5; unrated never match), attr.<code>[in] (needs categoryId; all attr filters must match the same variant; max 5). q: search text 2..100 (full text + typo tolerant). Sort: publishedAt, minPrice, rating (unrated last on -rating), relevance (with q only). Default: -relevance with q, else -publishedAt."
           }
         },
         {
@@ -8684,6 +8693,1093 @@
                 "read"
               ]
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reviews",
+      "description": "spec 17 §4.2. Customers review products they received: one live review per product, within REVIEW_WINDOW_DAYS of delivery; edit within REVIEW_EDIT_WINDOW_DAYS. Images: upload with purpose review_image first.",
+      "item": [
+        {
+          "name": "Reviewable items",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  const value = body.data[0] && body.data[0].orderItemId;",
+                  "  if (value) pm.collectionVariables.set('orderItemId', value);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/reviewable-items?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "reviewable-items"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Delivered items still in the window, products already reviewed left out, newest delivery first. Stores the first in `orderItemId`."
+          }
+        },
+        {
+          "name": "Write a review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  const value = body.data && body.data.id;",
+                  "  if (value) pm.collectionVariables.set('reviewId', value);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderItemId\": \"{{orderItemId}}\",\n  \"rating\": 5,\n  \"title\": \"Great\",\n  \"body\": \"Works as described.\",\n  \"imageMediaIds\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reviews",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reviews"
+              ]
+            },
+            "description": "Published at once. Stores `reviewId`. Errors: REVIEW_NOT_ALLOWED 422, REVIEW_WINDOW_CLOSED 422, REVIEW_ALREADY_EXISTS 409, MEDIA_NOT_ATTACHABLE 422."
+          }
+        },
+        {
+          "name": "My reviews",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/reviews?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "reviews"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Newest first; hidden ones included (status hidden, no reason)."
+          }
+        },
+        {
+          "name": "My review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/reviews/{{reviewId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "reviews",
+                "{{reviewId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Edit my review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating\": 4,\n  \"body\": \"Still good after a month.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/reviews/{{reviewId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "reviews",
+                "{{reviewId}}"
+              ]
+            },
+            "description": "At least one field; imageMediaIds replaces the list. REVIEW_EDIT_WINDOW_CLOSED 422."
+          }
+        },
+        {
+          "name": "Delete my review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/reviews/{{reviewId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "reviews",
+                "{{reviewId}}"
+              ]
+            },
+            "description": "The product can be reviewed again while its window is open."
+          }
+        },
+        {
+          "name": "Product reviews (public)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/{{productId}}/reviews?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{productId}}",
+                "reviews"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "rating[in]",
+                  "value": "4,5",
+                  "disabled": true
+                },
+                {
+                  "key": "hasImages[eq]",
+                  "value": "true",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "-rating",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Published reviews of a visible product (PRODUCT_NOT_FOUND 404). No token needed."
+          }
+        },
+        {
+          "name": "Review summary (public)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/{{productId}}/reviews/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{productId}}",
+                "reviews",
+                "summary"
+              ]
+            },
+            "description": "Average, count and distribution, from the stored aggregate."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Seller: reviews",
+      "description": "spec 17 §4.3. Reading works in any seller status; replying needs an approved seller.",
+      "item": [
+        {
+          "name": "Reviews of my products",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  const value = body.data[0] && body.data[0].id;",
+                  "  if (value) pm.collectionVariables.set('reviewId', value);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/seller/reviews?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "reviews"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "replied[eq]",
+                  "value": "false",
+                  "disabled": true
+                },
+                {
+                  "key": "productId[eq]",
+                  "value": "{{productId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "rating[in]",
+                  "value": "1,2",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Stores the first in `reviewId`."
+          }
+        },
+        {
+          "name": "Reply",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Thank you for the review!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/seller/reviews/{{reviewId}}/reply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "reviews",
+                "{{reviewId}}",
+                "reply"
+              ]
+            },
+            "description": "Once, final. SELLER_NOT_APPROVED 403, REVIEW_HIDDEN 409, REVIEW_ALREADY_REPLIED 409."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin: reviews",
+      "description": "spec 17 §4.4. Hiding a review removes it from the ratings; every action is audited.",
+      "item": [
+        {
+          "name": "List reviews",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  const value = body.data[0] && body.data[0].id;",
+                  "  if (value) pm.collectionVariables.set('reviewId', value);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/reviews?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "reviews"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status[eq]",
+                  "value": "hidden",
+                  "disabled": true
+                },
+                {
+                  "key": "rating[lte]",
+                  "value": "2",
+                  "disabled": true
+                },
+                {
+                  "key": "productId[eq]",
+                  "value": "{{productId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Stores the first in `reviewId`."
+          }
+        },
+        {
+          "name": "Review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/reviews/{{reviewId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "reviews",
+                "{{reviewId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hide review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Abusive language\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/reviews/{{reviewId}}/hide",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "reviews",
+                "{{reviewId}}",
+                "hide"
+              ]
+            },
+            "description": "REVIEW_INVALID_STATUS_TRANSITION 409 when already hidden."
+          }
+        },
+        {
+          "name": "Unhide review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/reviews/{{reviewId}}/unhide",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "reviews",
+                "{{reviewId}}",
+                "unhide"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hide reply",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Rude reply\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/reviews/{{reviewId}}/reply/hide",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "reviews",
+                "{{reviewId}}",
+                "reply",
+                "hide"
+              ]
+            },
+            "description": "REVIEW_REPLY_NOT_FOUND 404 without a reply."
+          }
+        },
+        {
+          "name": "Unhide reply",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/reviews/{{reviewId}}/reply/unhide",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "reviews",
+                "{{reviewId}}",
+                "reply",
+                "unhide"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Wishlist",
+      "description": "spec 04 §8. Customers; products, not variants; WISHLIST_MAX_ITEMS per customer.",
+      "item": [
+        {
+          "name": "My wishlist",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/wishlist?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "wishlist"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Newest first, with product cards; products no longer visible stay with available: false."
+          }
+        },
+        {
+          "name": "Wishlisted product ids",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/wishlist/product-ids",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "wishlist",
+                "product-ids"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Add product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/wishlist/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "wishlist",
+                "{{productId}}"
+              ]
+            },
+            "description": "Idempotent. PRODUCT_NOT_FOUND 422 (not visible), WISHLIST_LIMIT_REACHED 422."
+          }
+        },
+        {
+          "name": "Remove product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/wishlist/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "wishlist",
+                "{{productId}}"
+              ]
+            },
+            "description": "Always 204."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sellers (public)",
+      "description": "spec 05 §8.2.",
+      "item": [
+        {
+          "name": "Seller page",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sellers/{{sellerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sellers",
+                "{{sellerId}}"
+              ]
+            },
+            "description": "An approved seller: name, rating, member since. SELLER_NOT_FOUND 404 otherwise. No token needed."
           }
         }
       ]
