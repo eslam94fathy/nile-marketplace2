@@ -74,6 +74,12 @@ export class UserAdminService {
     return toPage(rows, query, (user) => user.createdAt);
   }
 
+  /** Spec 20 §3.3: every role. */
+  async listUsers(query: ParsedListQuery): Promise<{ items: User[]; meta: PageMeta }> {
+    const rows = await this.users.list(query);
+    return toPage(rows, query, (user) => user.createdAt);
+  }
+
   /** §4.12. */
   resendInvite(userId: string): Promise<void> {
     return this.transactions.run(async (trx) => {

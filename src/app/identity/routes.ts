@@ -27,7 +27,12 @@ import {
 } from './dto/auth-request.dto';
 import { AuthTokensDto, MessageDto } from './dto/auth-response.dto';
 import { InviteAdminDto, SuspendUserDto } from './dto/admin-request.dto';
-import { AdminListItemDto, InvitedAdminDto, UserStatusDto } from './dto/admin-response.dto';
+import {
+  AdminListItemDto,
+  AdminUserListItemDto,
+  InvitedAdminDto,
+  UserStatusDto,
+} from './dto/admin-response.dto';
 
 const TAGS = ['auth'] as const;
 const ADMIN_TAGS = ['admin: users'] as const;
@@ -176,6 +181,7 @@ function mountAdminRoutes(router: Router, deps: IdentityRouteDeps): void {
 
   router.post(A.ADMINS, ...adminOnly, admin.inviteAdmin);
   router.get(A.ADMINS, ...adminOnly, admin.listAdmins);
+  router.get(A.USERS, ...adminOnly, admin.listUsers);
   router.post(A.RESEND_INVITE, ...adminOnly, admin.resendInvite);
   router.post(A.SUSPEND, ...adminOnly, admin.suspend);
   router.post(A.REACTIVATE, ...adminOnly, admin.reactivate);
@@ -206,6 +212,27 @@ function mountAdminRoutes(router: Router, deps: IdentityRouteDeps): void {
     ],
     responses: {
       200: { description: 'One page of admins', body: AdminListItemDto, isArray: true, paginated: true },
+    },
+  });
+  docs.add({
+    ...common,
+    method: 'get',
+    path: `${basePath}${A.USERS}`,
+    summary:
+      'List users of every role (spec 20 §3.3). Filters: role[eq], status[eq|in], email[like] (prefix, case-insensitive), createdAt[gte|lte]. Sort: createdAt (default -createdAt)',
+    query: [
+      { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1 } },
+      { name: 'cursor', in: 'query', schema: { type: 'string' } },
+      { name: 'sort', in: 'query', schema: { enum: ['createdAt', '-createdAt'] } },
+      { name: 'role[eq]', in: 'query', schema: { enum: Object.values(UserRole) } },
+      { name: 'status[eq]', in: 'query', schema: { type: 'string' } },
+      { name: 'status[in]', in: 'query', schema: { type: 'string' }, description: 'comma-separated' },
+      { name: 'email[like]', in: 'query', schema: { type: 'string' }, description: 'email prefix' },
+      { name: 'createdAt[gte]', in: 'query', schema: { type: 'string', format: 'date-time' } },
+      { name: 'createdAt[lte]', in: 'query', schema: { type: 'string', format: 'date-time' } },
+    ],
+    responses: {
+      200: { description: 'One page of users', body: AdminUserListItemDto, isArray: true, paginated: true },
     },
   });
   docs.add({

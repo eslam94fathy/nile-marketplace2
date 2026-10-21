@@ -2,8 +2,8 @@ import { inject, injectable } from 'tsyringe';
 import { type UserRole } from '../../../lib/auth';
 import { type DbExecutor, type DbTransaction, type IDatabase } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
-import { applyListQuery, type ParsedListQuery } from '../../../lib/http';
-import { IDENTITY_TABLES } from '../constants';
+import { applyListQuery, escapeLike, type ParsedListQuery } from '../../../lib/http';
+import { IDENTITY_TABLES, USER_LIST_PARAMS } from '../constants';
 import { type UserStatus } from '../enums';
 import { User } from '../model/user.model';
 
@@ -108,6 +108,20 @@ export class UserRepository {
     const qb = this.exec(trx)<UserRow>(T)
       .select(...COLUMNS)
       .where({ role });
+    const rows = (await applyListQuery(qb, query, 'id')) as UserRow[];
+    return rows.map(toModel);
+  }
+
+  /**
+   * `GET /admin/users` (spec 20 §3.3). Emails are stored lower-cased, so the prefix is too; a
+   * case-sensitive `LIKE 'prefix%'` is what `idx_users_email_pattern` (text_pattern_ops) serves.
+   */
+  async list(query: ParsedListQuery): Promise<User[]> {
+    const qb = this.db.knex<UserRow>(T).select(...COLUMNS);
+    const email = query.filters.find((filter) => filter.field === USER_LIST_PARAMS.EMAIL);
+    if (email) {
+      qb.whereRaw(`email LIKE ? ESCAPE '\\'`, [`${escapeLike(String(email.value).trim().toLowerCase())}%`]);
+    }
     const rows = (await applyListQuery(qb, query, 'id')) as UserRow[];
     return rows.map(toModel);
   }

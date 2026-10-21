@@ -92,6 +92,9 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261021140008_add_customers_name_trgm_index',
       '20261021140009_add_customers_phone_index',
       '20261021140010_add_backoffice_audit_actions',
+      '20261021150001_customers_created_at_millisecond_precision',
+      '20261021150002_add_users_created_at_id_index',
+      '20261021150003_add_customers_created_at_id_index',
     ]);
   });
 

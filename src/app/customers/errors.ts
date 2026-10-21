@@ -8,6 +8,7 @@ export const CustomersErrorCode = {
   ADDRESS_LIMIT_REACHED: 'ADDRESS_LIMIT_REACHED',
   DEFAULT_ADDRESS_UNSET_NOT_ALLOWED: 'DEFAULT_ADDRESS_UNSET_NOT_ALLOWED',
   WISHLIST_LIMIT_REACHED: 'WISHLIST_LIMIT_REACHED',
+  CUSTOMER_NOT_FOUND: 'CUSTOMER_NOT_FOUND',
 } as const;
 
 const C = CustomersErrorCode;
@@ -23,6 +24,9 @@ export const defaultAddressUnsetNotAllowed = () =>
     'Set another address as the default instead',
     S.UNPROCESSABLE_ENTITY,
   );
+
+/** Admin customer detail (spec 20 §3.3). */
+export const customerNotFound = () => new AppError(C.CUSTOMER_NOT_FOUND, 'Customer not found', S.NOT_FOUND);
 
 export const wishlistLimitReached = (max: number) =>
   new AppError(C.WISHLIST_LIMIT_REACHED, `You can keep at most ${max} products`, S.UNPROCESSABLE_ENTITY);

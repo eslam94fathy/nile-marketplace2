@@ -11,6 +11,8 @@ import { type PgErrorMapper } from '../../lib/error';
 import { type OpenApiRegistry } from '../../lib/http';
 import { type RateLimiters } from '../../lib/middleware';
 import { CustomerAddressController } from './controller/customer-address.controller';
+import { CustomerAdminController } from './controller/customer-admin.controller';
+import { CustomerAdminService } from './service/customer-admin.service';
 import { CustomerController } from './controller/customer.controller';
 import { WishlistController } from './controller/wishlist.controller';
 import { registerCustomersConstraintErrors } from './errors';
@@ -47,6 +49,8 @@ export function registerCustomersModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.CustomerAddressService, CustomerAddressService);
   container.registerSingleton(TOKENS.CustomerDirectory, CustomerDirectory);
   container.registerSingleton(TOKENS.CustomerController, CustomerController);
+  container.registerSingleton(TOKENS.CustomerAdminService, CustomerAdminService);
+  container.registerSingleton(TOKENS.CustomerAdminController, CustomerAdminController);
   container.registerSingleton(TOKENS.CustomerAddressController, CustomerAddressController);
   container.registerSingleton(TOKENS.WishlistRepository, WishlistRepository);
   container.registerSingleton(TOKENS.WishlistService, WishlistService);
@@ -60,6 +64,7 @@ export function createCustomersRouter(container: DependencyContainer, basePath: 
     customers: container.resolve<CustomerController>(TOKENS.CustomerController),
     addresses: container.resolve<CustomerAddressController>(TOKENS.CustomerAddressController),
     wishlist: container.resolve<WishlistController>(TOKENS.WishlistController),
+    customerAdmin: container.resolve<CustomerAdminController>(TOKENS.CustomerAdminController),
     jwtVerifier: container.resolve<JwtVerifier>(TOKENS.JwtVerifier),
     rateLimiters: container.resolve<RateLimiters>(TOKENS.RateLimiters),
     docs: container.resolve<OpenApiRegistry>(TOKENS.OpenApiRegistry),

@@ -83,3 +83,13 @@ export function toAdminListItemDto(user: User): AdminListItemDto {
 export function toUserStatusDto(user: User): UserStatusDto {
   return { id: user.id, email: user.email, role: user.role, status: user.status };
 }
+
+/** `GET /admin/users` (spec 20 §3.3): every role. */
+export class AdminUserListItemDto extends AdminListItemDto {
+  @IsIn(Object.values(UserRole))
+  role!: UserRole;
+}
+
+export function toAdminUserListItemDto(user: User): AdminUserListItemDto {
+  return { ...toAdminListItemDto(user), role: user.role };
+}

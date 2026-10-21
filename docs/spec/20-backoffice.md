@@ -1,6 +1,6 @@
 # Spec 20 — back-office and audit
 
-Status: **v1.2 APPROVED (2026-10-21).** v1.2: R2-P5 clarifications BO-12…BO-17 (§7.2, every recommendation accepted). v1.1: R2-P1 implementation clarifications BO-9…BO-11 (§7.1, confirmed 2026-10-20). Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (admin back-office and audit), R-19, S-9 (answered for R2), spec 09 v2.0 §8.4 (admin cancellation), spec 16 SU-5. §7 BO-1…BO-8 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.3 APPROVED (2026-10-21).** v1.3: BO-18, BO-19 the directory cursors (§7.2). v1.2: R2-P5 clarifications BO-12…BO-17 (§7.2, every recommendation accepted). v1.1: R2-P1 implementation clarifications BO-9…BO-11 (§7.1, confirmed 2026-10-20). Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (admin back-office and audit), R-19, S-9 (answered for R2), spec 09 v2.0 §8.4 (admin cancellation), spec 16 SU-5. §7 BO-1…BO-8 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -211,3 +211,5 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | BO-15 | A blocked product refuses only activation (`409 PRODUCT_BLOCKED`); the seller may still edit its fields, variants, images and stock, and delete it, to fix the listing | §3.4 |
 | BO-16 | A block moves an `active` product to `inactive`; a draft or an inactive product keeps its status (the block columns refuse activation either way). Blocking or unblocking a deleted product → `404 PRODUCT_NOT_FOUND` | §3.4 |
 | BO-17 | `GET /admin/users` is new in identity (R1 has only `/admin/admins`); `emailVerifiedAt` and `lastLoginAt` are existing columns; the email prefix filter is served by `idx_users_email_pattern` | §3.3 |
+| BO-18 | `customers.created_at` becomes `TIMESTAMPTZ(3)`, the cursor precision (CLAUDE.md §6.2, D-11); the rewrite is harmless before the first deployment. `users.created_at` already is (D-11) | §3.3 |
+| BO-19 | Both directories page on `(created_at, id)` with no filter required: `idx_users_created_at_id` and `idx_customers_created_at_id (created_at DESC, id DESC)`, concurrently (database D-21); `idx_users_role_created_at` serves only role-filtered pages | §3.3 |

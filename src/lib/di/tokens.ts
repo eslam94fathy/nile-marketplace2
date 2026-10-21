@@ -55,6 +55,8 @@ export const TOKENS = {
   WishlistService: Symbol.for('WishlistService'),
   WishlistController: Symbol.for('WishlistController'),
   CustomerController: Symbol.for('CustomerController'),
+  CustomerAdminService: Symbol.for('CustomerAdminService'),
+  CustomerAdminController: Symbol.for('CustomerAdminController'),
   CustomerAddressController: Symbol.for('CustomerAddressController'),
 
   // sellers module

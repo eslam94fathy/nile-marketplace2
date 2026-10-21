@@ -126,8 +126,8 @@ export class CustomerAddressRepository {
     return row ? toModel(row) : undefined;
   }
 
-  async countByCustomer(customerId: string, trx: DbTransaction): Promise<number> {
-    const result = await trx.raw<{ rows: { count: number }[] }>(
+  async countByCustomer(customerId: string, trx?: DbTransaction): Promise<number> {
+    const result = await this.exec(trx).raw<{ rows: { count: number }[] }>(
       `SELECT count(*)::int AS count FROM ${T} WHERE customer_id = ? AND deleted_at IS NULL`,
       [customerId],
     );

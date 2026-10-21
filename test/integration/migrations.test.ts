@@ -1674,6 +1674,14 @@ describe('migrations on a real Postgres 18', () => {
       await cancel('admin_cancelled');
     });
 
+    it('customers.created_at keeps milliseconds, the cursor precision (BO-18, D-11)', async () => {
+      const type = await db.raw<{ rows: { type: string }[] }>(
+        `SELECT format_type(atttypid, atttypmod) AS type FROM pg_attribute
+          WHERE attrelid = 'customers'::regclass AND attname = 'created_at'`,
+      );
+      expect(type.rows[0]?.type).toBe('timestamp(3) with time zone');
+    });
+
     it('the back-office indexes are valid and serve their queries', async () => {
       const names = [
         'idx_orders_placed_at',
@@ -1681,6 +1689,8 @@ describe('migrations on a real Postgres 18', () => {
         'idx_users_email_pattern',
         'idx_customers_name_trgm',
         'idx_customers_phone',
+        'idx_users_created_at_id',
+        'idx_customers_created_at_id',
       ];
       const valid = await db.raw<{ rows: { name: string; valid: boolean }[] }>(
         `SELECT c.relname AS name, i.indisvalid AS valid
@@ -1712,6 +1722,11 @@ describe('migrations on a real Postgres 18', () => {
           'idx_customers_name_trgm',
         ],
         [`SELECT id FROM customers WHERE phone = '+201001234567'`, 'idx_customers_phone'],
+        [`SELECT id FROM users ORDER BY created_at DESC, id DESC LIMIT 21`, 'idx_users_created_at_id'],
+        [
+          `SELECT id FROM customers ORDER BY created_at DESC, id DESC LIMIT 21`,
+          'idx_customers_created_at_id',
+        ],
       ] as const) {
         expect(await planOf(sql), sql).toContain(index);
       }

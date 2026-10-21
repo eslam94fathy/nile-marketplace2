@@ -1,7 +1,8 @@
 import { inject, injectable } from 'tsyringe';
 import { type DbExecutor, type DbTransaction, type IDatabase } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
-import { CUSTOMERS_TABLES } from '../constants';
+import { applyListQuery, escapeLike, type ParsedListQuery } from '../../../lib/http';
+import { CUSTOMER_LIST_PARAMS, CUSTOMERS_TABLES } from '../constants';
 import { Customer } from '../model/customer.model';
 
 const T = CUSTOMERS_TABLES.CUSTOMERS;
@@ -63,6 +64,22 @@ export class CustomerRepository {
       .knex<CustomerRow>(T)
       .select(...COLUMNS)
       .whereIn('id', [...new Set(ids)]);
+    return rows.map(toModel);
+  }
+
+  /**
+   * `GET /admin/customers` (spec 20 §3.3): the name filter is a contains match on the same expression
+   * as `idx_customers_name_trgm`, so the trigram index serves it.
+   */
+  async list(query: ParsedListQuery): Promise<Customer[]> {
+    const qb = this.db.knex<CustomerRow>(T).select(...COLUMNS);
+    const name = query.filters.find((filter) => filter.field === CUSTOMER_LIST_PARAMS.NAME);
+    if (name) {
+      qb.whereRaw(`(first_name || ' ' || last_name) ILIKE ? ESCAPE '\\'`, [
+        `%${escapeLike(String(name.value).trim())}%`,
+      ]);
+    }
+    const rows = (await applyListQuery(qb, query, 'id')) as CustomerRow[];
     return rows.map(toModel);
   }
 

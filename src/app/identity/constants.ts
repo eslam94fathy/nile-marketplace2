@@ -40,6 +40,7 @@ export const GENERIC_MESSAGES = {
 
 export const ADMIN_PATHS = {
   ADMINS: '/admin/admins',
+  USERS: '/admin/users',
   RESEND_INVITE: '/admin/users/:userId/resend-invite',
   SUSPEND: '/admin/users/:userId/suspend',
   REACTIVATE: '/admin/users/:userId/reactivate',
@@ -47,3 +48,6 @@ export const ADMIN_PATHS = {
 
 export const SUSPEND_REASON_MIN_LENGTH = 3;
 export const SUSPEND_REASON_MAX_LENGTH = 500;
+
+/** `GET /admin/users` query fields applied by the repository (no column in the whitelist). */
+export const USER_LIST_PARAMS = { EMAIL: 'email' } as const;
