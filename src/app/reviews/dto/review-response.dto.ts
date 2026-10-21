@@ -11,8 +11,16 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ImageDto, toImageDto } from '../../media';
+import { ratingAverage } from '../../../lib/rating';
+import { RATINGS } from '../constants';
 import { ReviewStatus } from '../enums';
-import { type MyReviewView, type ReviewableItemView, type ReviewView } from '../service/review-view.service';
+import { type RatingStats } from '../model/review.model';
+import {
+  type MyReviewView,
+  type ReviewableItemView,
+  type ReviewView,
+  type SellerReviewView,
+} from '../service/review-view.service';
 
 /* Response DTOs for spec 17 §4 (decorators describe the OpenAPI shape only). */
 
@@ -206,5 +214,176 @@ export function toReviewableItemDto(view: ReviewableItemView): ReviewableItemDto
     variantOptions: item.attributes.map((o) => ({ ...o })),
     deliveredAt: item.deliveredAt.toISOString(),
     reviewWindowEndsAt: view.windowEndsAt.toISOString(),
+  };
+}
+
+export class RatingDistributionDto {
+  @IsInt()
+  1!: number;
+
+  @IsInt()
+  2!: number;
+
+  @IsInt()
+  3!: number;
+
+  @IsInt()
+  4!: number;
+
+  @IsInt()
+  5!: number;
+}
+
+export class RatingSummaryDto {
+  /** "4.30" (ROUND_HALF_UP, spec 17 §1.2); null without published reviews. */
+  @IsOptional()
+  @IsString()
+  ratingAvg!: string | null;
+
+  @IsInt()
+  ratingCount!: number;
+
+  @ValidateNested()
+  @Type(() => RatingDistributionDto)
+  distribution!: RatingDistributionDto;
+}
+
+export class SellerReviewProductDto {
+  @IsUUID()
+  id!: string;
+
+  @IsString()
+  name!: string;
+}
+
+export class SellerReviewDto extends ReviewDto {
+  @ValidateNested()
+  @Type(() => SellerReviewProductDto)
+  product!: SellerReviewProductDto;
+
+  /** No reply yet, the review is published and the seller is approved. */
+  @IsBoolean()
+  canReply!: boolean;
+}
+
+export class AdminReplyDto {
+  @IsString()
+  body!: string;
+
+  @IsISO8601()
+  createdAt!: string;
+
+  @IsOptional()
+  @IsISO8601()
+  hiddenAt!: string | null;
+
+  @IsOptional()
+  @IsString()
+  hiddenReason!: string | null;
+}
+
+export class AdminReviewDto {
+  @IsUUID()
+  id!: string;
+
+  @IsUUID()
+  productId!: string;
+
+  @IsInt()
+  rating!: number;
+
+  @IsOptional()
+  @IsString()
+  title!: string | null;
+
+  @IsOptional()
+  @IsString()
+  body!: string | null;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ImageDto)
+  images!: ImageDto[];
+
+  @ValidateNested()
+  @Type(() => ReviewerDto)
+  reviewer!: ReviewerDto;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => VariantOptionDto)
+  variantOptions!: VariantOptionDto[];
+
+  @IsIn(Object.values(ReviewStatus))
+  status!: ReviewStatus;
+
+  @IsUUID()
+  customerId!: string;
+
+  @IsUUID()
+  sellerId!: string;
+
+  @IsUUID()
+  orderItemId!: string;
+
+  @IsOptional()
+  @IsString()
+  hiddenReason!: string | null;
+
+  @IsOptional()
+  @IsISO8601()
+  hiddenAt!: string | null;
+
+  /** Hidden replies too, with their hide fields. */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AdminReplyDto)
+  reply!: AdminReplyDto | null;
+
+  @IsISO8601()
+  createdAt!: string;
+
+  @IsOptional()
+  @IsISO8601()
+  editedAt!: string | null;
+}
+
+export function toRatingSummaryDto(stats: RatingStats): RatingSummaryDto {
+  return {
+    ratingAvg: ratingAverage(stats.ratingSum, stats.ratingCount),
+    ratingCount: stats.ratingCount,
+    distribution: Object.fromEntries(
+      RATINGS.map((r) => [r, stats.counts[r]]),
+    ) as unknown as RatingDistributionDto,
+  };
+}
+
+export function toSellerReviewDto(view: SellerReviewView): SellerReviewDto {
+  return {
+    ...toReviewDto(view),
+    product: { id: view.review.productId, name: view.productName },
+    canReply: view.canReply,
+  };
+}
+
+export function toAdminReviewDto(view: ReviewView): AdminReviewDto {
+  const { review, reply } = view;
+  const { reply: _publicReply, ...base } = toReviewDto(view);
+  return {
+    ...base,
+    status: review.status,
+    customerId: review.customerId,
+    sellerId: review.sellerId,
+    orderItemId: review.orderItemId,
+    hiddenReason: review.hiddenReason,
+    hiddenAt: review.hiddenAt?.toISOString() ?? null,
+    reply: reply
+      ? {
+          body: reply.body,
+          createdAt: reply.createdAt.toISOString(),
+          hiddenAt: reply.hiddenAt?.toISOString() ?? null,
+          hiddenReason: reply.hiddenReason,
+        }
+      : null,
   };
 }

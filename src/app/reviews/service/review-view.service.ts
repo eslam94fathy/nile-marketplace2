@@ -8,8 +8,11 @@ import { type ICatalogDirectory, type ProductCard } from '../../catalog';
 import { type ICustomerDirectory } from '../../customers';
 import { type ImageView, type MediaService } from '../../media';
 import { type DeliveredItem, type IOrderingDirectory } from '../../ordering';
-import { reviewNotFound } from '../errors';
-import { type ProductReview, type ReviewReply } from '../model/review.model';
+import { productNotFound, reviewNotFound, sellerProfileMissing } from '../errors';
+import { type ProductReview, type RatingStats, type ReviewReply } from '../model/review.model';
+import { type RatingStatsRepository } from '../repository/rating-stats.repository';
+import { RatingSubjectType, ReviewStatus } from '../enums';
+import { type ISellerDirectory, SellerStatus } from '../../sellers';
 import { type ProductReviewRepository } from '../repository/product-review.repository';
 import { type ReviewImageRepository } from '../repository/review-image.repository';
 import { type ReviewReplyRepository } from '../repository/review-reply.repository';
@@ -27,6 +30,11 @@ export interface MyReviewView extends ReviewView {
   /** Undefined only if catalog lost the product, which never happens (products are soft-deleted). */
   product: ProductCard | undefined;
   canEdit: boolean;
+}
+
+export interface SellerReviewView extends ReviewView {
+  productName: string;
+  canReply: boolean;
 }
 
 export interface ReviewableItemView {
@@ -56,6 +64,8 @@ export class ReviewViewService {
     @inject(TOKENS.CustomerDirectory) private readonly customers: ICustomerDirectory,
     @inject(TOKENS.CatalogDirectory) private readonly catalog: ICatalogDirectory,
     @inject(TOKENS.OrderingDirectory) private readonly ordering: IOrderingDirectory,
+    @inject(TOKENS.RatingStatsRepository) private readonly stats: RatingStatsRepository,
+    @inject(TOKENS.SellerDirectory) private readonly sellers: ISellerDirectory,
   ) {}
 
   async listMine(customer: AuthContext, query: ParsedListQuery): Promise<Page<MyReviewView>> {
@@ -123,6 +133,77 @@ export class ReviewViewService {
       })),
       meta: page.meta,
     };
+  }
+
+  /** GET /products/:productId/reviews (spec 17 §4.1): published, live reviews of a visible product. */
+  async listPublic(
+    productId: string,
+    query: ParsedListQuery,
+    hasImages: boolean | undefined,
+  ): Promise<Page<ReviewView>> {
+    if (!(await this.catalog.isPubliclyVisible(productId))) throw productNotFound();
+    const rows = await this.reviews.listPublic(productId, query, hasImages);
+    const page = toPage(rows, query, (r) => (query.sort.field === 'rating' ? r.rating : r.createdAt));
+    return { items: await this.views(page.items), meta: page.meta };
+  }
+
+  /** The summary is the stored aggregate, never computed per request (spec 17 §4.1). */
+  async summary(productId: string): Promise<RatingStats> {
+    if (!(await this.catalog.isPubliclyVisible(productId))) throw productNotFound();
+    return (
+      (await this.stats.find(RatingSubjectType.PRODUCT, productId)) ?? {
+        ratingCount: 0,
+        ratingSum: 0,
+        counts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+        version: 0,
+      }
+    );
+  }
+
+  /**
+   * GET /seller/reviews (spec 17 §4.3): the seller reads in any seller status; replying needs
+   * `approved`, so `canReply` says whether a reply would be accepted now.
+   */
+  async listForSeller(
+    seller: AuthContext,
+    query: ParsedListQuery,
+    replied: boolean | undefined,
+  ): Promise<Page<SellerReviewView>> {
+    const profile = await this.sellers.getSellerByUserId(seller.userId);
+    if (!profile) throw sellerProfileMissing(seller.userId);
+    const rows = await this.reviews.listForSeller(profile.sellerId, query, replied);
+    const page = toPage(rows, query, (r) => (query.sort.field === 'rating' ? r.rating : r.createdAt));
+    return {
+      items: await this.sellerViews(page.items, profile.status === SellerStatus.APPROVED),
+      meta: page.meta,
+    };
+  }
+
+  async sellerViews(reviews: readonly ProductReview[], approved: boolean): Promise<SellerReviewView[]> {
+    const [base, cards] = await Promise.all([
+      this.views(reviews),
+      this.catalog.getProductCards(reviews.map((r) => r.productId)),
+    ]);
+    return base.map((view) => ({
+      ...view,
+      productName: cards.get(view.review.productId)?.name ?? '',
+      canReply: approved && view.reply === null && view.review.status === ReviewStatus.PUBLISHED,
+    }));
+  }
+
+  /** GET /admin/reviews (spec 17 §4.4): every live review, hidden ones and hidden replies included. */
+  async listForAdmin(query: ParsedListQuery): Promise<Page<ReviewView>> {
+    const rows = await this.reviews.listForAdmin(query);
+    const page = toPage(rows, query, (r) => r.createdAt);
+    return { items: await this.views(page.items), meta: page.meta };
+  }
+
+  async getForAdmin(reviewId: string): Promise<ReviewView> {
+    const review = await this.reviews.findLiveById(reviewId);
+    if (!review) throw reviewNotFound();
+    const [view] = await this.views([review]);
+    if (!view) throw new Error(`no view built for review ${reviewId}`);
+    return view;
   }
 
   /** Images, reviewer names and replies for a page of reviews: one query or call each. */

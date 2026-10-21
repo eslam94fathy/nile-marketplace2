@@ -14,6 +14,11 @@ import { TOKENS } from '../../lib/di';
 import { type PgErrorMapper } from '../../lib/error';
 import { type OpenApiRegistry } from '../../lib/http';
 import { MyReviewController } from './controller/my-review.controller';
+import {
+  AdminReviewController,
+  PublicReviewController,
+  SellerReviewController,
+} from './controller/review-moderation.controller';
 import { registerReviewsConstraintErrors } from './errors';
 import { ProductReviewRepository } from './repository/product-review.repository';
 import { RatingStatsRepository } from './repository/rating-stats.repository';
@@ -21,6 +26,7 @@ import { ReviewImageRepository } from './repository/review-image.repository';
 import { ReviewReplyRepository } from './repository/review-reply.repository';
 import { reviewRoutes } from './routes';
 import { RatingAggregatesService } from './service/rating-aggregates.service';
+import { ReviewModerationService } from './service/review-moderation.service';
 import { ReviewViewService } from './service/review-view.service';
 import { ReviewService } from './service/review.service';
 
@@ -37,6 +43,10 @@ export function registerReviewsModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.ReviewService, ReviewService);
   container.registerSingleton(TOKENS.ReviewViewService, ReviewViewService);
   container.registerSingleton(TOKENS.MyReviewController, MyReviewController);
+  container.registerSingleton(TOKENS.ReviewModerationService, ReviewModerationService);
+  container.registerSingleton(TOKENS.PublicReviewController, PublicReviewController);
+  container.registerSingleton(TOKENS.SellerReviewController, SellerReviewController);
+  container.registerSingleton(TOKENS.AdminReviewController, AdminReviewController);
   registerReviewsConstraintErrors(container.resolve<PgErrorMapper>(TOKENS.PgErrorMapper));
 }
 
@@ -44,6 +54,9 @@ export function registerReviewsModule(container: DependencyContainer): void {
 export function createReviewsRouter(container: DependencyContainer, basePath: string): Router {
   return reviewRoutes({
     mine: container.resolve<MyReviewController>(TOKENS.MyReviewController),
+    public: container.resolve<PublicReviewController>(TOKENS.PublicReviewController),
+    seller: container.resolve<SellerReviewController>(TOKENS.SellerReviewController),
+    admin: container.resolve<AdminReviewController>(TOKENS.AdminReviewController),
     jwtVerifier: container.resolve<JwtVerifier>(TOKENS.JwtVerifier),
     docs: container.resolve<OpenApiRegistry>(TOKENS.OpenApiRegistry),
     basePath,

@@ -247,6 +247,10 @@ export const TOKENS = {
   ReviewService: Symbol.for('ReviewService'),
   ReviewViewService: Symbol.for('ReviewViewService'),
   MyReviewController: Symbol.for('MyReviewController'),
+  ReviewModerationService: Symbol.for('ReviewModerationService'),
+  PublicReviewController: Symbol.for('PublicReviewController'),
+  SellerReviewController: Symbol.for('SellerReviewController'),
+  AdminReviewController: Symbol.for('AdminReviewController'),
 
   // health module
   HealthService: Symbol.for('HealthService'),

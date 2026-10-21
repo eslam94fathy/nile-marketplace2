@@ -181,4 +181,113 @@ export class ProductReviewRepository {
       .whereNull('deleted_at');
     return rows.map((row) => row.product_id);
   }
+
+  /**
+   * GET /products/:productId/reviews: published, live reviews (idx_product_reviews_product_id_created_at_id;
+   * the rating filter and sort read within one product). `hasImages` is a custom filter (EXISTS).
+   */
+  async listPublic(
+    productId: string,
+    query: ParsedListQuery,
+    hasImages: boolean | undefined,
+  ): Promise<ProductReview[]> {
+    const qb = this.publishedQuery().where('r.product_id', productId);
+    this.filterImages(qb, hasImages);
+    const rows = (await applyListQuery(qb, query, 'r.id')) as ProductReviewRow[];
+    return rows.map(toModel);
+  }
+
+  /**
+   * GET /seller/reviews: the seller's published, live reviews (idx_product_reviews_seller_id_created_at_id).
+   * `replied` is a custom filter (EXISTS on uq_review_replies_review_id).
+   */
+  async listForSeller(
+    sellerId: string,
+    query: ParsedListQuery,
+    replied: boolean | undefined,
+  ): Promise<ProductReview[]> {
+    const qb = this.publishedQuery().where('r.seller_id', sellerId);
+    if (replied !== undefined) {
+      const reply = this.db
+        .knex(`${REVIEW_TABLES.REVIEW_REPLIES} as rr`)
+        .select(this.db.knex.raw('1'))
+        .whereRaw('rr.review_id = r.id');
+      void (replied ? qb.whereExists(reply) : qb.whereNotExists(reply));
+    }
+    const rows = (await applyListQuery(qb, query, 'r.id')) as ProductReviewRow[];
+    return rows.map(toModel);
+  }
+
+  /** GET /admin/reviews: every live review, any status (idx_product_reviews_created_at_id unfiltered). */
+  async listForAdmin(query: ParsedListQuery): Promise<ProductReview[]> {
+    const qb = this.db
+      .knex(`${T} as r`)
+      .select(...COLUMNS.map((c) => `r.${c}`))
+      .whereNull('r.deleted_at');
+    const rows = (await applyListQuery(qb, query, 'r.id')) as ProductReviewRow[];
+    return rows.map(toModel);
+  }
+
+  /** A live review by id, any status (admin reads). */
+  async findLiveById(id: string): Promise<ProductReview | undefined> {
+    const row = await this.db
+      .knex<ProductReviewTable>(T)
+      .select(...COLUMNS)
+      .where({ id })
+      .whereNull('deleted_at')
+      .first();
+    return row ? toModel(row) : undefined;
+  }
+
+  /** A live review `FOR UPDATE` (UC-RV-3, UC-RV-4): of `sellerId` when given, else any (admin). */
+  async lockLive(id: string, trx: DbTransaction, sellerId?: string): Promise<ProductReview | undefined> {
+    const query = trx<ProductReviewTable>(T)
+      .select(...COLUMNS)
+      .where({ id })
+      .whereNull('deleted_at')
+      .forUpdate();
+    if (sellerId !== undefined) void query.andWhere({ seller_id: sellerId });
+    const row = await query.first();
+    return row ? toModel(row) : undefined;
+  }
+
+  /** UC-RV-4: hide (with the reason and the admin) or unhide (the hide columns cleared). */
+  async setVisibility(
+    id: string,
+    hidden: { reason: string; byUserId: string; at: Date } | null,
+    trx: DbTransaction,
+  ): Promise<ProductReview> {
+    const [row] = await trx<ProductReviewTable>(T)
+      .where({ id })
+      .update({
+        status: hidden ? ReviewStatus.HIDDEN : ReviewStatus.PUBLISHED,
+        hidden_reason: hidden?.reason ?? null,
+        hidden_by_user_id: hidden?.byUserId ?? null,
+        hidden_at: hidden?.at ?? null,
+        updated_at: trx.fn.now(),
+      })
+      .returning(COLUMNS);
+    if (!row) throw new Error(`review ${id} vanished under its lock`);
+    return toModel(row);
+  }
+
+  private publishedQuery() {
+    return this.db
+      .knex(`${T} as r`)
+      .select(...COLUMNS.map((c) => `r.${c}`))
+      .where('r.status', ReviewStatus.PUBLISHED)
+      .whereNull('r.deleted_at');
+  }
+
+  private filterImages(
+    qb: ReturnType<ProductReviewRepository['publishedQuery']>,
+    hasImages: boolean | undefined,
+  ): void {
+    if (hasImages === undefined) return;
+    const images = this.db
+      .knex(`${REVIEW_TABLES.REVIEW_IMAGES} as ri`)
+      .select(this.db.knex.raw('1'))
+      .whereRaw('ri.review_id = r.id');
+    void (hasImages ? qb.whereExists(images) : qb.whereNotExists(images));
+  }
 }

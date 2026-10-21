@@ -47,4 +47,49 @@ export class ReviewReplyRepository {
       .whereIn('review_id', [...new Set(reviewIds)]);
     return new Map(rows.map((row) => [row.review_id, toModel(row)]));
   }
+
+  /** UC-RV-3. A second reply fails on uq_review_replies_review_id (REVIEW_ALREADY_REPLIED). */
+  async insert(
+    reply: { reviewId: string; sellerId: string; body: string },
+    trx: DbTransaction,
+  ): Promise<ReviewReply> {
+    const [row] = await trx<ReviewReplyTable>(T)
+      .insert({
+        review_id: reply.reviewId,
+        seller_id: reply.sellerId,
+        body: reply.body,
+        hidden_at: null,
+        hidden_reason: null,
+        hidden_by_user_id: null,
+      })
+      .returning(COLUMNS);
+    if (!row) throw new Error('review_replies insert returned no row');
+    return toModel(row);
+  }
+
+  /** The reply of a review `FOR UPDATE` (UC-RV-4, after the review's lock). */
+  async lockByReviewId(reviewId: string, trx: DbTransaction): Promise<ReviewReply | undefined> {
+    const row = await trx<ReviewReplyTable>(T)
+      .select(...COLUMNS)
+      .where({ review_id: reviewId })
+      .forUpdate()
+      .first();
+    return row ? toModel(row) : undefined;
+  }
+
+  /** UC-RV-4: hide (reason, admin, time) or unhide (all three cleared). */
+  async setHidden(
+    id: string,
+    hidden: { reason: string; byUserId: string; at: Date } | null,
+    trx: DbTransaction,
+  ): Promise<void> {
+    await trx<ReviewReplyTable>(T)
+      .where({ id })
+      .update({
+        hidden_at: hidden?.at ?? null,
+        hidden_reason: hidden?.reason ?? null,
+        hidden_by_user_id: hidden?.byUserId ?? null,
+        updated_at: trx.fn.now(),
+      });
+  }
 }

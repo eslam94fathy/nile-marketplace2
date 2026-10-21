@@ -28,3 +28,17 @@ export const MY_REVIEW_PATHS = {
   MY_REVIEW: '/me/reviews/:reviewId',
   REVIEWABLE_ITEMS: '/me/reviewable-items',
 } as const;
+
+/** Paths under /api/v1 (spec 17 §4.1, §4.3, §4.4). */
+export const REVIEW_PATHS = {
+  PRODUCT_REVIEWS: '/products/:productId/reviews',
+  PRODUCT_SUMMARY: '/products/:productId/reviews/summary',
+  SELLER_REVIEWS: '/seller/reviews',
+  SELLER_REPLY: '/seller/reviews/:reviewId/reply',
+  ADMIN_REVIEWS: '/admin/reviews',
+  ADMIN_REVIEW: '/admin/reviews/:reviewId',
+  ADMIN_HIDE: '/admin/reviews/:reviewId/hide',
+  ADMIN_UNHIDE: '/admin/reviews/:reviewId/unhide',
+  ADMIN_REPLY_HIDE: '/admin/reviews/:reviewId/reply/hide',
+  ADMIN_REPLY_UNHIDE: '/admin/reviews/:reviewId/reply/unhide',
+} as const;

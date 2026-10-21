@@ -1,5 +1,6 @@
 import { AppError, internalError, type PgErrorMapper } from '../../lib/error';
 import { HTTP_STATUS } from '../../lib/http';
+import { CatalogErrorCode } from '../catalog';
 
 /** reviews error codes (docs/spec/17-reviews.md §6). */
 export const ReviewsErrorCode = {
@@ -59,8 +60,16 @@ export const reviewInvalidStatusTransition = () =>
 export const customerProfileMissing = (userId: string) =>
   internalError(new Error(`customer-role user ${userId} has no customer profile`));
 
+/** A seller-role account without its profile: a data defect, 500 (as P4-Q9). */
+export const sellerProfileMissing = (userId: string) =>
+  internalError(new Error(`seller-role user ${userId} has no seller profile`));
+
 /** UC-RV-1 step 4, UC-RV-3: the constraints decide, there is no pre-check (spec 17). */
 export function registerReviewsConstraintErrors(mapper: PgErrorMapper): void {
   mapper.register('uq_product_reviews_customer_id_product_id', reviewAlreadyExists);
   mapper.register('uq_review_replies_review_id', reviewAlreadyReplied);
 }
+
+/** The public review endpoints of a product that isn't publicly visible (catalog's code, spec 17 §4.1). */
+export const productNotFound = () =>
+  new AppError(CatalogErrorCode.PRODUCT_NOT_FOUND, 'Product not found', HTTP_STATUS.NOT_FOUND);
