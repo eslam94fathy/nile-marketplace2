@@ -51,6 +51,9 @@ export const TOKENS = {
   CustomerAddressService: Symbol.for('CustomerAddressService'),
   /** Public API of customers (spec 04 §2), injected into other modules. */
   CustomerDirectory: Symbol.for('CustomerDirectory'),
+  WishlistRepository: Symbol.for('WishlistRepository'),
+  WishlistService: Symbol.for('WishlistService'),
+  WishlistController: Symbol.for('WishlistController'),
   CustomerController: Symbol.for('CustomerController'),
   CustomerAddressController: Symbol.for('CustomerAddressController'),
 

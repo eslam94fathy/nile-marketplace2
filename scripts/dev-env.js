@@ -125,6 +125,7 @@ const values = {
   INVITE_URL_BASE: 'http://localhost:3000/invite',
   // customers (spec 04)
   CUSTOMER_MAX_ADDRESSES: '20',
+  WISHLIST_MAX_ITEMS: '200',
   // delivery reference data (P2-Q5)
   GOVERNORATES_CACHE_TTL_SECONDS: '3600',
   // catalog (P3-Q9)

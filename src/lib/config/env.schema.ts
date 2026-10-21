@@ -189,6 +189,8 @@ const identityShape = {
 /** customers (spec 04 §1). */
 const customersShape = {
   CUSTOMER_MAX_ADDRESSES: positiveInt(100),
+  /** Spec 04 §8.1, R-12. */
+  WISHLIST_MAX_ITEMS: positiveInt(10_000),
 };
 
 /** delivery reference data (spec 11 DE-3, P2-Q5). */

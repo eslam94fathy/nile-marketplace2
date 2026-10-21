@@ -109,6 +109,7 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     INVITE_URL_BASE: 'https://app.nile.test/invite',
     // customers
     CUSTOMER_MAX_ADDRESSES: '20',
+    WISHLIST_MAX_ITEMS: '5',
     // delivery reference data
     GOVERNORATES_CACHE_TTL_SECONDS: '3600',
     // catalog

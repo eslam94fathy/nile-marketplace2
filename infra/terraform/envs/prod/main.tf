@@ -125,6 +125,7 @@ module "environment" {
     INVITE_URL_BASE             = var.invite_url_base
 
     CUSTOMER_MAX_ADDRESSES           = "20"
+    WISHLIST_MAX_ITEMS               = "200"
     GOVERNORATES_CACHE_TTL_SECONDS   = "3600"
     CATEGORY_TREE_CACHE_TTL_SECONDS  = "3600"
     PRODUCT_DETAIL_CACHE_TTL_SECONDS = "60"
