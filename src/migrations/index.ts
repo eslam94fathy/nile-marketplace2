@@ -59,6 +59,7 @@ import * as m20261021100001 from './20261021100001_create_support_tickets';
 import * as m20261021100002 from './20261021100002_create_support_messages';
 import * as m20261021100003 from './20261021100003_create_support_message_attachments';
 import * as m20261021100004 from './20261021100004_create_support_ticket_reads';
+import * as m20261021100005 from './20261021100005_add_support_audit_actions';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -123,5 +124,6 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261021100002_create_support_messages', module: m20261021100002 },
   { name: '20261021100003_create_support_message_attachments', module: m20261021100003 },
   { name: '20261021100004_create_support_ticket_reads', module: m20261021100004 },
+  { name: '20261021100005_add_support_audit_actions', module: m20261021100005 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

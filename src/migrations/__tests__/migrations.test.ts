@@ -71,6 +71,7 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261021100002_create_support_messages',
       '20261021100003_create_support_message_attachments',
       '20261021100004_create_support_ticket_reads',
+      '20261021100005_add_support_audit_actions',
     ]);
   });
 

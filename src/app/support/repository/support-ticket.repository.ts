@@ -57,6 +57,12 @@ interface SupportTicketRow {
   updated_at: Date;
 }
 
+export interface AdminTicketFilters {
+  assigned?: boolean;
+  slaBreached?: boolean;
+  waitingOnly: boolean;
+}
+
 function toModel(row: Pick<SupportTicketRow, (typeof COLUMNS)[number]>): SupportTicket {
   return {
     id: row.id,
@@ -180,6 +186,29 @@ export class SupportTicketRepository {
       .knex<SupportTicketRow>(T)
       .select(...COLUMNS)
       .where({ opener_user_id: openerUserId });
+    const rows = (await applyListQuery(qb, query, 'id')) as SupportTicketRow[];
+    return rows.map(toModel);
+  }
+
+  /**
+   * A keyset page of the admin queue (spec 16 §4.2). `assigned` and `slaBreached` are custom filters;
+   * `waitingOnly` restricts to open / awaiting_admin, where `awaiting_admin_since` is set (the sort of the
+   * oldest-waiting queue, idx_support_tickets_awaiting_admin_since_id).
+   */
+  async listForAdmin(query: ParsedListQuery, filters: AdminTicketFilters): Promise<SupportTicket[]> {
+    const qb = this.db.knex<SupportTicketRow>(T).select(...COLUMNS);
+    if (filters.waitingOnly) qb.whereIn('status', WAITING_FOR_ADMIN_STATUSES);
+    if (filters.assigned === true) qb.whereNotNull('assigned_admin_user_id');
+    if (filters.assigned === false) qb.whereNull('assigned_admin_user_id');
+    // Breached = waiting now with the flag of the current wait set (SU-11).
+    if (filters.slaBreached === true) {
+      qb.whereIn('status', WAITING_FOR_ADMIN_STATUSES).whereNotNull('sla_breached_at');
+    }
+    if (filters.slaBreached === false) {
+      qb.where((w) => {
+        void w.whereNull('sla_breached_at').orWhereNotIn('status', WAITING_FOR_ADMIN_STATUSES);
+      });
+    }
     const rows = (await applyListQuery(qb, query, 'id')) as SupportTicketRow[];
     return rows.map(toModel);
   }

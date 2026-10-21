@@ -15,14 +15,17 @@ import { type OpenApiRegistry } from '../../lib/http';
 import { type ILogger } from '../../lib/logger';
 import { type RateLimiters, requireIdempotency } from '../../lib/middleware';
 import { type ICache } from '../../pkg/cache';
+import { SupportAdminController } from './controller/support-admin.controller';
 import { SupportTicketController } from './controller/support-ticket.controller';
 import { SupportAttachmentRepository } from './repository/support-attachment.repository';
 import { SupportMessageRepository } from './repository/support-message.repository';
 import { SupportReadRepository } from './repository/support-read.repository';
 import { SupportTicketRepository } from './repository/support-ticket.repository';
 import { supportRoutes } from './routes';
+import { SupportAdminService } from './service/support-admin.service';
 import { SupportDirectory } from './service/support-directory.service';
 import { SupportTicketService } from './service/support-ticket.service';
+import { SupportTimelineService } from './service/support-timeline.service';
 import { SupportViewService } from './service/support-view.service';
 
 export { SupportErrorCode } from './errors';
@@ -38,8 +41,8 @@ export function registerSupportLookups(container: DependencyContainer): void {
 }
 
 /**
- * api process: the ticket endpoints (spec 16 §4). Needs ordering, media and the customers / sellers
- * directories registered.
+ * api process: the ticket endpoints (spec 16 §4). Needs identity, ordering, media and the customers /
+ * sellers directories registered.
  */
 export function registerSupportModule(container: DependencyContainer): void {
   registerSupportLookups(container);
@@ -47,14 +50,18 @@ export function registerSupportModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.SupportAttachmentRepository, SupportAttachmentRepository);
   container.registerSingleton(TOKENS.SupportReadRepository, SupportReadRepository);
   container.registerSingleton(TOKENS.SupportViewService, SupportViewService);
+  container.registerSingleton(TOKENS.SupportTimelineService, SupportTimelineService);
   container.registerSingleton(TOKENS.SupportTicketService, SupportTicketService);
   container.registerSingleton(TOKENS.SupportTicketController, SupportTicketController);
+  container.registerSingleton(TOKENS.SupportAdminService, SupportAdminService);
+  container.registerSingleton(TOKENS.SupportAdminController, SupportAdminController);
 }
 
 /** The module's HTTP routes, mounted by the composition root at `basePath` (`/api/v1`). */
 export function createSupportRouter(container: DependencyContainer, basePath: string): Router {
   return supportRoutes({
     tickets: container.resolve<SupportTicketController>(TOKENS.SupportTicketController),
+    admin: container.resolve<SupportAdminController>(TOKENS.SupportAdminController),
     jwtVerifier: container.resolve<JwtVerifier>(TOKENS.JwtVerifier),
     rateLimiters: container.resolve<RateLimiters>(TOKENS.RateLimiters),
     idempotency: requireIdempotency(

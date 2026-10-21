@@ -46,3 +46,14 @@ export const SUPPORT_PATHS = {
   MESSAGES: '/support/tickets/:ticketId/messages',
   READ: '/support/tickets/:ticketId/read',
 } as const;
+
+/** Paths under /api/v1 (spec 16 §4.2). */
+export const ADMIN_SUPPORT_PATHS = {
+  TICKETS: '/admin/support/tickets',
+  TICKET: '/admin/support/tickets/:ticketId',
+  MESSAGES: '/admin/support/tickets/:ticketId/messages',
+  ASSIGN: '/admin/support/tickets/:ticketId/assign',
+  RESOLVE: '/admin/support/tickets/:ticketId/resolve',
+  CLOSE: '/admin/support/tickets/:ticketId/close',
+  READ: '/admin/support/tickets/:ticketId/read',
+} as const;

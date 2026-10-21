@@ -10,8 +10,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ImageDto, toImageDto } from '../../media';
-import { MessageKind, SenderRole, TicketCategory, TicketStatus } from '../enums';
-import { type MessageView, type TicketView } from '../service/support-view.service';
+import { MessageKind, SenderRole, TicketCategory, TicketOpenerRole, TicketStatus } from '../enums';
+import { type AdminTicketView, type MessageView, type TicketView } from '../service/support-view.service';
 
 /* Response DTOs for spec 16 §4 (decorators describe the OpenAPI shape only). */
 
@@ -121,5 +121,61 @@ export function toTicketMessageDto(view: MessageView): TicketMessageDto {
     body: view.message.body,
     attachments: view.attachments.map(toImageDto),
     createdAt: view.message.createdAt.toISOString(),
+  };
+}
+
+export class TicketOpenerDto {
+  @IsUUID()
+  userId!: string;
+
+  @IsIn(Object.values(TicketOpenerRole))
+  role!: TicketOpenerRole;
+
+  /** "First Last" for a customer, the business name for a seller (SU-8). */
+  @IsString()
+  displayName!: string;
+
+  @IsString()
+  email!: string;
+}
+
+export class TicketAssigneeDto {
+  @IsUUID()
+  userId!: string;
+
+  /** The admin's email: admins have no name (SU-7). */
+  @IsString()
+  displayName!: string;
+}
+
+export class AdminTicketSummaryDto extends TicketSummaryDto {
+  @ValidateNested()
+  @Type(() => TicketOpenerDto)
+  opener!: TicketOpenerDto;
+
+  // Nullable: unassigned.
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TicketAssigneeDto)
+  assignedAdmin!: TicketAssigneeDto | null;
+
+  /** The SLA flag of the current or last wait (SU-11). */
+  @IsOptional()
+  @IsISO8601()
+  slaBreachedAt!: string | null;
+
+  /** Set while the ticket waits for an admin. */
+  @IsOptional()
+  @IsISO8601()
+  awaitingAdminSince!: string | null;
+}
+
+export function toAdminTicketSummaryDto(view: AdminTicketView): AdminTicketSummaryDto {
+  return {
+    ...toTicketSummaryDto(view),
+    opener: { ...view.opener },
+    assignedAdmin: view.assignedAdmin ? { ...view.assignedAdmin } : null,
+    slaBreachedAt: view.ticket.slaBreachedAt?.toISOString() ?? null,
+    awaitingAdminSince: view.ticket.awaitingAdminSince?.toISOString() ?? null,
   };
 }

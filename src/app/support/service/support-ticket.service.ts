@@ -2,20 +2,14 @@ import { inject, injectable } from 'tsyringe';
 import { type AuthContext, UserRole } from '../../../lib/auth';
 import { type IClock } from '../../../lib/clock';
 import { type Env } from '../../../lib/config';
-import { type DbTransaction, type ITransactionRunner } from '../../../lib/db';
+import { type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
-import {
-  type IOutbox,
-  SupportMessageCreated,
-  SupportTicketOpened,
-  SupportTicketStatusChanged,
-} from '../../../lib/events';
+import { type IOutbox, SupportTicketOpened } from '../../../lib/events';
 import { type ICustomerDirectory } from '../../customers';
-import { MediaPurpose, type MediaService } from '../../media';
 import { type IOrderingDirectory } from '../../ordering';
 import { type ISellerDirectory } from '../../sellers';
 import { SYSTEM_LINES } from '../constants';
-import { MessageKind, SenderRole, TicketCategory, TicketOpenerRole, TicketStatus } from '../enums';
+import { MessageKind, TicketCategory, TicketOpenerRole, TicketStatus } from '../enums';
 import {
   openerProfileMissing,
   orderLinkNotFound,
@@ -27,12 +21,11 @@ import {
 } from '../errors';
 import { type NewSupportMessage, type SupportMessage } from '../model/support-message.model';
 import { type SupportTicket } from '../model/support-ticket.model';
-import { type SupportAttachmentRepository } from '../repository/support-attachment.repository';
-import { type SupportMessageRepository } from '../repository/support-message.repository';
 import { type SupportReadRepository } from '../repository/support-read.repository';
 import { type SupportTicketRepository } from '../repository/support-ticket.repository';
-import { afterUserMessage } from './ticket-transitions';
+import { type SupportTimelineService, systemLine } from './support-timeline.service';
 import { senderRoleOf } from './support-view.service';
+import { afterUserMessage } from './ticket-transitions';
 
 export interface MessageInput {
   body: string;
@@ -64,10 +57,8 @@ export class SupportTicketService {
     @inject(TOKENS.Clock) private readonly clock: IClock,
     @inject(TOKENS.Env) private readonly env: Pick<Env, 'SUPPORT_MAX_OPEN_TICKETS_PER_USER'>,
     @inject(TOKENS.SupportTicketRepository) private readonly tickets: SupportTicketRepository,
-    @inject(TOKENS.SupportMessageRepository) private readonly messages: SupportMessageRepository,
-    @inject(TOKENS.SupportAttachmentRepository) private readonly attachments: SupportAttachmentRepository,
     @inject(TOKENS.SupportReadRepository) private readonly reads: SupportReadRepository,
-    @inject(TOKENS.MediaService) private readonly media: MediaService,
+    @inject(TOKENS.SupportTimelineService) private readonly timeline: SupportTimelineService,
     @inject(TOKENS.OrderingDirectory) private readonly ordering: IOrderingDirectory,
     @inject(TOKENS.CustomerDirectory) private readonly customers: ICustomerDirectory,
     @inject(TOKENS.SellerDirectory) private readonly sellers: ISellerDirectory,
@@ -99,12 +90,9 @@ export class SupportTicketService {
         },
         trx,
       );
-      const [message] = await this.messages.insertMany(
-        [this.userMessage(ticket, opener.userId, input.body)],
-        trx,
-      );
+      const [message] = await this.timeline.append([userMessage(ticket, opener.userId, input.body)], trx);
       if (!message) throw new Error('support message insert returned no row');
-      await this.attach(message, opener.userId, input.attachmentMediaIds, trx);
+      await this.timeline.attach(message, opener.userId, input.attachmentMediaIds, trx);
       await this.reads.markRead(ticket.id, opener.userId, at, trx);
       await this.outbox.add(trx, {
         contract: SupportTicketOpened,
@@ -117,7 +105,7 @@ export class SupportTicketService {
           category: ticket.category,
         },
       });
-      await this.messageCreated(ticket, message, trx);
+      await this.timeline.messagesCreated(ticket, [message], trx);
       return { ticket, message };
     });
   }
@@ -134,18 +122,19 @@ export class SupportTicketService {
       if (!locked) throw supportTicketNotFound();
       if (locked.status === TicketStatus.CLOSED) throw supportTicketClosed();
       const transition = afterUserMessage(locked, at);
-      const lines: NewSupportMessage[] = [this.userMessage(locked, opener.userId, input.body)];
+      const lines: NewSupportMessage[] = [userMessage(locked, opener.userId, input.body)];
+      // Only a reopen gets a line; the reply-driven moves don't (SU-17).
       if (transition.reopened) lines.push(systemLine(locked.id, SYSTEM_LINES.REOPENED));
-      const [message, ...systemLines] = await this.messages.insertMany(lines, trx);
+      const created = await this.timeline.append(lines, trx);
+      const [message] = created;
       if (!message) throw new Error('support message insert returned no row');
-      await this.attach(message, opener.userId, input.attachmentMediaIds, trx);
+      await this.timeline.attach(message, opener.userId, input.attachmentMediaIds, trx);
       const ticket = await this.tickets.update(locked.id, transition.patch, trx);
       await this.reads.markRead(ticket.id, opener.userId, at, trx);
-      await this.messageCreated(ticket, message, trx);
+      await this.timeline.messagesCreated(ticket, created, trx);
       if (transition.movedTo) {
-        await this.statusChanged(ticket, locked.status, senderRoleOf(ticket.openerRole), trx);
+        await this.timeline.statusChanged(ticket, locked.status, senderRoleOf(ticket.openerRole), trx);
       }
-      for (const line of systemLines) await this.messageCreated(ticket, line, trx);
       return { ticket, message };
     });
   }
@@ -179,63 +168,6 @@ export class SupportTicketService {
     if (!link) throw sellerOrderLinkNotFound();
     return { orderId: link.orderId, sellerOrderId: link.sellerOrderId };
   }
-
-  private userMessage(ticket: SupportTicket, userId: string, body: string): NewSupportMessage {
-    return {
-      ticketId: ticket.id,
-      kind: MessageKind.MESSAGE,
-      senderUserId: userId,
-      senderRole: senderRoleOf(ticket.openerRole),
-      body,
-    };
-  }
-
-  /** Claims the private images (ticket already locked: lock order ticket → media) and records them. */
-  private async attach(
-    message: SupportMessage,
-    ownerUserId: string,
-    mediaIds: readonly string[],
-    trx: DbTransaction,
-  ): Promise<void> {
-    await this.media.claim(mediaIds, { purpose: MediaPurpose.SUPPORT_ATTACHMENT, ownerUserId }, trx);
-    await this.attachments.insertMany(message.id, mediaIds, trx);
-  }
-
-  private messageCreated(ticket: SupportTicket, message: SupportMessage, trx: DbTransaction): Promise<void> {
-    return this.outbox.add(trx, {
-      contract: SupportMessageCreated,
-      aggregateId: ticket.id,
-      payload: {
-        ticketId: ticket.id,
-        ticketNumber: ticket.ticketNumber,
-        messageId: message.id,
-        kind: message.kind,
-        senderRole: message.senderRole,
-        openerUserId: ticket.openerUserId,
-        assignedAdminUserId: ticket.assignedAdminUserId,
-      },
-    });
-  }
-
-  private statusChanged(
-    ticket: SupportTicket,
-    from: TicketStatus,
-    actor: SenderRole,
-    trx: DbTransaction,
-  ): Promise<void> {
-    return this.outbox.add(trx, {
-      contract: SupportTicketStatusChanged,
-      aggregateId: ticket.id,
-      payload: {
-        ticketId: ticket.id,
-        ticketNumber: ticket.ticketNumber,
-        openerUserId: ticket.openerUserId,
-        from,
-        to: ticket.status,
-        actor,
-      },
-    });
-  }
 }
 
 /** The routes allow customers and sellers only. */
@@ -243,6 +175,12 @@ function openerRoleOf(opener: AuthContext): TicketOpenerRole {
   return opener.role === UserRole.SELLER ? TicketOpenerRole.SELLER : TicketOpenerRole.CUSTOMER;
 }
 
-export function systemLine(ticketId: string, body: string): NewSupportMessage {
-  return { ticketId, kind: MessageKind.SYSTEM, senderUserId: null, senderRole: SenderRole.SYSTEM, body };
+function userMessage(ticket: SupportTicket, userId: string, body: string): NewSupportMessage {
+  return {
+    ticketId: ticket.id,
+    kind: MessageKind.MESSAGE,
+    senderUserId: userId,
+    senderRole: senderRoleOf(ticket.openerRole),
+    body,
+  };
 }

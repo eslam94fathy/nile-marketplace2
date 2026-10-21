@@ -77,6 +77,10 @@ export const AUDIT_ACTIONS = {
   'shipment.admin_assigned': { target: T.SHIPMENT, fields: ['agentId'] },
   // payments (spec 10 UC-PA-4)
   'payment_refund.recorded': { target: T.PAYMENT_REFUND, fields: ['status', 'providerRefundRef'] },
+  // support (spec 16 UC-SU-3, SU-5; an auto-assign on the first reply is an assign too, SU-18)
+  'support_ticket.assigned': { target: T.SUPPORT_TICKET, fields: ['assignedAdminUserId'] },
+  'support_ticket.resolved': { target: T.SUPPORT_TICKET, fields: STATUS },
+  'support_ticket.closed': { target: T.SUPPORT_TICKET, fields: STATUS },
   // finance (spec 12 §1.3)
   'cod_remittance.recorded': { target: T.COD_REMITTANCE, fields: ['amount', 'agentId'] },
   'payout.recorded': {
