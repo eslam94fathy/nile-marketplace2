@@ -62,4 +62,7 @@ export const NotificationLink = {
   customerOrder: (orderId: string) => `/orders/${orderId}`,
   sellerOrder: (sellerOrderId: string) => `/seller/orders/${sellerOrderId}`,
   agentShipment: (shipmentId: string) => `/agent/shipments/${shipmentId}`,
+  /** NO-31 (spec 16 SU-14). */
+  supportTicket: (ticketId: string) => `/support/tickets/${ticketId}`,
+  adminSupportTicket: (ticketId: string) => `/admin/support/tickets/${ticketId}`,
 } as const;

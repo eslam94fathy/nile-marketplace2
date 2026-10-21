@@ -152,4 +152,79 @@ describe('mapUserEvent (spec 13 §8.2)', () => {
       mapUserEvent(envelope('shipment.assigned', { shipmentId: 'x', agentId: AGENT }), undefined),
     ).toThrow(PermanentEventError);
   });
+
+  describe('support (spec 13 §8.2, NO-31)', () => {
+    const TICKET = randomUUID();
+    const OPENER = randomUUID();
+    const ADMIN = randomUUID();
+    const message = (payload: Record<string, unknown>) =>
+      envelope('support.message_created', {
+        ticketId: TICKET,
+        ticketNumber: 'T-000000042',
+        messageId: randomUUID(),
+        kind: 'message',
+        senderRole: 'admin',
+        openerUserId: OPENER,
+        assignedAdminUserId: ADMIN,
+        ...payload,
+      });
+
+    it('a public admin reply notifies the opener; a user message the assigned admin', () => {
+      expect(rows(mapUserEvent(message({}), undefined))).toEqual([
+        [
+          `user:${OPENER}`,
+          'support_reply',
+          'support',
+          'New reply',
+          'Support replied on T-000000042.',
+          `/support/tickets/${TICKET}`,
+        ],
+      ]);
+      expect(rows(mapUserEvent(message({ senderRole: 'seller' }), undefined))).toEqual([
+        [
+          `user:${ADMIN}`,
+          'support_user_message',
+          'support',
+          'New message',
+          'T-000000042 has a new message.',
+          `/admin/support/tickets/${TICKET}`,
+        ],
+      ]);
+    });
+
+    it('nobody for notes, system lines, or a user message on an unassigned ticket (NO-9)', () => {
+      expect(mapUserEvent(message({ kind: 'internal_note' }), undefined)).toEqual([]);
+      expect(mapUserEvent(message({ kind: 'system', senderRole: 'system' }), undefined)).toEqual([]);
+      expect(mapUserEvent(message({ senderRole: 'customer', assignedAdminUserId: null }), undefined)).toEqual(
+        [],
+      );
+    });
+
+    it('resolved notifies the opener; other status changes nobody', () => {
+      const changed = (to: string) =>
+        envelope('support.ticket_status_changed', {
+          ticketId: TICKET,
+          ticketNumber: 'T-000000042',
+          openerUserId: OPENER,
+          from: 'awaiting_user',
+          to,
+          actor: 'admin',
+        });
+      expect(rows(mapUserEvent(changed('resolved'), undefined))).toEqual([
+        [
+          `user:${OPENER}`,
+          'support_resolved',
+          'support',
+          'Ticket resolved',
+          'T-000000042 was marked resolved.',
+          `/support/tickets/${TICKET}`,
+        ],
+      ]);
+      expect(mapUserEvent(changed('closed'), undefined)).toEqual([]);
+    });
+
+    it('a malformed ticket number is permanent', () => {
+      expect(() => mapUserEvent(message({ ticketNumber: 'X-1' }), undefined)).toThrow(PermanentEventError);
+    });
+  });
 });

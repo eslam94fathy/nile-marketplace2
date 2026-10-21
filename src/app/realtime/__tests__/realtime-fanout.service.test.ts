@@ -4,6 +4,7 @@ import { type EventEnvelope, PermanentEventError } from '../../../lib/events';
 import { type ILogger } from '../../../lib/logger';
 import { type IRealtimeEmitter, type RealtimeMessage } from '../../../lib/realtime';
 import { type IOrderingDirectory, type NotificationParty } from '../../ordering';
+import { type ISupportDirectory, type TicketState } from '../../support';
 import { RealtimeFanoutService } from '../service/realtime-fanout.service';
 
 const ORDER = randomUUID();
@@ -17,6 +18,10 @@ const PREVIOUS_AGENT = randomUUID();
 const SHIPMENT = randomUUID();
 const USER = randomUUID();
 const MEDIA = randomUUID();
+const TICKET = randomUUID();
+const MESSAGE = randomUUID();
+const OPENER = randomUUID();
+const ADMIN = randomUUID();
 
 const party = (overrides: Partial<NotificationParty> = {}): NotificationParty => ({
   orderId: ORDER,
@@ -41,7 +46,12 @@ const envelope = (eventType: string, payload: Record<string, unknown>): EventEnv
   payload,
 });
 
-function setup(parties: NotificationParty[] = [party()]) {
+function setup(
+  parties: NotificationParty[] = [party()],
+  tickets: Map<string, TicketState> = new Map([
+    [TICKET, { status: 'awaiting_user', openerUserId: OPENER, assignedAdminUserId: ADMIN }],
+  ]),
+) {
   const sent: { rooms: readonly string[]; message: RealtimeMessage }[] = [];
   const disconnectUser = vi.fn();
   const emitter: IRealtimeEmitter = {
@@ -50,12 +60,14 @@ function setup(parties: NotificationParty[] = [party()]) {
   };
   const getNotificationParties = vi.fn((_ids: object) => Promise.resolve(parties));
   const ordering = { getNotificationParties } as unknown as IOrderingDirectory;
+  const getTicketStates = vi.fn((_ids: readonly string[]) => Promise.resolve(tickets));
+  const support = { getTicketStates } as unknown as ISupportDirectory;
   const warn = vi.fn();
   const logger = { warn } as unknown as ILogger;
-  const service = new RealtimeFanoutService(ordering, emitter, logger);
+  const service = new RealtimeFanoutService(ordering, support, emitter, logger);
   /** [type, rooms, data] per emit, for compact assertions. */
   const emits = () => sent.map(({ rooms, message }) => [message.type, [...rooms], message.data]);
-  return { service, sent, emits, disconnectUser, getNotificationParties, warn };
+  return { service, sent, emits, disconnectUser, getNotificationParties, getTicketStates, warn };
 }
 
 describe('RealtimeFanoutService (spec 15 UC-RT-2, §3.1)', () => {
@@ -181,6 +193,62 @@ describe('RealtimeFanoutService (spec 15 UC-RT-2, §3.1)', () => {
     const { service, disconnectUser } = setup();
     await service.handle(envelope('user.suspended', { userId: USER, role: 'customer', suspendedAt: 'x' }));
     expect(disconnectUser).toHaveBeenCalledWith(USER, 'account_suspended');
+  });
+
+  describe('support (spec 16, spec 15 §3.1)', () => {
+    const message = (kind: string, senderRole: string) =>
+      envelope('support.message_created', {
+        ticketId: TICKET,
+        ticketNumber: 'T-000000001',
+        messageId: MESSAGE,
+        kind,
+        senderRole,
+        openerUserId: OPENER,
+        assignedAdminUserId: ADMIN,
+      });
+
+    it('support.message_created: the ticket room and the other side; notes to admins only; no reads', async () => {
+      const { service, emits, getTicketStates } = setup();
+      await service.handle(message('message', 'customer'));
+      await service.handle(message('message', 'admin'));
+      await service.handle(message('system', 'system'));
+      await service.handle(message('internal_note', 'admin'));
+      const data = { ticketId: TICKET, messageId: MESSAGE };
+      expect(emits()).toEqual([
+        ['support.message_created', [`ticket:${TICKET}`, 'admins'], data],
+        ['support.message_created', [`ticket:${TICKET}`, `user:${OPENER}`], data],
+        ['support.message_created', [`ticket:${TICKET}`, `user:${OPENER}`], data],
+        ['support.message_created', ['admins'], data],
+      ]);
+      expect(getTicketStates).not.toHaveBeenCalled();
+    });
+
+    it('support.ticket_*: support.ticket_updated with the re-read status and assignee (SU-19)', async () => {
+      const { service, emits } = setup();
+      for (const [type, payload] of [
+        ['support.ticket_opened', { ticketId: TICKET, ticketNumber: 'T-000000001', openerUserId: OPENER }],
+        ['support.ticket_assigned', { ticketId: TICKET, openerUserId: OPENER, assignedAdminUserId: ADMIN }],
+        ['support.ticket_status_changed', { ticketId: TICKET, from: 'open', to: 'awaiting_user' }],
+      ] as const) {
+        await service.handle(envelope(type, payload));
+      }
+      const update = [
+        'support.ticket_updated',
+        [`ticket:${TICKET}`, `user:${OPENER}`, 'admins'],
+        { ticketId: TICKET, status: 'awaiting_user', assignedAdminId: ADMIN },
+      ];
+      expect(emits()).toEqual([update, update, update]);
+    });
+
+    it('a ticket the re-read cannot find: nothing sent, a warn; a bad id is permanent', async () => {
+      const { service, emits, warn } = setup([party()], new Map());
+      await service.handle(envelope('support.ticket_opened', { ticketId: TICKET }));
+      expect(emits()).toEqual([]);
+      expect(warn).toHaveBeenCalledOnce();
+      await expect(
+        service.handle(envelope('support.message_created', { ticketId: 'nope', kind: 'message' })),
+      ).rejects.toBeInstanceOf(PermanentEventError);
+    });
   });
 
   it('an order the re-read cannot find: nothing sent, a warn', async () => {

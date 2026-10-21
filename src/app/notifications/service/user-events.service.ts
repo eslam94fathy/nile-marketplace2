@@ -152,11 +152,12 @@ export class UserEventsService {
       drafts.filter((d) => d.recipient.kind === kind).map((d) => d.recipient.id);
     const lookup = (ids: string[], resolve: (ids: string[]) => Promise<Map<string, string>>) =>
       ids.length === 0 ? Promise.resolve(new Map<string, string>()) : resolve(ids);
+    const user = new Map(idsOf('user').map((id) => [id, id]));
     const [customer, seller, agent] = await Promise.all([
       lookup(idsOf('customer'), (ids) => this.customers.getUserIds(ids)),
       lookup(idsOf('seller'), (ids) => this.sellers.getUserIds(ids)),
       lookup(idsOf('agent'), (ids) => this.agents.getUserIds(ids)),
     ]);
-    return { customer, seller, agent };
+    return { customer, seller, agent, user };
   }
 }

@@ -18,6 +18,13 @@ export const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 /** UC-RT-4: how long close() waits for the `session.ended` frames to flush before closing the server. */
 export const SHUTDOWN_SOCKET_DRAIN_MS = toMs(1, TimeUnit.SECOND);
 
+/** Client → server signals (spec 15 §3.3), from spec 16 (RT-10). */
+export const RealtimeSignal = {
+  TICKET_SUBSCRIBE: 'ticket.subscribe',
+  TICKET_UNSUBSCRIBE: 'ticket.unsubscribe',
+  SUPPORT_TYPING: 'support.typing',
+} as const;
+
 /** Redis key prefix of the handshake limiter (rate class `realtime-connect`). */
 export const CONNECT_RATE_LIMIT_KEY_PREFIX = 'rl:realtime-connect';
 

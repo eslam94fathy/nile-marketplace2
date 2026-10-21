@@ -1,4 +1,5 @@
 import { CommonErrorCode } from '../../lib/error';
+import { SupportErrorCode } from '../support';
 
 /** `connect_error.data.code` (spec 15 §6, conventions §6). */
 export const ConnectErrorCode = {
@@ -17,7 +18,12 @@ export type ConnectErrorCode = (typeof ConnectErrorCode)[keyof typeof ConnectErr
 export const AckErrorCode = {
   RATE_LIMITED: CommonErrorCode.RATE_LIMITED,
   VALIDATION_FAILED: CommonErrorCode.VALIDATION_FAILED,
+  /** `ticket.subscribe` for a missing ticket or one the user may not view: one answer (conventions §3). */
+  SUPPORT_TICKET_NOT_FOUND: SupportErrorCode.SUPPORT_TICKET_NOT_FOUND,
+  /** The access check failed (database down): the client retries (as the connect code, RT-15). */
+  INTERNAL_ERROR: CommonErrorCode.INTERNAL_ERROR,
 } as const;
+export type AckErrorCode = (typeof AckErrorCode)[keyof typeof AckErrorCode];
 
 /** What Socket.IO sends the client as `connect_error`: the message plus `data.code`. */
 export class ConnectError extends Error {

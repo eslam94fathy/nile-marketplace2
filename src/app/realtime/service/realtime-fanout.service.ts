@@ -21,6 +21,10 @@ import {
   ShipmentDelivered,
   ShipmentOutForDelivery,
   ShipmentPickedUp,
+  SupportMessageCreated,
+  SupportTicketAssigned,
+  SupportTicketOpened,
+  SupportTicketStatusChanged,
   UserSuspended,
 } from '../../../lib/events';
 import { type ILogger } from '../../../lib/logger';
@@ -33,9 +37,10 @@ import {
   RealtimeRoom,
 } from '../../../lib/realtime';
 import { type IOrderingDirectory, type NotificationParty, SellerOrderStatus } from '../../ordering';
+import { type ISupportDirectory, MessageKind } from '../../support';
 import { MediaStatusValue, PaymentStatusValue, ShipmentStatusValue } from '../constants';
 
-/** Every event the fan-out consumes (spec 15 §5, the ones that exist by R2-P2). */
+/** Every event the fan-out consumes (spec 15 §5, the ones that exist by R2-P3). */
 export const FANOUT_EVENTS = [
   OrderPlaced,
   OrderClosed,
@@ -55,6 +60,10 @@ export const FANOUT_EVENTS = [
   ShipmentDelivered,
   MediaReady,
   MediaFailed,
+  SupportTicketOpened,
+  SupportMessageCreated,
+  SupportTicketAssigned,
+  SupportTicketStatusChanged,
   UserSuspended,
 ] as const;
 
@@ -98,6 +107,13 @@ const MEDIA_STATUS_BY_EVENT: ReadonlyMap<string, string> = new Map<string, strin
   [MediaFailed.type, MediaStatusValue.FAILED],
 ]);
 
+/** Every ticket change is announced the same way, from a re-read (SU-19). */
+const SUPPORT_TICKET_EVENTS: ReadonlySet<string> = new Set(
+  [SupportTicketOpened, SupportTicketAssigned, SupportTicketStatusChanged].map((contract) => contract.type),
+);
+/** The server's lines go to the opener's side like an admin's (spec 15 §3.1). */
+const SUPPORT_SIDE_SENDERS: ReadonlySet<unknown> = new Set(['admin', 'system']);
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A malformed payload can never succeed: dead-letter it. */
@@ -124,6 +140,7 @@ function optionalIdOf(envelope: EventEnvelope, key: string): string | null {
 export class RealtimeFanoutService {
   constructor(
     @inject(TOKENS.OrderingDirectory) private readonly ordering: IOrderingDirectory,
+    @inject(TOKENS.SupportDirectory) private readonly support: ISupportDirectory,
     @inject(TOKENS.RealtimeEmitter) private readonly emitter: IRealtimeEmitter,
     @inject(TOKENS.Logger) private readonly logger: ILogger,
   ) {}
@@ -140,6 +157,8 @@ export class RealtimeFanoutService {
     if (shipmentStatus !== undefined) return this.shipmentUpdated(envelope, shipmentStatus(envelope));
     const mediaStatus = MEDIA_STATUS_BY_EVENT.get(type);
     if (mediaStatus !== undefined) return this.mediaUpdated(envelope, mediaStatus);
+    if (type === SupportMessageCreated.type) return this.supportMessageCreated(envelope);
+    if (SUPPORT_TICKET_EVENTS.has(type)) return this.ticketUpdated(envelope);
     if (type === UserSuspended.type) {
       this.emitter.disconnectUser(idOf(envelope, 'userId'), DisconnectReason.ACCOUNT_SUSPENDED);
       return;
@@ -224,6 +243,41 @@ export class RealtimeFanoutService {
       mediaId: idOf(envelope, 'mediaId'),
       status,
     });
+  }
+
+  /**
+   * The ticket room, plus the other side: the opener for an admin's or the server's line, the admins for
+   * the opener's. Internal notes go to admins only, never to the ticket room the opener may be in.
+   */
+  private supportMessageCreated(envelope: EventEnvelope): void {
+    const ticketId = idOf(envelope, 'ticketId');
+    const data = { ticketId, messageId: idOf(envelope, 'messageId') };
+    let rooms: string[];
+    if (envelope.payload.kind === MessageKind.INTERNAL_NOTE) rooms = [RealtimeRoom.ADMINS];
+    else if (SUPPORT_SIDE_SENDERS.has(envelope.payload.senderRole)) {
+      rooms = [RealtimeRoom.ticket(ticketId), RealtimeRoom.user(idOf(envelope, 'openerUserId'))];
+    } else rooms = [RealtimeRoom.ticket(ticketId), RealtimeRoom.ADMINS];
+    this.send(envelope, T.SUPPORT_MESSAGE_CREATED, rooms, data);
+  }
+
+  /** `support.ticket_updated` with the current status and assignee, to everyone who follows the ticket. */
+  private async ticketUpdated(envelope: EventEnvelope): Promise<void> {
+    const ticketId = idOf(envelope, 'ticketId');
+    const state = (await this.support.getTicketStates([ticketId])).get(ticketId);
+    if (!state) {
+      // Tickets are never deleted: a payload naming a missing one has nothing to show.
+      this.logger.warn('realtime fan-out: ticket not found, nothing sent', {
+        eventId: envelope.eventId,
+        eventType: envelope.eventType,
+      });
+      return;
+    }
+    this.send(
+      envelope,
+      T.SUPPORT_TICKET_UPDATED,
+      [RealtimeRoom.ticket(ticketId), RealtimeRoom.user(state.openerUserId), RealtimeRoom.ADMINS],
+      { ticketId, status: state.status, assignedAdminId: state.assignedAdminUserId },
+    );
   }
 
   private sendOrderUpdated(envelope: EventEnvelope, party: NotificationParty): void {

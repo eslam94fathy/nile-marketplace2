@@ -14,6 +14,11 @@ export const RealtimeMessageType = {
   SHIPMENT_UNASSIGNED: 'shipment.unassigned',
   PAYMENT_UPDATED: 'payment.updated',
   MEDIA_UPDATED: 'media.updated',
+  /** Spec 16: something changed on a ticket; the client refetches over REST. */
+  SUPPORT_MESSAGE_CREATED: 'support.message_created',
+  SUPPORT_TICKET_UPDATED: 'support.ticket_updated',
+  /** Relayed by the gateway from a client's `support.typing` signal, never stored. */
+  SUPPORT_TYPING: 'support.typing',
   /** Emitted by notifications after it stores an in-app row (spec 13 UC-NO-2). */
   NOTIFICATION_CREATED: 'notification.created',
   /** Sent just before the server closes the socket (RT-8). */
@@ -53,6 +58,13 @@ export interface RealtimeMessageData {
   [RealtimeMessageType.SHIPMENT_UNASSIGNED]: { shipmentId: string; sellerOrderId: string };
   [RealtimeMessageType.PAYMENT_UPDATED]: { orderId: string; paymentStatus: string };
   [RealtimeMessageType.MEDIA_UPDATED]: { mediaId: string; status: string };
+  [RealtimeMessageType.SUPPORT_MESSAGE_CREATED]: { ticketId: string; messageId: string };
+  [RealtimeMessageType.SUPPORT_TICKET_UPDATED]: {
+    ticketId: string;
+    status: string;
+    assignedAdminId: string | null;
+  };
+  [RealtimeMessageType.SUPPORT_TYPING]: { ticketId: string; userId: string; role: string };
   [RealtimeMessageType.NOTIFICATION_CREATED]: {
     notificationId: string;
     category: string;
@@ -69,5 +81,7 @@ export const RealtimeRoom = {
   customer: (customerId: string) => `customer:${customerId}`,
   seller: (sellerId: string) => `seller:${sellerId}`,
   agent: (agentId: string) => `agent:${agentId}`,
+  /** Joined on `ticket.subscribe` after `support.canView` (spec 15 §3.3). */
+  ticket: (ticketId: string) => `ticket:${ticketId}`,
   ADMINS: 'admins',
 } as const;

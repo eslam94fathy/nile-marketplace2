@@ -10,7 +10,12 @@ import {
   UNFINISHED_STATUSES,
   WAITING_FOR_ADMIN_STATUSES,
 } from '../enums';
-import { type NewSupportTicket, type SupportStats, type SupportTicket } from '../model/support-ticket.model';
+import {
+  type NewSupportTicket,
+  type SupportStats,
+  type SupportTicket,
+  type TicketState,
+} from '../model/support-ticket.model';
 import { type TicketPatch } from '../service/ticket-transitions';
 
 const T = SUPPORT_TABLES.TICKETS;
@@ -258,6 +263,25 @@ export class SupportTicketRepository {
       .orderBy([{ column: 'awaiting_admin_since' }, { column: 'id' }])
       .limit(limit);
     return rows.map((row) => row.id);
+  }
+
+  /** Status, opener and assignee per ticket, one query on the primary key (G20). */
+  async findStates(ids: readonly string[]): Promise<Map<string, TicketState>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.db
+      .knex<SupportTicketRow>(T)
+      .select('id', 'status', 'opener_user_id', 'assigned_admin_user_id')
+      .whereIn('id', [...new Set(ids)]);
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        {
+          status: row.status,
+          openerUserId: row.opener_user_id,
+          assignedAdminUserId: row.assigned_admin_user_id,
+        },
+      ]),
+    );
   }
 
   /** Existence on the primary key, optionally of one opener's ticket (G22). */

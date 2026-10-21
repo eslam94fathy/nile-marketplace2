@@ -3,7 +3,7 @@ import { type Server as HttpServer } from 'node:http';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { type Redis } from 'ioredis';
 import { Server, type Socket } from 'socket.io';
-import { type JwtVerifier } from '../../../lib/auth';
+import { isUserRole, type JwtVerifier } from '../../../lib/auth';
 import { type IClock } from '../../../lib/clock';
 import { type Env } from '../../../lib/config';
 import { type ILogger } from '../../../lib/logger';
@@ -12,11 +12,14 @@ import {
   type RealtimeMessage,
   RealtimeMessageType,
   realtimeChannelKey,
+  RealtimeRoom,
 } from '../../../lib/realtime';
+import { type ISupportDirectory } from '../../support';
 import {
   MAX_INBOUND_BYTES,
   MAX_TIMER_DELAY_MS,
   REALTIME_PATH,
+  RealtimeSignal,
   SHUTDOWN_SOCKET_DRAIN_MS,
   SIGNAL_WINDOW_MS,
 } from '../constants';
@@ -37,6 +40,8 @@ export interface RealtimeGatewayDeps {
   jwtVerifier: JwtVerifier;
   limiter: ConnectLimiter;
   profileRooms: ProfileRoomsService;
+  /** `ticket.subscribe` asks support whether the user may view the ticket (spec 16 §2). */
+  support: ISupportDirectory;
   /** The adapter's publisher and subscriber connections (a subscriber can't run other commands). */
   adapterRedis: { pub: Redis; sub: Redis };
 }
@@ -49,8 +54,26 @@ interface SessionData {
   expiresAt: Date;
 }
 
-/** Client → server signals the gateway handles (spec 15 §3.3). Support's arrive with spec 16 (RT-10). */
-const KNOWN_SIGNALS: ReadonlySet<string> = new Set();
+/** Client → server signals the gateway handles (spec 15 §3.3). */
+const KNOWN_SIGNALS: ReadonlySet<string> = new Set(Object.values(RealtimeSignal));
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type Ack = (reply: { ok: true } | { ok: false; code: AckErrorCode }) => void;
+
+/** `{ ticketId uuid }` and nothing else (DTO rules, conventions §1.1); null when invalid. */
+function ticketIdOf(payload: unknown): string | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const keys = Object.keys(payload);
+  const { ticketId } = payload as { ticketId?: unknown };
+  if (keys.length !== 1 || typeof ticketId !== 'string' || !UUID_PATTERN.test(ticketId)) return null;
+  return ticketId;
+}
+
+/** Signals may come without an ack callback: then there is nobody to answer. */
+function ackOf(value: unknown): Ack {
+  return typeof value === 'function' ? (value as Ack) : () => undefined;
+}
 
 /**
  * The Socket.IO gateway (spec 15 UC-RT-1, §3.3, UC-RT-4): WebSocket transport only, origin and token
@@ -149,10 +172,57 @@ export class RealtimeGateway {
     socket.on('disconnect', () => clearTimeout(expiry));
 
     this.limitSignals(socket);
+    this.handleSupportSignals(socket, session);
     socket.onAny((event: string) => {
       if (!KNOWN_SIGNALS.has(event)) this.deps.logger.debug('realtime signal ignored', { signal: event });
     });
     this.deps.logger.debug('realtime socket connected', { userId: session.userId, role: session.role });
+  }
+
+  /**
+   * Spec 15 §3.3: join a ticket's room after `support.canView`, leave it, and relay typing inside a
+   * joined room only. Never stored; the REST endpoints stay the source of truth.
+   */
+  private handleSupportSignals(socket: Socket, session: SessionData): void {
+    socket.on(RealtimeSignal.TICKET_SUBSCRIBE, (payload: unknown, ackFn: unknown) => {
+      void this.subscribe(socket, session, payload, ackOf(ackFn));
+    });
+    socket.on(RealtimeSignal.TICKET_UNSUBSCRIBE, (payload: unknown, ackFn: unknown) => {
+      const ack = ackOf(ackFn);
+      const ticketId = ticketIdOf(payload);
+      if (ticketId === null) return ack({ ok: false, code: AckErrorCode.VALIDATION_FAILED });
+      void socket.leave(RealtimeRoom.ticket(ticketId));
+      ack({ ok: true });
+    });
+    socket.on(RealtimeSignal.SUPPORT_TYPING, (payload: unknown) => {
+      const ticketId = ticketIdOf(payload);
+      if (ticketId === null) return;
+      const room = RealtimeRoom.ticket(ticketId);
+      if (!socket.rooms.has(room)) return;
+      const message: RealtimeMessage<typeof RealtimeMessageType.SUPPORT_TYPING> = {
+        type: RealtimeMessageType.SUPPORT_TYPING,
+        eventId: randomUUID(),
+        occurredAt: this.deps.clock.now().toISOString(),
+        data: { ticketId, userId: session.userId, role: session.role },
+      };
+      // Everyone in the room on every gateway, except the sender.
+      socket.to(room).emit(message.type, message);
+    });
+  }
+
+  private async subscribe(socket: Socket, session: SessionData, payload: unknown, ack: Ack): Promise<void> {
+    const ticketId = ticketIdOf(payload);
+    if (ticketId === null) return ack({ ok: false, code: AckErrorCode.VALIDATION_FAILED });
+    try {
+      const allowed =
+        isUserRole(session.role) && (await this.deps.support.canView(session.userId, session.role, ticketId));
+      if (!allowed) return ack({ ok: false, code: AckErrorCode.SUPPORT_TICKET_NOT_FOUND });
+      await socket.join(RealtimeRoom.ticket(ticketId));
+      ack({ ok: true });
+    } catch (error) {
+      this.deps.logger.error('ticket.subscribe failed', { userId: session.userId, ticketId, error });
+      ack({ ok: false, code: AckErrorCode.INTERNAL_ERROR });
+    }
   }
 
   /** RT-5: at most N signals per second per socket; over it, an ack answers RATE_LIMITED. */

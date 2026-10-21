@@ -6,7 +6,7 @@ import { registerCustomersLookups, registerCustomersModule } from './app/custome
 import { registerDeliveryAgentLookups, registerDeliveryModule, registerDeliveryWorker } from './app/delivery';
 import { registerFinanceModule, registerFinanceWorker } from './app/finance';
 import { registerSellersLookups, registerSellersModule } from './app/sellers';
-import { registerSupportModule, registerSupportWorker } from './app/support';
+import { registerSupportLookups, registerSupportModule, registerSupportWorker } from './app/support';
 import { Dependency, registerHealthModule } from './app/health';
 import { registerIdentityModule } from './app/identity';
 import { registerInventoryModule } from './app/inventory';
@@ -144,6 +144,8 @@ export function createRealtimeContainer(infra: RealtimeInfrastructure): Dependen
   registerCustomersLookups(container);
   registerSellersLookups(container);
   registerDeliveryAgentLookups(container);
+  // ticket.subscribe checks access through support (spec 15 §3.3).
+  registerSupportLookups(container);
   registerRealtimeGateway(container);
   return container;
 }

@@ -1,6 +1,6 @@
 # Spec 16 — support
 
-Status: **v1.2 APPROVED (2026-10-21):** §7.1 SU-17 system lines. **v1.1 APPROVED (2026-10-21):** §7.1 R2-P3 clarifications SU-7…SU-16 (every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (support tickets), R-8, R-9, R-19. §7 SU-1…SU-6 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.3 APPROVED (2026-10-21):** §7.1 SU-18…SU-22 (R2-P3 steps 4 and 6), §2 `getTicketStates`. **v1.2 APPROVED (2026-10-21):** §7.1 SU-17 system lines. **v1.1 APPROVED (2026-10-21):** §7.1 R2-P3 clarifications SU-7…SU-16 (every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (support tickets), R-8, R-9, R-19. §7 SU-1…SU-6 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -56,6 +56,7 @@ any but closed ──admin close──► closed            (spam, duplicates)
 |---|---|---|
 | `canView(userId, role, ticketId) → boolean` | realtime (spec 15 `ticket.subscribe`) | The opener, or any admin |
 | `getStats() → { open, awaitingAdmin, slaBreached }` | back-office dashboard (spec 20) | One aggregate query |
+| `getTicketStates(ticketIds) → Map<ticketId, { status, openerUserId, assignedAdminUserId }>` | realtime fan-out (`support.ticket_updated`, spec 15 §3.1) | Batched; unknown ids are left out (SU-19, v1.3) |
 
 ## 3. Use cases
 
@@ -209,3 +210,8 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | SU-15 | Event payloads are those of `02-events.md` §6.2 (they carry `ticketNumber`, which the notification text needs); §5 aligned | §5 |
 | SU-16 | Rate keys `RATE_LIMIT_SUPPORT_MESSAGE_POINTS` / `RATE_LIMIT_SUPPORT_MESSAGE_WINDOW_SECONDS` (ME-8 naming). `ticket_number` = `'T-' || lpad(nextval('support_ticket_number_seq')::text, 9, '0')` in the INSERT, as order numbers (SD-10) | §1.2, §6 |
 | SU-17 | System lines mark meaningful changes only: reopen, assign, unassign, resolve, close, auto-close. The reply-driven `awaiting_user ⇄ awaiting_admin` moves get no line (one per reply would clutter the timeline); `support.ticket_status_changed` still fires on every move. `last_message_at` is the latest message the opener can see: public messages and system lines move it, internal notes don't (v1.2) | §1.1, §1.2 |
+| SU-18 | The auto-assign of a first admin reply (SU-2) writes a `support_ticket.assigned` audit row like an explicit assign (v1.3) | UC-SU-2, SU-5 |
+| SU-19 | Public API `getTicketStates(ids)`: the realtime fan-out re-reads status and assignee for `support.ticket_updated`, so a late event shows the current state (as ordering's parties) (v1.3) | §2 |
+| SU-20 | In the admin message body, `internal` is optional; absent means a public reply (v1.3) | §4.2 |
+| SU-21 | `sort=awaitingAdminSince` lists only tickets waiting for an admin (`open`, `awaiting_admin`): others have no wait to sort on (v1.3) | §4.2 |
+| SU-22 | Assign, resolve and close don't mark the ticket read for the acting admin (an unread user message stays unread); all three answer `200 AdminTicketSummaryDto` (v1.3) | UC-SU-3, UC-SU-4, §4.2 |

@@ -33,6 +33,13 @@ export interface NewSupportTicket {
   at: Date;
 }
 
+/** What realtime shows of a ticket (spec 15 §3.1, SU-19). */
+export interface TicketState {
+  status: TicketStatus;
+  openerUserId: string;
+  assignedAdminUserId: string | null;
+}
+
 /** Back-office dashboard counts (spec 16 §2, spec 20 §3.2). `slaBreached` = waiting now with the flag set (SU-11). */
 export interface SupportStats {
   open: number;

@@ -23,7 +23,7 @@ const socket = io('https://api.example.com', {
 });
 ```
 
-On connect the server puts the socket in its rooms: `user:<userId>`, plus one for the role (`customer:<customerId>`, `seller:<sellerId>`, `agent:<agentId>` or `admins`). Clients never join rooms themselves.
+On connect the server puts the socket in its rooms: `user:<userId>`, plus one for the role (`customer:<customerId>`, `seller:<sellerId>`, `agent:<agentId>` or `admins`). The only room a client asks for is a support ticket's, with `ticket.subscribe` (see Signals).
 
 ### Connect errors
 
@@ -75,13 +75,25 @@ One domain event can produce several messages that share its `eventId` (for exam
 | `shipment.unassigned` | `{ shipmentId, sellerOrderId }` | The agent the shipment was taken from |
 | `payment.updated` | `{ orderId, paymentStatus }` | The customer: `paid`, `failed`, `expired`. After the Kashier redirect, wait for this (about 30 s) instead of polling. Fall back to `GET /orders/:id` every 5 s (RT-4) |
 | `media.updated` | `{ mediaId, status }` | The uploader: `ready` or `failed` |
+| `notification.created` | `{ notificationId, category, title, body, link }` | The recipient, after the in-app notification is stored (spec 13). `link` is a web app route or null |
+| `support.message_created` | `{ ticketId, messageId }` | Sockets in the ticket's room, plus the other side: the opener for an admin reply or a system line, the `admins` room for the opener's message. An internal note goes to `admins` only. Refetch `…/messages` |
+| `support.ticket_updated` | `{ ticketId, status, assignedAdminId }` | The ticket's room, the opener and `admins`, when a ticket opens, is assigned or changes status. `status` and `assignedAdminId` are current |
+| `support.typing` | `{ ticketId, userId, role }` | The others in the ticket's room, relayed from a `support.typing` signal. Never stored; show it for a few seconds |
 | `session.ended` | `{ reason }` | That socket, just before the server closes it (see above) |
 
-Arrive in later Release 2 phases: `support.*` and the ticket signals (spec 16), `notification.created` (spec 13), `return.updated` and refund `payment.updated` (specs 18, 10).
+Arrive in later Release 2 phases: `return.updated` and refund `payment.updated` (specs 18, 10).
 
 ## Signals (client → server)
 
-There are none yet; the support ticket signals come with spec 16. The gateway ignores unknown events. The rules for every signal:
+Emit with an ack where one is listed: `await socket.emitWithAck(signal, payload)`.
+
+| Signal | Payload | Effect | Ack |
+|---|---|---|---|
+| `ticket.subscribe` | `{ ticketId }` | Joins the ticket's room, if you are its opener or an admin | `{ ok: true }`, or `{ ok: false, code }` with `SUPPORT_TICKET_NOT_FOUND` (missing or not yours), `VALIDATION_FAILED`, `RATE_LIMITED`, `INTERNAL_ERROR` (retry) |
+| `ticket.unsubscribe` | `{ ticketId }` | Leaves the room | `{ ok: true }` or `VALIDATION_FAILED` |
+| `support.typing` | `{ ticketId }` | Relayed as `support.typing` to the others in the room; ignored unless you joined it | none |
+
+Rooms are per socket: subscribe again after every reconnect, for the ticket on screen. The gateway ignores unknown events. The rules for every signal:
 
 - At most `REALTIME_SIGNAL_RATE_PER_SECOND` signals (5) per second per socket. A signal over the limit sent with an ack gets `{ ok: false, code: 'RATE_LIMITED' }`.
 - At most 4 KB per frame. A larger frame closes the socket.

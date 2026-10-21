@@ -33,7 +33,7 @@ import { SupportViewService } from './service/support-view.service';
 
 export { SupportErrorCode } from './errors';
 export { TicketCategory, TicketStatus, TicketOpenerRole, MessageKind } from './enums';
-export type { SupportStats } from './model/support-ticket.model';
+export type { SupportStats, TicketState } from './model/support-ticket.model';
 /** Inject with `TOKENS.SupportDirectory`. */
 export type { ISupportDirectory } from './service/support-directory.service';
 
@@ -61,12 +61,14 @@ export function registerSupportModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.SupportAdminController, SupportAdminController);
 }
 
-/** worker process: the support jobs (spec 16 UC-SU-5); no media, no HTTP. */
+/** worker process: the support jobs (spec 16 UC-SU-5) and the public lookups; no media, no HTTP. */
 export function registerSupportWorker(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.SupportTicketRepository, SupportTicketRepository);
   container.registerSingleton(TOKENS.SupportMessageRepository, SupportMessageRepository);
   container.registerSingleton(TOKENS.SupportTimelineService, SupportTimelineService);
   container.registerSingleton(TOKENS.SupportJobs, SupportJobs);
+  // realtime.fanout re-reads ticket states through the public API (SU-19).
+  container.registerSingleton(TOKENS.SupportDirectory, SupportDirectory);
 }
 
 /** `support-jobs`: auto-close and the SLA flag, one advisory-locked job (architecture §14 jobs). */

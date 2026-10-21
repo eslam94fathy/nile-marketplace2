@@ -1,6 +1,6 @@
 # Spec 15 — realtime
 
-Status: **v1.1 APPROVED (2026-10-20):** §9 R2-P2 implementation clarifications RT-8…RT-19 (every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.3 (realtime rules), R-4 (web client), R-5, R-21. §7 RT-1…RT-7 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.2 APPROVED (2026-10-21):** §9 RT-20 (R2-P3). **v1.1 APPROVED (2026-10-20):** §9 R2-P2 implementation clarifications RT-8…RT-19 (every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.3 (realtime rules), R-4 (web client), R-5, R-21. §7 RT-1…RT-7 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -108,7 +108,7 @@ Published: none.
 Consumed (queue `realtime.fanout`): `order.placed`, `order.closed`, `seller_order.accepted`, `seller_order.ready_for_pickup`, `seller_order.items_cancelled`, `seller_order.cancelled`, `seller_order.returned`, `seller_order.delivered`, `payment.paid`, `payment.failed`, `payment.expired`, `shipment.assigned`, `shipment.picked_up`, `shipment.out_for_delivery`, `shipment.attempt_failed`, `shipment.delivered`, `media.ready`, `media.failed`, `support.message_created`, `support.ticket_opened`, `support.ticket_assigned`, `support.ticket_status_changed`, `user.suspended`.
 
 ## 6. Error codes
-Connect errors (`connect_error.data.code`): `UNAUTHENTICATED`, `FORBIDDEN`, `RATE_LIMITED`, `ORIGIN_NOT_ALLOWED`. Ack codes: `SUPPORT_TICKET_NOT_FOUND`, `VALIDATION_FAILED`, `RATE_LIMITED`.
+Connect errors (`connect_error.data.code`): `UNAUTHENTICATED`, `FORBIDDEN`, `RATE_LIMITED`, `ORIGIN_NOT_ALLOWED`. Ack codes: `SUPPORT_TICKET_NOT_FOUND`, `VALIDATION_FAILED`, `RATE_LIMITED`, `INTERNAL_ERROR` (RT-20).
 Disconnect reasons: `token_expired`, `server_shutting_down`, `account_suspended`.
 Log event codes: `REALTIME_EMIT_FAILED` (warn).
 
@@ -162,3 +162,4 @@ No re-read for returns: `return.status_changed` carries the customer and seller 
 | RT-17 | The fan-out runs on a **stateless** consumer kind of the consumer host: no transaction, no `processed_events` row, a throw retries as usual. A malformed payload or an unmapped event goes to the DLQ; an order the re-read can't find sends nothing (`warn`) | UC-RT-2 |
 | RT-18 | `seller_order.placed` is not sent for a seller order still `pending_payment` (it is hidden from sellers, spec 09 §4.2). A Kashier order publishes `order.placed` when it is paid, so its sellers get it then | §3.1 |
 | RT-19 | On shutdown the gateway waits up to 1 s for the `session.ended` frames to flush before it closes the server (closing at once dropped them) | UC-RT-4 |
+| RT-20 | `ticket.subscribe` is acked `INTERNAL_ERROR` when the access check fails (database down); the client retries. Logged at `error` (v1.2) | §3.3, §6 |

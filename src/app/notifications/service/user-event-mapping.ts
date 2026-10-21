@@ -10,6 +10,8 @@ import {
   ShipmentAssigned,
   ShipmentAttemptFailed,
   ShipmentOutForDelivery,
+  SupportMessageCreated,
+  SupportTicketStatusChanged,
   UserSessionsRevoked,
   UserSuspended,
 } from '../../../lib/events';
@@ -17,7 +19,7 @@ import { type NotificationParty, SellerOrderCancelReason, SellerOrderStatus } fr
 import { NotificationLink } from '../constants';
 import { NotificationCategory, NotificationType } from '../enums';
 
-/** The events of spec 13 §8.2 that exist by R2-P2 (support, reviews, returns come in their phases). */
+/** The events of spec 13 §8.2 that exist by R2-P3 (reviews, returns come in their phases). */
 export const USER_EVENTS = [
   OrderPlaced,
   SellerOrderAccepted,
@@ -28,6 +30,8 @@ export const USER_EVENTS = [
   ShipmentAssigned,
   ShipmentOutForDelivery,
   ShipmentAttemptFailed,
+  SupportMessageCreated,
+  SupportTicketStatusChanged,
   // Not notifications: they drop the user's push subscriptions (UC-NO-4, NO-8).
   UserSuspended,
   UserSessionsRevoked,
@@ -39,14 +43,24 @@ export const SESSION_END_EVENTS: ReadonlySet<string> = new Set([
   UserSessionsRevoked.type,
 ]);
 
+/** Support events name their recipients by user id and carry the ticket number: no lookup (NO-31). */
+const SUPPORT_EVENTS: ReadonlySet<string> = new Set([
+  SupportMessageCreated.type,
+  SupportTicketStatusChanged.type,
+]);
+
 /** Events whose mapping needs the order's parties (order number, customer, seller orders). */
 export const NEEDS_PARTY: ReadonlySet<string> = new Set(
   USER_EVENTS.filter(
-    (contract) => contract !== ShipmentAssigned && !SESSION_END_EVENTS.has(contract.type),
+    (contract) =>
+      contract !== ShipmentAssigned &&
+      !SESSION_END_EVENTS.has(contract.type) &&
+      !SUPPORT_EVENTS.has(contract.type),
   ).map((contract) => contract.type),
 );
 
-export type RecipientKind = 'customer' | 'seller' | 'agent';
+/** `user`: the id is already a user id (support). */
+export type RecipientKind = 'customer' | 'seller' | 'agent' | 'user';
 
 /** One notification for one profile, before its user id is resolved. */
 export interface NotificationDraft {
@@ -169,6 +183,21 @@ export function mapUserEvent(
           body: `We couldn't deliver order #${n}.`,
         }),
       ];
+    case SupportMessageCreated.type:
+      return supportMessageCreated(envelope);
+    case SupportTicketStatusChanged.type:
+      return envelope.payload.to === TICKET_RESOLVED
+        ? [
+            {
+              recipient: { kind: 'user', id: idOf(envelope, 'openerUserId') },
+              category: NotificationCategory.SUPPORT,
+              type: NotificationType.SUPPORT_RESOLVED,
+              title: 'Ticket resolved',
+              body: `${ticketNumberOf(envelope)} was marked resolved.`,
+              link: NotificationLink.supportTicket(idOf(envelope, 'ticketId')),
+            },
+          ]
+        : [];
     case SellerOrderDelivered.type:
       return [
         customer({
@@ -215,4 +244,52 @@ function sellerOrderCancelled(
     });
   }
   return drafts;
+}
+
+/** Support statuses and roles as sent in the payloads (spec 02 §6.2); support's enums mirror them. */
+const TICKET_RESOLVED = 'resolved';
+const PUBLIC_MESSAGE = 'message';
+const USER_SENDERS: ReadonlySet<unknown> = new Set(['customer', 'seller']);
+const TICKET_NUMBER_PATTERN = /^T-\d{9}$/;
+
+function ticketNumberOf(envelope: EventEnvelope): string {
+  const value = envelope.payload.ticketNumber;
+  if (typeof value !== 'string' || !TICKET_NUMBER_PATTERN.test(value)) {
+    throw new PermanentEventError(`${envelope.eventType} payload has no valid ticketNumber`);
+  }
+  return value;
+}
+
+/**
+ * A public admin message → the opener; a user message on an assigned ticket → the assignee (spec 13
+ * §8.2). Notes and system lines notify nobody; new tickets reach admins by socket only (NO-9).
+ */
+function supportMessageCreated(envelope: EventEnvelope): NotificationDraft[] {
+  if (envelope.payload.kind !== PUBLIC_MESSAGE) return [];
+  const ticketId = idOf(envelope, 'ticketId');
+  const ticketNumber = ticketNumberOf(envelope);
+  if (envelope.payload.senderRole === 'admin') {
+    return [
+      {
+        recipient: { kind: 'user', id: idOf(envelope, 'openerUserId') },
+        category: NotificationCategory.SUPPORT,
+        type: NotificationType.SUPPORT_REPLY,
+        title: 'New reply',
+        body: `Support replied on ${ticketNumber}.`,
+        link: NotificationLink.supportTicket(ticketId),
+      },
+    ];
+  }
+  if (!USER_SENDERS.has(envelope.payload.senderRole) || envelope.payload.assignedAdminUserId === null)
+    return [];
+  return [
+    {
+      recipient: { kind: 'user', id: idOf(envelope, 'assignedAdminUserId') },
+      category: NotificationCategory.SUPPORT,
+      type: NotificationType.SUPPORT_USER_MESSAGE,
+      title: 'New message',
+      body: `${ticketNumber} has a new message.`,
+      link: NotificationLink.adminSupportTicket(ticketId),
+    },
+  ];
 }
