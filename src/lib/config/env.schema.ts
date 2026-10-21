@@ -275,6 +275,12 @@ const storageShape = {
   STORAGE_SECRET_ACCESS_KEY: z.string().min(1).optional(),
 };
 
+/** reviews (spec 17 §1 limits, R-10), api only. */
+const reviewsApiShape = {
+  REVIEW_WINDOW_DAYS: positiveInt(3_650),
+  REVIEW_EDIT_WINDOW_DAYS: positiveInt(3_650),
+};
+
 /** support (spec 16 §1 limits), api only. */
 const supportApiShape = {
   SUPPORT_MAX_OPEN_TICKETS_PER_USER: positiveInt(1_000),
@@ -524,6 +530,7 @@ export const apiEnvSchema = z
     ...mediaApiShape,
     ...pushApiShape,
     ...supportApiShape,
+    ...reviewsApiShape,
   })
   .superRefine((env, ctx) => {
     refinePool(env, ctx);

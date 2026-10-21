@@ -34,6 +34,9 @@ export * from './support-ticket-opened.event';
 export * from './support-message-created.event';
 export * from './support-ticket-assigned.event';
 export * from './support-ticket-status-changed.event';
+export * from './review-created.event';
+export * from './review-replied.event';
+export * from './review-rating-changed.event';
 
 import { CodRemittanceConfirmed } from './cod-remittance-confirmed.event';
 import { InventoryStockStatusChanged } from './inventory-stock-status-changed.event';
@@ -49,6 +52,9 @@ import { PaymentFailed } from './payment-failed.event';
 import { PaymentPaid } from './payment-paid.event';
 import { PaymentRefundRecorded } from './payment-refund-recorded.event';
 import { PayoutRecorded } from './payout-recorded.event';
+import { ReviewCreated } from './review-created.event';
+import { ReviewRatingChanged } from './review-rating-changed.event';
+import { ReviewReplied } from './review-replied.event';
 import { SellerApproved } from './seller-approved.event';
 import { SellerOrderAccepted } from './seller-order-accepted.event';
 import { SellerOrderCancelled } from './seller-order-cancelled.event';
@@ -103,4 +109,7 @@ export const ALL_EVENT_CONTRACTS = [
   SupportMessageCreated,
   SupportTicketAssigned,
   SupportTicketStatusChanged,
+  ReviewCreated,
+  ReviewReplied,
+  ReviewRatingChanged,
 ] as const;

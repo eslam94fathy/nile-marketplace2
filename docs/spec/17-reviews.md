@@ -1,6 +1,6 @@
 # Spec 17 — reviews
 
-Status: **v1.1 APPROVED (2026-10-21):** §7.1 R2-P4 clarifications RV-9…RV-13 (every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (reviews, ratings), R-10, R-11, `14-media.md` (review images). §7 RV-1…RV-8 answered 2026-10-20 (every recommendation accepted). The wishlist (R-12) is in spec 04 §8, the rating projections in spec 05 §8 and spec 06 §9.
+Status: **v1.2 APPROVED (2026-10-21):** §7.1 RV-14 aggregate writes. **v1.1 APPROVED (2026-10-21):** §7.1 R2-P4 clarifications RV-9…RV-13 (every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (reviews, ratings), R-10, R-11, `14-media.md` (review images). §7 RV-1…RV-8 answered 2026-10-20 (every recommendation accepted). The wishlist (R-12) is in spec 04 §8, the rating projections in spec 05 §8 and spec 06 §9.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -199,3 +199,4 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | RV-11 | Notification links (spec 13 NO-32): the seller `/seller/reviews`, the reviewer `/me/reviews/<reviewId>` | §5 |
 | RV-12 | Reviewable items: reviews reads the customer's reviewed product ids first (one query on `uq_product_reviews_customer_id_product_id`) and passes them to `listDeliveredItems` as `excludeProductIds` (spec 09 v2.2 OR-26), so every page is full | §4.2 |
 | RV-13 | Review images stay public (spec 14): hiding a review removes it and its images from every response, but a URL already copied keeps working until the review is deleted and media cleanup runs. Accepted for R2 | UC-RV-4 |
+| RV-14 | The aggregate write (§1.2) is one atomic statement per subject, never read-then-write: an `INSERT … ON CONFLICT DO UPDATE` upsert for pure increments (create, unhide), a plain `UPDATE … RETURNING` for any decrement (rating edit, delete, hide). Postgres checks the CHECKs (counts >= 0) on an upsert's proposed row even when it conflicts, so a decrement can't be an upsert; its row always exists (the review counted before), and a missing one is an error (v1.2) | §1.2 |

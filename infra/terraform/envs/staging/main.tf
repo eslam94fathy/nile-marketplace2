@@ -101,6 +101,10 @@ module "environment" {
     RATE_LIMIT_SUPPORT_MESSAGE_WINDOW_SECONDS = "60"
     SUPPORT_MAX_OPEN_TICKETS_PER_USER         = "20"
 
+    # reviews (spec 17 §1, R-10): write until delivery + 60 days, edit until creation + 30 days.
+    REVIEW_WINDOW_DAYS      = "60"
+    REVIEW_EDIT_WINDOW_DAYS = "30"
+
     # realtime gateway (spec 15 §6): a reconnect per tab every 15 min, plus deploy storms (RT-5).
     RATE_LIMIT_REALTIME_CONNECT_POINTS         = "60"
     RATE_LIMIT_REALTIME_CONNECT_WINDOW_SECONDS = "60"

@@ -238,6 +238,16 @@ export const TOKENS = {
   /** Public API of support (spec 16 §2), read by realtime and the back-office. */
   SupportDirectory: Symbol.for('SupportDirectory'),
 
+  // reviews module (spec 17)
+  ProductReviewRepository: Symbol.for('ProductReviewRepository'),
+  ReviewImageRepository: Symbol.for('ReviewImageRepository'),
+  ReviewReplyRepository: Symbol.for('ReviewReplyRepository'),
+  RatingStatsRepository: Symbol.for('RatingStatsRepository'),
+  RatingAggregatesService: Symbol.for('RatingAggregatesService'),
+  ReviewService: Symbol.for('ReviewService'),
+  ReviewViewService: Symbol.for('ReviewViewService'),
+  MyReviewController: Symbol.for('MyReviewController'),
+
   // health module
   HealthService: Symbol.for('HealthService'),
   HealthChecks: Symbol.for('HealthChecks'),
