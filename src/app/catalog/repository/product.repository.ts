@@ -57,6 +57,8 @@ const COLUMNS = [
   'max_price',
   'in_stock',
   'published_at',
+  'rating_count',
+  'rating_avg',
   'deleted_at',
   'created_at',
   'updated_at',
@@ -115,6 +117,8 @@ function toModel(row: ProductRow): Product {
     maxPrice: row.max_price === null ? null : Money.of(row.max_price),
     inStock: row.in_stock,
     publishedAt: row.published_at,
+    ratingCount: row.rating_count,
+    ratingAvg: row.rating_avg,
     deletedAt: row.deleted_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -320,6 +324,29 @@ export class ProductRepository {
       relevance?: string;
     })[];
     return rows.map((row) => ({ product: toModel(row), relevance: row.relevance ?? null }));
+  }
+
+  /** Batched by id, deleted and hidden ones included (product cards, spec 06 §9.3). Unknown ids are left out. */
+  async findByIds(ids: readonly string[]): Promise<Product[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .knex<ProductTable>(T)
+      .select(...COLUMNS)
+      .whereIn('id', [...new Set(ids)]);
+    return (rows as ProductRow[]).map(toModel);
+  }
+
+  /** VIS as an EXISTS on the primary key (G22): the review endpoints' PRODUCT_NOT_FOUND (spec 06 §9.3). */
+  async existsVisible(id: string): Promise<boolean> {
+    const visible = this.db
+      .knex<ProductTable>(T)
+      .select(this.db.knex.raw('1'))
+      .where({ id, status: PRODUCT_STATUS_ACTIVE, seller_active: true })
+      .whereNull('deleted_at');
+    const result = await this.db.knex.raw<{ rows: { exists: boolean }[] }>('SELECT EXISTS (?) AS "exists"', [
+      visible,
+    ]);
+    return result.rows[0]?.exists ?? false;
   }
 
   /** A visible (VIS) product by id or by slug (uq_products_slug); null when hidden, deleted or missing. */

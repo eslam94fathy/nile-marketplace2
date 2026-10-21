@@ -1,6 +1,12 @@
 import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '../../../lib/di';
 import { type NotificationParty, type OrderLink } from '../model/notification-party.model';
+import {
+  type DeliveredItem,
+  type DeliveredItemsQuery,
+  type ReviewableItem,
+} from '../model/reviewable-item.model';
+import { type OrderItemRepository } from '../repository/order-item.repository';
 import { type OrderRepository } from '../repository/order.repository';
 import { type SellerOrderRepository } from '../repository/seller-order.repository';
 
@@ -28,6 +34,10 @@ export interface IOrderingDirectory {
   getSellerOrderLink(sellerId: string, sellerOrderId: string): Promise<OrderLink | null>;
   /** Batched; unknown ids are left out. */
   getOrderNumbers(orderIds: readonly string[]): Promise<Map<string, string>>;
+  /** A delivered item of the customer (spec 17 UC-RV-1); null when not theirs or not delivered. */
+  getReviewableItem(customerId: string, orderItemId: string): Promise<ReviewableItem | null>;
+  /** Open delivered items for `GET /me/reviewable-items`, newest delivery first (OR-26). */
+  listDeliveredItems(customerId: string, query: DeliveredItemsQuery): Promise<DeliveredItem[]>;
 }
 
 @injectable()
@@ -35,6 +45,7 @@ export class OrderingDirectory implements IOrderingDirectory {
   constructor(
     @inject(TOKENS.OrderRepository) private readonly orders: OrderRepository,
     @inject(TOKENS.SellerOrderRepository) private readonly sellerOrders: SellerOrderRepository,
+    @inject(TOKENS.OrderItemRepository) private readonly items: OrderItemRepository,
   ) {}
 
   async getNotificationParties(ids: {
@@ -81,5 +92,13 @@ export class OrderingDirectory implements IOrderingDirectory {
 
   getOrderNumbers(orderIds: readonly string[]): Promise<Map<string, string>> {
     return this.orders.findOrderNumbers(orderIds);
+  }
+
+  getReviewableItem(customerId: string, orderItemId: string): Promise<ReviewableItem | null> {
+    return this.items.findReviewable(customerId, orderItemId);
+  }
+
+  listDeliveredItems(customerId: string, query: DeliveredItemsQuery): Promise<DeliveredItem[]> {
+    return this.items.listDelivered(customerId, query);
   }
 }

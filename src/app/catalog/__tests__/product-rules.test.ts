@@ -113,6 +113,8 @@ describe('product rules', () => {
         maxPrice: null,
         inStock: false,
         publishedAt: null,
+        ratingCount: 0,
+        ratingAvg: null,
         deletedAt: null,
         createdAt: new Date(),
         updatedAt: new Date(),

@@ -59,6 +59,8 @@ export { CatalogErrorCode } from './errors';
 export type { PurchasableVariant } from './model/purchasable-variant.model';
 /** Inject with `TOKENS.CatalogDirectory`. */
 export type { ICatalogDirectory } from './service/catalog-directory.service';
+export type { ProductCard } from './model/product-card.model';
+export { ProductCardDto, toProductCardDto } from './dto/product-card.dto';
 
 /**
  * api process. Needs sellers' SellerDirectory, inventory's InventoryService and media's MediaService
