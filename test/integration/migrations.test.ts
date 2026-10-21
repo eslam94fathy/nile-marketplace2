@@ -1645,4 +1645,76 @@ describe('migrations on a real Postgres 18', () => {
       expect(plan).not.toContain('Sort');
     });
   });
+
+  describe('back-office (R2-P5)', () => {
+    it('products: the admin block is both columns or neither, with a real reason', async () => {
+      const { insertSeller, insertCategory, insertProduct } = catalogFixtures(db);
+      const { sellerId } = await insertSeller();
+      const categoryId = await insertCategory();
+      const fails = async (overrides: Record<string, unknown>) =>
+        (await pgFailure(() => insertProduct(sellerId, categoryId, overrides))).constraint;
+      expect(await fails({ admin_blocked_at: new Date() })).toBe('chk_products_admin_block');
+      expect(await fails({ admin_block_reason: 'Counterfeit' })).toBe('chk_products_admin_block');
+      expect(await fails({ admin_blocked_at: new Date(), admin_block_reason: 'no' })).toBe(
+        'chk_products_admin_block',
+      );
+      await insertProduct(sellerId, categoryId, {
+        admin_blocked_at: new Date(),
+        admin_block_reason: 'Counterfeit',
+      });
+    });
+
+    it('seller_orders: admin_cancelled is a cancel reason now', async () => {
+      const { sellerOrderId } = await orderFixtures(db).insertOrderChain();
+      const cancel = (reason: string) =>
+        db('seller_orders')
+          .where({ id: sellerOrderId })
+          .update({ status: 'cancelled', cancel_reason: reason, cancelled_at: new Date() });
+      expect((await pgFailure(() => cancel('fraud'))).constraint).toBe('chk_seller_orders_cancel_reason');
+      await cancel('admin_cancelled');
+    });
+
+    it('the back-office indexes are valid and serve their queries', async () => {
+      const names = [
+        'idx_orders_placed_at',
+        'idx_seller_orders_delivered_at',
+        'idx_users_email_pattern',
+        'idx_customers_name_trgm',
+        'idx_customers_phone',
+      ];
+      const valid = await db.raw<{ rows: { name: string; valid: boolean }[] }>(
+        `SELECT c.relname AS name, i.indisvalid AS valid
+           FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = ANY(?)`,
+        [names],
+      );
+      expect(
+        valid.rows
+          .filter((row) => row.valid)
+          .map((row) => row.name)
+          .sort(),
+      ).toEqual([...names].sort());
+
+      const planOf = (sql: string) =>
+        db.transaction(async (trx) => {
+          await trx.raw('SET LOCAL enable_seqscan = off');
+          const result = await trx.raw<{ rows: { 'QUERY PLAN': string }[] }>(`EXPLAIN ${sql}`);
+          return result.rows.map((row) => row['QUERY PLAN']).join('\n');
+        });
+      for (const [sql, index] of [
+        [`SELECT id FROM orders WHERE placed_at >= now() - interval '1 day'`, 'idx_orders_placed_at'],
+        [
+          `SELECT seller_id, sum(subtotal) FROM seller_orders WHERE delivered_at >= now() - interval '30 days' GROUP BY seller_id`,
+          'idx_seller_orders_delivered_at',
+        ],
+        [`SELECT id FROM users WHERE email LIKE 'mona%'`, 'idx_users_email_pattern'],
+        [
+          `SELECT id FROM customers WHERE (first_name || ' ' || last_name) ILIKE '%mona a%'`,
+          'idx_customers_name_trgm',
+        ],
+        [`SELECT id FROM customers WHERE phone = '+201001234567'`, 'idx_customers_phone'],
+      ] as const) {
+        expect(await planOf(sql), sql).toContain(index);
+      }
+    });
+  });
 });

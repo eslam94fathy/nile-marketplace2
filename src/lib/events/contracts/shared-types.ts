@@ -24,7 +24,8 @@ export type SellerOrderCancelReason =
   | 'seller_cancelled'
   | 'seller_acceptance_timeout'
   | 'payment_failed'
-  | 'payment_expired';
+  | 'payment_expired'
+  | 'admin_cancelled';
 
 export type ItemCancelReason = 'out_of_stock' | 'seller_request' | 'other';
 

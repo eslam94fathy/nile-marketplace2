@@ -32,6 +32,8 @@ export const SellerOrderCancelReason = {
   SELLER_ACCEPTANCE_TIMEOUT: 'seller_acceptance_timeout',
   PAYMENT_FAILED: 'payment_failed',
   PAYMENT_EXPIRED: 'payment_expired',
+  /** An admin cancelled it (spec 09 §8.4); the free-text reason is for admins only (OR-19). */
+  ADMIN_CANCELLED: 'admin_cancelled',
 } as const;
 export type SellerOrderCancelReason = (typeof SellerOrderCancelReason)[keyof typeof SellerOrderCancelReason];
 

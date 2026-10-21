@@ -70,6 +70,16 @@ import * as m20261021120007 from './20261021120007_create_review_replies';
 import * as m20261021120008 from './20261021120008_create_review_rating_stats';
 import * as m20261021120009 from './20261021120009_create_wishlist_items';
 import * as m20261021120010 from './20261021120010_add_review_audit_actions';
+import * as m20261021140001 from './20261021140001_add_products_admin_block';
+import * as m20261021140002 from './20261021140002_validate_products_admin_block';
+import * as m20261021140003 from './20261021140003_add_seller_orders_admin_cancelled';
+import * as m20261021140004 from './20261021140004_validate_seller_orders_cancel_reason';
+import * as m20261021140005 from './20261021140005_add_orders_placed_at_index';
+import * as m20261021140006 from './20261021140006_add_seller_orders_delivered_at_index';
+import * as m20261021140007 from './20261021140007_add_users_email_pattern_index';
+import * as m20261021140008 from './20261021140008_add_customers_name_trgm_index';
+import * as m20261021140009 from './20261021140009_add_customers_phone_index';
+import * as m20261021140010 from './20261021140010_add_backoffice_audit_actions';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -145,5 +155,15 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261021120008_create_review_rating_stats', module: m20261021120008 },
   { name: '20261021120009_create_wishlist_items', module: m20261021120009 },
   { name: '20261021120010_add_review_audit_actions', module: m20261021120010 },
+  { name: '20261021140001_add_products_admin_block', module: m20261021140001 },
+  { name: '20261021140002_validate_products_admin_block', module: m20261021140002 },
+  { name: '20261021140003_add_seller_orders_admin_cancelled', module: m20261021140003 },
+  { name: '20261021140004_validate_seller_orders_cancel_reason', module: m20261021140004 },
+  { name: '20261021140005_add_orders_placed_at_index', module: m20261021140005 },
+  { name: '20261021140006_add_seller_orders_delivered_at_index', module: m20261021140006 },
+  { name: '20261021140007_add_users_email_pattern_index', module: m20261021140007 },
+  { name: '20261021140008_add_customers_name_trgm_index', module: m20261021140008 },
+  { name: '20261021140009_add_customers_phone_index', module: m20261021140009 },
+  { name: '20261021140010_add_backoffice_audit_actions', module: m20261021140010 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

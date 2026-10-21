@@ -86,6 +86,12 @@ export const AUDIT_ACTIONS = {
   'review.unhidden': { target: T.REVIEW, fields: STATUS },
   'review_reply.hidden': { target: T.REVIEW_REPLY, fields: ['hidden'] },
   'review_reply.unhidden': { target: T.REVIEW_REPLY, fields: ['hidden'] },
+  // catalog (spec 20 §3.4): the reason is the entry's `reason`
+  'product.blocked': { target: T.PRODUCT, fields: ['adminBlocked'] },
+  'product.unblocked': { target: T.PRODUCT, fields: ['adminBlocked'] },
+  // ordering (spec 09 §8.4): the reason is the entry's `reason`
+  'seller_order.admin_cancelled': { target: T.SELLER_ORDER, fields: STATUS },
+  'order.admin_cancelled': { target: T.ORDER, fields: STATUS },
   // finance (spec 12 §1.3)
   'cod_remittance.recorded': { target: T.COD_REMITTANCE, fields: ['amount', 'agentId'] },
   'payout.recorded': {
