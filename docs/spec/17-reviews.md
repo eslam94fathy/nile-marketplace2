@@ -1,6 +1,6 @@
 # Spec 17 — reviews
 
-Status: **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (reviews, ratings), R-10, R-11, `14-media.md` (review images). §7 RV-1…RV-8 answered 2026-10-20 (every recommendation accepted). The wishlist (R-12) is in spec 04 §8, the rating projections in spec 05 §8 and spec 06 §9.
+Status: **v1.1 APPROVED (2026-10-21):** §7.1 R2-P4 clarifications RV-9…RV-13 (every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (reviews, ratings), R-10, R-11, `14-media.md` (review images). §7 RV-1…RV-8 answered 2026-10-20 (every recommendation accepted). The wishlist (R-12) is in spec 04 §8, the rating projections in spec 05 §8 and spec 06 §9.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -52,10 +52,10 @@ None. Only event contracts.
 ## 3. Use cases
 
 ### UC-RV-1 Write a review (customer)
-1. `ordering.getReviewableItem(customerId, orderItemId)` (spec 09 v2.0 §8) → `{ orderItemId, productId, variantId, sellerId, deliveredAt }` or `null`. `null`, not delivered, or fully cancelled → `422 REVIEW_NOT_ALLOWED`.
+1. `ordering.getReviewableItem(customerId, orderItemId)` (spec 09 v2.0 §8) → `{ orderItemId, productId, variantId, sellerId, deliveredAt, attributes }` or `null` (RV-10). `null`, not delivered, or fully cancelled → `422 REVIEW_NOT_ALLOWED`.
 2. `deliveredAt + REVIEW_WINDOW_DAYS < now` → `422 REVIEW_WINDOW_CLOSED`.
 3. One transaction:
-   - insert the review (`status = published`, the snapshot `product_id`, `seller_id`, `order_item_id`, `variant_id`)
+   - insert the review (`status = published`, the snapshot `product_id`, `seller_id`, `order_item_id`, `variant_id`, `variant_options`)
    - `media.claim(imageMediaIds, { purpose: review_image, ownerUserId }, trx)`, then insert `review_images` (positions 0..n-1)
    - update both aggregates (§1.2)
    - outbox `review.created`, `review.rating_changed`
@@ -189,3 +189,13 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | RV-6 | Reviewer name shown | **Rec:** first name + last initial ("Mona A."), from customers (new batched `getDisplayNames`) · or always anonymous ("Verified buyer") |
 | RV-7 | User reports of abusive reviews | **Rec:** not in R2; admins find reviews through the admin list (filter by rating, product, seller) and hide them · or a "report" button with a report queue |
 | RV-8 | Review notifications | **Rec:** in-app + push under the `orders` category: the seller on a new review ("New review on one of your products"), the reviewer on a seller reply ("The seller replied to your review"); no product names in the push text (R-7 style) · or no notifications for reviews |
+
+### 7.1 Clarifications (R2-P4 implementation, approved 2026-10-21)
+
+| # | Clarification | Where |
+|---|---|---|
+| RV-9 | `GET /me/reviewable-items` pages on `date_trunc('milliseconds', seller_orders.delivered_at)` then the order item id: the column stays `TIMESTAMPTZ` (changing its type rewrites a live table, CLAUDE.md §6.1), and the list is one customer's, so it needs no index (database D-19) | §4.2 |
+| RV-10 | `variantOptions` is a snapshot: `product_reviews.variant_options JSONB` copies the order item's attributes at write time (`getReviewableItem` returns them), so the public list never calls ordering. Edits keep it | UC-RV-1, §4 |
+| RV-11 | Notification links (spec 13 NO-32): the seller `/seller/reviews`, the reviewer `/me/reviews/<reviewId>` | §5 |
+| RV-12 | Reviewable items: reviews reads the customer's reviewed product ids first (one query on `uq_product_reviews_customer_id_product_id`) and passes them to `listDeliveredItems` as `excludeProductIds` (spec 09 v2.2 OR-26), so every page is full | §4.2 |
+| RV-13 | Review images stay public (spec 14): hiding a review removes it and its images from every response, but a URL already copied keeps working until the review is deleted and media cleanup runs. Accepted for R2 | UC-RV-4 |

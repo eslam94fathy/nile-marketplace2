@@ -198,9 +198,40 @@ CI green; a customer and an admin chat on staging with live updates and attachme
 
 ## 7. R2-P4: reviews · ratings · wishlist
 
-Scope: spec 17 (reviews, replies, stats, events), ordering `getReviewableItem` / `listDeliveredItems`, catalog §9 (rating columns, projection, sort index, product cards), sellers §8 (rating, public seller page), customers §8 (wishlist, display names).
-Tests: one review per customer and product under two parallel posts, window and edit window, aggregates after create / edit / hide / delete (exact sums), out-of-order `review.rating_changed` never rolls back, wishlist limit under parallel adds, rating sort and filter.
-Done when: CI green; ratings visible and sortable on staging.
+Branch `r2-p4-reviews`, stacked on `r2-p3-support` (2026-10-21). Inputs: spec 17 v1.1 (§7.1 RV-9…RV-13), spec 09 v2.2 (OR-26), spec 13 v2.4 (NO-32), spec 04 §8, spec 05 §8, spec 06 §9, database v2.6 (D-19).
+
+### 7.1 Delivers
+Customers review products they received (rating, text, up to 4 images), edit or delete them, and keep a wishlist; sellers read and answer the reviews of their products; admins hide reviews and replies; products and sellers show ratings, and the public product list filters and sorts by rating.
+
+### 7.2 Scope
+| Area | Content |
+|---|---|
+| Migrations | `product_reviews` (+ `variant_options`), `review_images`, `review_replies`, `review_rating_stats` · rating columns on `products` and `sellers` (DB-Q7: temporary default dropped in the same migration) · `idx_products_rating_id` concurrently · `wishlist_items` · the four review audit actions |
+| ordering | `getReviewableItem` (with attributes), `listDeliveredItems` (`excludeProductIds`, D-19 sort) |
+| customers | `getDisplayNames` ("Mona A."), wishlist endpoints (spec 04 §8), edge `customers → catalog` |
+| catalog | `getProductCards`, `isPubliclyVisible`, rating on product views, `rating` filter and sort, the `review.rating_changed` projection, product create passes the rating columns |
+| sellers | `sellers.rating-projection`, rating in `getSummaries` and profiles, public `GET /sellers/:sellerId` |
+| `app/reviews` | spec 17: customer, public, seller and admin endpoints, aggregates, events, audit |
+| notifications | `review_received`, `review_replied` (NO-32) |
+| Module graph | `reviews → ordering, catalog, customers, sellers, media`; `customers → catalog` |
+| Config | api: `REVIEW_WINDOW_DAYS`, `REVIEW_EDIT_WINDOW_DAYS`, `WISHLIST_MAX_ITEMS`; `.env.example`, `env-keys.json`, task definitions in the same commit |
+
+### 7.3 Tests
+One review per customer and product under two parallel posts; window and edit window; aggregates after create / edit / hide / unhide / delete (exact sums and counts, both subjects); out-of-order and duplicate `review.rating_changed` never roll back (catalog and sellers); a seller replies once, only to its own products, only when approved; hidden reviews and replies leave every public response; reviewable items exclude reviewed products and pages stay full; wishlist limit under parallel adds; rating sort and filter on the public list; review notifications; every endpoint's happy path, validation, authz and not-found.
+
+### 7.4 Order of work (one commit each)
+1. Spec and design bumps (spec 17 v1.1, 09 v2.2, 13 v2.4, database v2.6), this section.
+2. Migrations and the module-graph edges.
+3. Lookups: ordering, customers display names, catalog product cards and visibility.
+4. Customer review endpoints with the aggregates and events.
+5. Public, seller and admin review endpoints with the audit rows.
+6. Rating projections in catalog and sellers, rating reads, the public seller page.
+7. Wishlist.
+8. Review notifications; Postman collection.
+9. Staging check: waits for P9.
+
+### 7.5 Done when
+CI green; ratings visible and sortable on staging (after P9).
 
 ## 8. R2-P5: back-office
 
