@@ -1,6 +1,6 @@
 # Spec 16 — support
 
-Status: **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (support tickets), R-8, R-9, R-19. §7 SU-1…SU-6 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.1 APPROVED (2026-10-21):** §7.1 R2-P3 clarifications SU-7…SU-16 (every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (support tickets), R-8, R-9, R-19. §7 SU-1…SU-6 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -153,10 +153,11 @@ Message lists: cursor on `createdAt, id`, default `-createdAt` (newest first; th
 
 ## 5. Events
 Published:
+Payloads as in `02-events.md` §6.2 (SU-15):
 - `support.ticket_opened` `{ ticketId, ticketNumber, openerUserId, openerRole, category }`
-- `support.message_created` `{ ticketId, messageId, kind, senderRole, openerUserId, assignedAdminUserId }`
+- `support.message_created` `{ ticketId, ticketNumber, messageId, kind, senderRole, openerUserId, assignedAdminUserId }`
 - `support.ticket_assigned` `{ ticketId, openerUserId, assignedAdminUserId, previousAdminUserId }`
-- `support.ticket_status_changed` `{ ticketId, openerUserId, from, to, actor }`
+- `support.ticket_status_changed` `{ ticketId, ticketNumber, openerUserId, from, to, actor }`
 
 Consumed by realtime (spec 15) and notifications (spec 13 v2.0):
 - push to the opener on a public admin message
@@ -178,7 +179,7 @@ Consumed: none.
 | `ORDER_NOT_FOUND`, `SELLER_ORDER_NOT_FOUND` | 422 | Owned by ordering; raised here for a foreign or missing link |
 
 Log event codes: `SUPPORT_SLA_BREACHED` (warn).
-New rate-limit class `support-message`: user id, `RATE_LIMIT_SUPPORT_MESSAGE_POINTS` / `_DURATION_SECONDS` (proposed 30 per minute).
+New rate-limit class `support-message`: user id, `RATE_LIMIT_SUPPORT_MESSAGE_POINTS` / `_WINDOW_SECONDS` (30 per 60 s; key naming as every R2 class, spec 14 ME-8) (SU-16).
 
 ## 7. Decisions (answered 2026-10-20)
 
@@ -192,3 +193,18 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | SU-4 | Open-ticket limit under concurrency | **Rec:** soft check, a small overshoot accepted (the rate limit bounds it) · or lock the opener's newest ticket / a per-user counter row |
 | SU-5 | Audit of support actions (R-19 "every admin write") | **Rec:** assign, resolve and close are audited; admin messages and notes are not (the message table is already the record) · or audit messages too |
 | SU-6 | Ticket retention | **Rec:** kept indefinitely (no deletion in R2); private attachments stay until the ticket is deleted in a later release · or delete closed tickets after N months |
+
+### 7.1 Clarifications (R2-P3 implementation, approved 2026-10-21)
+
+| # | Clarification | Where |
+|---|---|---|
+| SU-7 | Admins have no name (`users` holds only the email, and there is no admin profile). In admin views an admin's `displayName` is the admin's **email**; users still see "Nile Support" (SU-3) | §4 |
+| SU-8 | Opener and sender names in admin views come from batched lookups **by user id**: customers `getFullNamesByUserIds` ("first last", spec 04 v2.1 §8.7), sellers `getSummariesByUserIds` (`businessName`, spec 05 v2.1 §8.3). A user reading their own ticket gets their own name from the same lookup. One call per role per page (G20) | §4 |
+| SU-9 | A seller may use support in **any** seller status (pending, rejected, suspended, approved): `seller_onboarding` exists for sellers not yet approved, and a seller suspension leaves the login active (IW-10). Only the profile id is resolved (`getSellerByUserId`, no status guard); a seller account without a profile → `500` (as P4-Q9) | UC-SU-1, §4.1 |
+| SU-10 | A seller's ticket stores the `order_id` of the linked seller order too (from ordering's `OrderLink`), so `TicketSummaryDto.order` carries the order number for sellers as well | UC-SU-1 step 2 |
+| SU-11 | The SLA flag is per waiting period: `sla_breached_at` is cleared whenever a **new** wait starts (`awaiting_admin_since` set again: a user message on `awaiting_user`, a reopen into `awaiting_admin`). It stays set after the admin reply, as the history of the last wait. `slaBreached` (filter and `getStats`) = waiting now (`open`, `awaiting_admin`) with the flag set | §1.2, UC-SU-5 |
+| SU-12 | Reopening a `resolved` ticket clears `resolved_at`; closing keeps it. Consistency CHECKs (database D-18): `resolved` ⇒ `resolved_at` set; `open` / `awaiting_*` ⇒ `resolved_at` null; `closed_at` set ⇔ `closed`; `awaiting_admin_since` set ⇔ `open` / `awaiting_admin` (resolve and close clear it) | §1.1, §1.2 |
+| SU-13 | Assigning the current assignee (or `null` to an unassigned ticket) answers `200` and writes nothing: no `system` message, event or audit row (as CA-17). Assigning on a `closed` ticket → `409 SUPPORT_TICKET_CLOSED` | UC-SU-3, §4.2 |
+| SU-14 | Notification links: the opener `/support/tickets/<ticketId>`, an admin `/admin/support/tickets/<ticketId>` (spec 13 v2.3 NO-31) | §5 |
+| SU-15 | Event payloads are those of `02-events.md` §6.2 (they carry `ticketNumber`, which the notification text needs); §5 aligned | §5 |
+| SU-16 | Rate keys `RATE_LIMIT_SUPPORT_MESSAGE_POINTS` / `RATE_LIMIT_SUPPORT_MESSAGE_WINDOW_SECONDS` (ME-8 naming). `ticket_number` = `'T-' || lpad(nextval('support_ticket_number_seq')::text, 9, '0')` in the INSERT, as order numbers (SD-10) | §1.2, §6 |

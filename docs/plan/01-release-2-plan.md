@@ -164,9 +164,37 @@ CI green; on staging a browser session logs in with the cookie, receives `order.
 
 ## 6. R2-P3: support
 
-Scope: spec 16 (tables, endpoints, jobs, events), realtime ticket rooms and signals, notification rows, audit of assign / resolve / close.
-Tests: opener-only access, internal notes never reach users, auto-assign on the first admin reply (two admins replying at once), message to a closed ticket, soft open-ticket limit, `Idempotency-Key` replay of a message, attachments private, SLA and auto-close jobs.
-Done when: CI green; a customer and an admin chat on staging with live updates and attachments.
+Branch `r2-p3-support`, stacked on `r2-p2-realtime` (2026-10-21). Inputs: spec 16 v1.1 (§7.1 SU-7…SU-16), spec 13 v2.3 (NO-31), spec 04 v2.1 §8.7, spec 05 v2.1 §8.3, database v2.5 (D-18).
+
+### 6.1 Delivers
+Customers and sellers open tickets about their account or orders, chat with the admins with private image attachments, and see live updates; admins work a queue (filters, oldest waiting, SLA flag), write internal notes, assign, resolve and close, every action audited.
+
+### 6.2 Scope
+| Area | Content |
+|---|---|
+| Migrations | `support_ticket_number_seq`, `support_tickets`, `support_messages`, `support_message_attachments`, `support_ticket_reads` with the D-18 CHECKs; the §14.7 indexes (new, empty tables: plain `CREATE INDEX` in the table migration) |
+| customers / sellers | `getFullNamesByUserIds`, `getSummariesByUserIds` (SU-8) |
+| `app/support` | spec 16: user and admin endpoints, rate class `support-message`, `Idempotency-Key` on open and message post, attachment claim + presigned reads, `canView`, `getStats`, audit actions `support_ticket.assigned` / `.resolved` / `.closed` |
+| Jobs | `support-jobs` (auto-close, SLA flag), advisory-locked, one ticket per short trx with `SKIP LOCKED` |
+| realtime | `ticket.subscribe` / `unsubscribe`, `support.typing`; fan-out of the four `support.*` events (`support.message_created`, `support.ticket_updated`); `docs/realtime.md` |
+| notifications | `support_reply`, `support_user_message`, `support_resolved` with the NO-31 links |
+| Module graph | `support → ordering, customers, sellers, identity, media, audit`; `realtime → support` (architecture §14.2) |
+| Config | api: `SUPPORT_MAX_OPEN_TICKETS_PER_USER`, `RATE_LIMIT_SUPPORT_MESSAGE_POINTS`, `RATE_LIMIT_SUPPORT_MESSAGE_WINDOW_SECONDS`; worker: `SUPPORT_SLA_HOURS`, `SUPPORT_AUTO_CLOSE_AFTER_HOURS`, `JOB_SUPPORT_INTERVAL_MS`, `SUPPORT_JOBS_BATCH_SIZE`; `.env.example`, `env-keys.json`, task definitions in the same commit |
+
+### 6.3 Tests
+Opener-only access (another user → `404`), internal notes never reach users (REST and socket), the status machine incl. reopen and the D-18 CHECKs, auto-assign on the first admin reply with two admins replying at once (one assignee, one `support.ticket_assigned`), assigning the current assignee writes nothing, message to a closed ticket, soft open-ticket limit, `Idempotency-Key` replay of an open and a message, attachments private (presigned GET only, foreign or unready media `422`), unread per user, SLA flag cleared on a new wait, auto-close and SLA jobs (two workers), duplicate delivery on the realtime and notification consumers, `ticket.subscribe` refused for a foreign ticket.
+
+### 6.4 Order of work (one commit each)
+1. Spec and design bumps (spec 16 v1.1, 13 v2.3, 04 v2.1, 05 v2.1, database v2.5), this section.
+2. Migrations, the module skeleton, public API (`canView`, `getStats`), the customers / sellers lookups, module-graph edges.
+3. User endpoints: open, list, detail, messages, post, read.
+4. Admin endpoints: list with filters, notes, auto-assign, assign / resolve / close, audit.
+5. Worker jobs (auto-close, SLA flag).
+6. Realtime rooms, signals and fan-out; notification rows; `docs/realtime.md`.
+7. Staging smoke test: waits for P9, as R2-P2 step 7.
+
+### 6.5 Done when
+CI green; a customer and an admin chat on staging with live updates and attachments (after P9).
 
 ## 7. R2-P4: reviews · ratings · wishlist
 

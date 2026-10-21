@@ -1,7 +1,7 @@
 # Spec 05 — sellers
 
 Status: **v1.1 APPROVED (2026-10-10).** v1.0 (2026-10-09): approved with the Phase 2 clarifications in §7.1. v1.1: lock option on `getSellerByUserId` for catalog write guards (SE-4, P3-Q4). Changes from now on need explicit approval and a version bump.
-**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 seller rating projection (spec 17, R-11), a public seller page and the user-id lookup for notifications. Kept as its own section, so every cross-reference stays valid (R2-Q1).
+**v2.1 APPROVED (2026-10-21):** §8.3 summaries by user id for support (spec 16 SU-8). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 seller rating projection (spec 17, R-11), a public seller page and the user-id lookup for notifications. Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -169,3 +169,6 @@ Consumed: none.
 - `SellerProfileDto` and `AdminSellerListItemDto` gain `ratingAvg`, `ratingCount`.
 - New public method `getUserIds(sellerIds) → Map<sellerId, userId>` (realtime and notifications recipient resolution, spec 02 §6.3), batched.
 - New public endpoint `GET /sellers/:sellerId` (auth: public · rate: general): `200 { id, businessName, ratingAvg, ratingCount, memberSince }` (`memberSince` = `approved_at`) for an `approved` seller, else `404 SELLER_NOT_FOUND`. It backs the seller page of the web app; the seller's products come from `GET /products?sellerId[eq]=`.
+
+### 8.3 Addition from spec 16 (R2-P3, approved 2026-10-21)
+- New public method `getSummariesByUserIds(userIds) → Map<userId, { sellerId, businessName }>` (support admin views, spec 16 SU-8), batched, any seller status; unknown ids are left out.

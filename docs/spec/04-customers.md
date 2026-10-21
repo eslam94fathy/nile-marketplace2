@@ -1,7 +1,7 @@
 # Spec 04 — customers
 
 Status: **v1.0 APPROVED (2026-10-09).** Approved by the user with the Phase 2 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
-**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 wishlist (R-12), reviewer display names (spec 17 RV-6) and the user-id lookup for notifications. Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.6 WL-1…WL-3 answered 2026-10-20.
+**v2.1 APPROVED (2026-10-21):** §8.7 full names by user id for support's admin views (spec 16 SU-8). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 wishlist (R-12), reviewer display names (spec 17 RV-6) and the user-id lookup for notifications. Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.6 WL-1…WL-3 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -179,3 +179,8 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | WL-1 | How the client knows which products are wishlisted | **Rec:** `GET /me/wishlist/product-ids` once per session, kept in client state (max 200 ids); public product endpoints stay anonymous and cacheable · or an `inWishlist` flag on product responses for logged-in customers (public lists can no longer be shared across users) |
 | WL-2 | Unavailable products and the limit | **Rec:** they stay, shown as unavailable, and count toward the 200 · or they are removed automatically when the product is deleted |
 | WL-3 | Back-in-stock / price-drop alerts for wishlisted products | **Rec:** not in R2 (overview §10.7 lists back-in-stock alerts for later) · or in R2 through the notification centre |
+
+### 8.7 Addition from spec 16 (R2-P3, approved 2026-10-21)
+| Method | Used by | Notes |
+|---|---|---|
+| `getFullNamesByUserIds(userIds) → Map<userId, string>` | support (admin views, spec 16 SU-8) | `first_name + ' ' + last_name`, batched; unknown ids are left out. `getDisplayNames` ("Mona A.") stays for reviews |
