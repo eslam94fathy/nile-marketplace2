@@ -60,6 +60,16 @@ import * as m20261021100002 from './20261021100002_create_support_messages';
 import * as m20261021100003 from './20261021100003_create_support_message_attachments';
 import * as m20261021100004 from './20261021100004_create_support_ticket_reads';
 import * as m20261021100005 from './20261021100005_add_support_audit_actions';
+import * as m20261021120001 from './20261021120001_add_products_rating';
+import * as m20261021120002 from './20261021120002_validate_products_rating_checks';
+import * as m20261021120003 from './20261021120003_add_products_rating_index';
+import * as m20261021120004 from './20261021120004_add_sellers_rating';
+import * as m20261021120005 from './20261021120005_create_product_reviews';
+import * as m20261021120006 from './20261021120006_create_review_images';
+import * as m20261021120007 from './20261021120007_create_review_replies';
+import * as m20261021120008 from './20261021120008_create_review_rating_stats';
+import * as m20261021120009 from './20261021120009_create_wishlist_items';
+import * as m20261021120010 from './20261021120010_add_review_audit_actions';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -125,5 +135,15 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261021100003_create_support_message_attachments', module: m20261021100003 },
   { name: '20261021100004_create_support_ticket_reads', module: m20261021100004 },
   { name: '20261021100005_add_support_audit_actions', module: m20261021100005 },
+  { name: '20261021120001_add_products_rating', module: m20261021120001 },
+  { name: '20261021120002_validate_products_rating_checks', module: m20261021120002 },
+  { name: '20261021120003_add_products_rating_index', module: m20261021120003 },
+  { name: '20261021120004_add_sellers_rating', module: m20261021120004 },
+  { name: '20261021120005_create_product_reviews', module: m20261021120005 },
+  { name: '20261021120006_create_review_images', module: m20261021120006 },
+  { name: '20261021120007_create_review_replies', module: m20261021120007 },
+  { name: '20261021120008_create_review_rating_stats', module: m20261021120008 },
+  { name: '20261021120009_create_wishlist_items', module: m20261021120009 },
+  { name: '20261021120010_add_review_audit_actions', module: m20261021120010 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

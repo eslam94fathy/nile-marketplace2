@@ -6,7 +6,8 @@
  * A module not listed here may import no other module. Includes A-2 (architecture v1.3), A-4 (v1.6) and the R2 edges of v2.0 §14.2, added phase by phase.
  */
 const MODULE_GRAPH = {
-  customers: ['identity'],
+  // R2-P4 (spec 04 §8.1): wishlist product cards.
+  customers: ['identity', 'catalog'],
   sellers: ['identity'],
   delivery: ['identity'],
   catalog: ['sellers', 'inventory', 'media'],
@@ -19,6 +20,8 @@ const MODULE_GRAPH = {
   notifications: ['customers', 'sellers', 'delivery', 'ordering'],
   // R2-P3 (spec 16): order links, opener names, assignees and admin emails, attachments.
   support: ['ordering', 'customers', 'sellers', 'identity', 'media'],
+  // R2-P4 (spec 17): reviewable items, product cards, reviewer names, the seller guard, review images.
+  reviews: ['ordering', 'catalog', 'customers', 'sellers', 'media'],
   // R2 (architecture v2.0 §14.2). Modules record audit rows through lib/audit, not by importing audit.
   audit: ['identity'],
 };

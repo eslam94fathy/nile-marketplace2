@@ -43,6 +43,11 @@ interface SellerRow {
   commission_rate: string;
   rejection_reason: string | null;
   approved_at: Date | null;
+  rating_count: number;
+  /** NUMERIC comes back from pg as a string; null until the first published review. */
+  rating_avg: string | null;
+  /** BIGINT comes back from pg as a string. */
+  rating_version: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -63,7 +68,7 @@ export interface FindOptions {
   forUpdate?: boolean;
 }
 
-function toModel(row: SellerRow): Seller {
+function toModel(row: Pick<SellerRow, (typeof COLUMNS)[number]>): Seller {
   return new Seller({
     id: row.id,
     userId: row.user_id,
@@ -167,6 +172,10 @@ export class SellerRepository {
         ...pickupColumns(seller.pickup),
         status: seller.status,
         commission_rate: seller.commissionRate.toString(),
+        // No reviews yet; the rating projection fills them (spec 05 §8.1, no DB defaults, G13).
+        rating_count: 0,
+        rating_avg: null,
+        rating_version: '0',
       })
       .returning(COLUMNS);
     if (!row) throw new Error('sellers insert returned no row');

@@ -76,6 +76,11 @@ interface ProductTable {
   max_price: string | null;
   in_stock: boolean;
   published_at: Date | null;
+  rating_count: number;
+  /** NUMERIC comes back from pg as a string; null until the first published review. */
+  rating_avg: string | null;
+  /** BIGINT comes back from pg as a string. */
+  rating_version: string;
   deleted_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -138,6 +143,10 @@ export class ProductRepository {
         max_price: null,
         in_stock: product.inStock,
         published_at: null,
+        // No reviews yet; the rating projection fills them (spec 06 §9.1, no DB defaults, G13).
+        rating_count: 0,
+        rating_avg: null,
+        rating_version: '0',
       })
       .returning<ProductRow[]>(COLUMNS);
     if (!row) throw new Error('products insert returned no row');

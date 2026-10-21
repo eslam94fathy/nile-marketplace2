@@ -81,6 +81,11 @@ export const AUDIT_ACTIONS = {
   'support_ticket.assigned': { target: T.SUPPORT_TICKET, fields: ['assignedAdminUserId'] },
   'support_ticket.resolved': { target: T.SUPPORT_TICKET, fields: STATUS },
   'support_ticket.closed': { target: T.SUPPORT_TICKET, fields: STATUS },
+  // reviews (spec 17 UC-RV-4): the reason is the entry's `reason`
+  'review.hidden': { target: T.REVIEW, fields: STATUS },
+  'review.unhidden': { target: T.REVIEW, fields: STATUS },
+  'review_reply.hidden': { target: T.REVIEW_REPLY, fields: ['hidden'] },
+  'review_reply.unhidden': { target: T.REVIEW_REPLY, fields: ['hidden'] },
   // finance (spec 12 §1.3)
   'cod_remittance.recorded': { target: T.COD_REMITTANCE, fields: ['amount', 'agentId'] },
   'payout.recorded': {

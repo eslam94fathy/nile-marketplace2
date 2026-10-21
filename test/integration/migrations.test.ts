@@ -317,6 +317,9 @@ describe('migrations on a real Postgres 18', () => {
       pickup_building: '5',
       status: 'pending_approval',
       commission_rate: '0.1000',
+      rating_count: 0,
+      rating_avg: null,
+      rating_version: 0,
       ...overrides,
     });
 
@@ -1480,6 +1483,166 @@ describe('migrations on a real Postgres 18', () => {
         db('support_ticket_reads').insert({ ticket_id: ticketId, user_id: opener, last_read_at: now });
       await read();
       expect((await pgFailure(read)).constraint).toBe('pk_support_ticket_reads');
+    });
+  });
+
+  describe('reviews, ratings and the wishlist (R2-P4)', () => {
+    const review = (chain: Awaited<ReturnType<ReturnType<typeof orderFixtures>['insertOrderChain']>>) => ({
+      product_id: chain.productId,
+      seller_id: chain.sellerId,
+      customer_id: chain.customerId,
+      order_item_id: chain.orderItemId,
+      variant_id: chain.variantId,
+      variant_options: JSON.stringify([{ attribute: 'Size', value: 'M' }]),
+      rating: 4,
+      title: 'Good',
+      body: 'Fits well',
+      status: 'published',
+    });
+    const insertReview = (row: Record<string, unknown>) =>
+      db('product_reviews').insert(row).returning<{ id: string }[]>('id');
+
+    it('products and sellers: the rating columns have no default and keep avg and count consistent', async () => {
+      const { insertSeller, insertCategory, insertProduct } = catalogFixtures(db);
+      const { sellerId } = await insertSeller();
+      const categoryId = await insertCategory();
+      const productFails = async (overrides: Record<string, unknown>) =>
+        (await pgFailure(() => insertProduct(sellerId, categoryId, overrides))).constraint;
+      expect(await productFails({ rating_count: 2, rating_avg: null })).toBe('chk_products_rating_avg');
+      expect(await productFails({ rating_count: 0, rating_avg: '4.00' })).toBe('chk_products_rating_avg');
+      expect(await productFails({ rating_count: 1, rating_avg: '0.50' })).toBe('chk_products_rating_avg');
+      expect(await productFails({ rating_count: -1, rating_avg: '3.00' })).toBe('chk_products_rating_count');
+      await insertProduct(sellerId, categoryId, { rating_count: 3, rating_avg: '4.33', rating_version: 7 });
+      // No DB default (G13): a write that forgets the rating fails loudly.
+      expect(
+        (await pgFailure(() => insertProduct(sellerId, categoryId, { rating_count: undefined }))).code,
+      ).toBe('23502');
+      expect(
+        (
+          await pgFailure(() =>
+            db('sellers').where({ id: sellerId }).update({ rating_count: 1, rating_avg: null }),
+          )
+        ).constraint,
+      ).toBe('chk_sellers_rating_avg');
+    });
+
+    it('product_reviews: one live review per customer and product, CHECKs on rating, texts and hiding', async () => {
+      const chain = await orderFixtures(db).insertOrderChain();
+      const base = review(chain);
+      const fails = async (overrides: Record<string, unknown>) =>
+        (await pgFailure(() => insertReview({ ...base, ...overrides }))).constraint;
+      expect(await fails({ rating: 6 })).toBe('chk_product_reviews_rating');
+      expect(await fails({ title: '' })).toBe('chk_product_reviews_title');
+      expect(await fails({ body: 'x'.repeat(2001) })).toBe('chk_product_reviews_body');
+      expect(await fails({ status: 'pending' })).toBe('chk_product_reviews_status');
+      expect(await fails({ status: 'hidden' })).toBe('chk_product_reviews_hidden');
+      expect(await fails({ variant_options: JSON.stringify({}) })).toBe(
+        'chk_product_reviews_variant_options',
+      );
+
+      const [first] = await insertReview(base);
+      expect(await fails({})).toBe('uq_product_reviews_customer_id_product_id');
+      // A deleted review frees the customer to review the product again (RV-4).
+      await db('product_reviews').where({ id: first?.id }).update({ deleted_at: new Date() });
+      await insertReview({ ...base, title: null, body: null });
+
+      const admin = await insertUser({ role: 'admin' });
+      const [hidden] = await insertReview({
+        ...base,
+        customer_id: (await orderFixtures(db).insertOrderChain()).customerId,
+        status: 'hidden',
+        hidden_reason: 'Abusive',
+        hidden_by_user_id: admin,
+        hidden_at: new Date(),
+      });
+      expect(hidden?.id).toEqual(expect.any(String));
+    });
+
+    it('review_images, review_replies: positions 0..3, one review per image, one reply per review', async () => {
+      const chain = await orderFixtures(db).insertOrderChain();
+      const [created] = await insertReview(review(chain));
+      const reviewId = created?.id ?? '';
+      const [media] = await db('media_objects')
+        .insert({
+          owner_user_id: chain.customerUserId,
+          purpose: 'review_image',
+          status: 'pending',
+          declared_content_type: 'image/png',
+          declared_size_bytes: 10,
+        })
+        .returning<{ id: string }[]>('id');
+      const image = (position: number) =>
+        db('review_images').insert({ review_id: reviewId, media_id: media?.id, position });
+      expect((await pgFailure(() => image(4))).constraint).toBe('chk_review_images_position');
+      await image(0);
+      expect((await pgFailure(() => image(1))).constraint).toBe('uq_review_images_media_id');
+
+      const reply = (row: Record<string, unknown> = {}) =>
+        db('review_replies').insert({
+          review_id: reviewId,
+          seller_id: chain.sellerId,
+          body: 'Thanks!',
+          ...row,
+        });
+      expect((await pgFailure(() => reply({ body: '' }))).constraint).toBe('chk_review_replies_body');
+      expect((await pgFailure(() => reply({ hidden_at: new Date() }))).constraint).toBe(
+        'chk_review_replies_hidden',
+      );
+      await reply();
+      expect((await pgFailure(() => reply())).constraint).toBe('uq_review_replies_review_id');
+    });
+
+    it('review_rating_stats: one row per subject; counts add up and the sum stays in range', async () => {
+      const stats = (row: Record<string, unknown>) =>
+        db('review_rating_stats').insert({
+          subject_type: 'product',
+          subject_id: randomUUID(),
+          rating_count: 2,
+          rating_sum: 9,
+          count_1: 0,
+          count_2: 0,
+          count_3: 0,
+          count_4: 1,
+          count_5: 1,
+          version: 1,
+          ...row,
+        });
+      const fails = async (row: Record<string, unknown>) => (await pgFailure(() => stats(row))).constraint;
+      expect(await fails({ subject_type: 'category' })).toBe('chk_review_rating_stats_subject_type');
+      expect(await fails({ rating_count: 3 })).toBe('chk_review_rating_stats_counts');
+      expect(await fails({ rating_sum: 11 })).toBe('chk_review_rating_stats_sum');
+      expect(await fails({ version: 0 })).toBe('chk_review_rating_stats_version');
+      const subjectId = randomUUID();
+      await stats({ subject_id: subjectId });
+      expect(await fails({ subject_id: subjectId })).toBe('uq_review_rating_stats_subject_type_subject_id');
+      await stats({ subject_id: subjectId, subject_type: 'seller' });
+    });
+
+    it('wishlist_items: one row per customer and product', async () => {
+      const chain = await orderFixtures(db).insertOrderChain();
+      const add = () =>
+        db('wishlist_items').insert({ customer_id: chain.customerId, product_id: chain.productId });
+      await add();
+      expect((await pgFailure(add)).constraint).toBe('uq_wishlist_items_customer_id_product_id');
+    });
+
+    it('idx_products_rating_id is valid and serves the public listing by rating without a sort', async () => {
+      const index = await db.raw<{ rows: { valid: boolean; definition: string }[] }>(
+        `SELECT i.indisvalid AS valid, pg_get_indexdef(i.indexrelid) AS definition
+           FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = 'idx_products_rating_id'`,
+      );
+      expect(index.rows[0]?.valid).toBe(true);
+      const plan = await db.transaction(async (trx) => {
+        await trx.raw('SET LOCAL enable_seqscan = off; SET LOCAL enable_bitmapscan = off');
+        const result = await trx.raw<{ rows: { 'QUERY PLAN': string }[] }>(
+          `EXPLAIN SELECT id FROM products
+            WHERE status = 'active' AND seller_active AND deleted_at IS NULL
+            ORDER BY COALESCE(rating_avg, 0) DESC, id DESC LIMIT 21`,
+        );
+        return result.rows.map((row) => row['QUERY PLAN']).join('\n');
+      });
+      expect(plan).toContain('idx_products_rating_id');
+      expect(plan).not.toContain('Sort');
     });
   });
 });

@@ -212,6 +212,9 @@ async function seedDemoSeller(trx) {
       commission_rate: settings.default_commission_rate,
       rejection_reason: null,
       approved_at: trx.fn.now(),
+      rating_count: 0,
+      rating_avg: null,
+      rating_version: 0,
     })
     .returning('id');
   await trx('seller_status_history').insert([
@@ -252,6 +255,9 @@ async function seedProducts(trx, tree, { sellerId, userId }) {
         max_price: Decimal.max(...prices).toFixed(2),
         in_stock: active.some((v) => v.stock > 0),
         published_at: trx.fn.now(),
+        rating_count: 0,
+        rating_avg: null,
+        rating_version: 0,
       })
       .returning('id');
     for (const variant of product.variants) {

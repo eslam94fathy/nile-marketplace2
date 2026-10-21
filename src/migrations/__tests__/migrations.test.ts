@@ -72,6 +72,16 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261021100003_create_support_message_attachments',
       '20261021100004_create_support_ticket_reads',
       '20261021100005_add_support_audit_actions',
+      '20261021120001_add_products_rating',
+      '20261021120002_validate_products_rating_checks',
+      '20261021120003_add_products_rating_index',
+      '20261021120004_add_sellers_rating',
+      '20261021120005_create_product_reviews',
+      '20261021120006_create_review_images',
+      '20261021120007_create_review_replies',
+      '20261021120008_create_review_rating_stats',
+      '20261021120009_create_wishlist_items',
+      '20261021120010_add_review_audit_actions',
     ]);
   });
 
