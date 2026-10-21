@@ -235,9 +235,39 @@ CI green; ratings visible and sortable on staging (after P9).
 
 ## 8. R2-P5: back-office
 
-Scope: spec 20 §3 (`backoffice` module, dashboard, user directory with the new search indexes), spec 09 §8.4 (admin cancellation), product block (DB-Q8), notifications for blocks and admin cancels.
-Tests: dashboard numbers against a seeded dataset (Cairo day boundaries around midnight UTC+2/+3), admin cancel all-or-nothing, a Kashier admin cancel flags a refund, blocked product can't be bought or re-activated, every action audited.
-Done when: CI green; the dashboard renders on staging within the p95 read target with the perf seed.
+Branch `r2-p5-backoffice`, stacked on `r2-p4-reviews` (2026-10-21). Inputs: spec 20 v1.2 (§7.2 BO-12…BO-17), spec 09 §8.4, spec 13 v2.5 (NO-33), spec 02 v1.3, database v2.7 (D-20).
+
+### 8.1 Delivers
+Admins see a dashboard (orders, GMV per Cairo day, top sellers, pending sellers, support, finance, delivery), search users and customers, cancel a seller order or a whole order, and block a product; every write is audited and the affected sellers and customers are notified.
+
+### 8.2 Scope
+| Area | Content |
+|---|---|
+| Migrations | `products.admin_blocked_at`, `admin_block_reason` · `cancel_reason` CHECK += `admin_cancelled` · `idx_orders_placed_at`, `idx_seller_orders_delivered_at`, `idx_users_email_pattern`, `idx_customers_name_trgm`, `idx_customers_phone` (concurrently) · audit actions `seller_order.admin_cancelled`, `order.admin_cancelled`, `product.blocked`, `product.unblocked` |
+| ordering | UC-OR-9, UC-OR-10 (admin cancels, `Idempotency-Key`), `getDashboardStats` |
+| catalog | block / unblock, `GET /admin/products/:productId`, `PRODUCT_BLOCKED` on activation, `product.blocked` / `product.unblocked`, purchasability |
+| identity, customers | `GET /admin/users`; `GET /admin/customers`, `/:customerId`, `CUSTOMER_NOT_FOUND` |
+| sellers, finance, delivery | dashboard counts / sums |
+| `app/backoffice` | `GET /admin/dashboard`, Redis cache `v1:backoffice:dashboard` |
+| notifications | `product_blocked` (NO-33) |
+| Module graph | `backoffice → identity, customers, sellers, ordering, support, finance, delivery` (returns with R2-P6) |
+| Config | api `DASHBOARD_CACHE_TTL_SECONDS` (60) |
+
+### 8.3 Tests
+Dashboard numbers against a seeded dataset, Cairo day boundaries around midnight in summer (UTC+3) and winter (UTC+2); admin cancel of a seller order and all-or-nothing whole-order cancel; a Kashier admin cancel flags a refund; a blocked product can't be bought or activated, can still be edited; every admin action audited; user and customer filters (email prefix, name, phone); each endpoint's happy path, validation, authz and not-found.
+
+### 8.4 Order of work (one commit each)
+1. Spec and design bumps (spec 20 v1.2, 13 v2.5, 02 v1.3, database v2.7), this section.
+2. Migrations and audit actions.
+3. Admin cancellation.
+4. Product block / unblock, the notification.
+5. User directory.
+6. Dashboard (`backoffice`).
+7. Postman collection.
+8. Staging check: waits for P9.
+
+### 8.5 Done when
+CI green; the dashboard renders on staging within the p95 read target with the perf seed (after P9).
 
 ## 9. R2-P6: returns · refunds · holding period
 

@@ -1,6 +1,6 @@
 # Spec 20 — back-office and audit
 
-Status: **v1.1 APPROVED (2026-10-20).** v1.1: R2-P1 implementation clarifications BO-9…BO-11 (§7.1, confirmed 2026-10-20). Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (admin back-office and audit), R-19, S-9 (answered for R2), spec 09 v2.0 §8.4 (admin cancellation), spec 16 SU-5. §7 BO-1…BO-8 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.2 APPROVED (2026-10-21).** v1.2: R2-P5 clarifications BO-12…BO-17 (§7.2, every recommendation accepted). v1.1: R2-P1 implementation clarifications BO-9…BO-11 (§7.1, confirmed 2026-10-20). Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (admin back-office and audit), R-19, S-9 (answered for R2), spec 09 v2.0 §8.4 (admin cancellation), spec 16 SU-5. §7 BO-1…BO-8 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -163,7 +163,7 @@ An admin can take a product off the shop (counterfeit, prohibited goods), whatev
 Listed in §2.5 and §3. All are admin-only, rate class `general`, no `Idempotency-Key` (no money or stock effect; block / unblock are guarded by the current state).
 
 ## 5. Events
-Published: `product.blocked`, `product.unblocked` (catalog; `{ productId, sellerId }`) → notifications (seller). Audit and backoffice publish nothing.
+Published: `product.blocked` (catalog; `{ productId, sellerId, at }`, spec 02 §6.4) → notifications (seller); `product.unblocked` (same payload), consumed by nobody in R2 (BO-14). Audit and backoffice publish nothing.
 Consumed: none.
 
 ## 6. Error codes
@@ -200,3 +200,14 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | BO-9 | The audit **contract** (`IAuditRecorder`, `AuditEntry` and the action catalogue with each action's target type and allow-list) lives in the shared kernel `lib/audit`, like the event contracts in `lib/events`. Modules record through `TOKENS.AuditRecorder` and never import the audit module, so audit itself may call identity for the actor emails of §2.5 without a cycle (architecture v2.1 §14.2) | §2.2, §2.5 |
 | BO-10 | `AuditEntry` carries no `targetType`: it follows from the action (`seller.approved` → `seller`), so a caller can't pair an action with the wrong target. An update whose recorded fields didn't change stores `changes = null` | §2.2 |
 | BO-11 | `actor_user_id` is a foreign key to `users`: an admin write with a token whose user doesn't exist fails (422). Real tokens always have a user; only synthetic test tokens hit it | §2.1 |
+
+### 7.2 Clarifications (R2-P5 implementation, approved 2026-10-21)
+
+| # | Clarification | Where |
+|---|---|---|
+| BO-12 | `seller_orders` has no `placed_at`: "placed GMV" and "orders placed" use `orders.placed_at`, joined to the seller orders inside ordering. `idx_orders_placed_at (placed_at) WHERE placed_at IS NOT NULL`, built concurrently, replaces the design's `idx_seller_orders_placed_at` (database D-20); no new column, which would need a backfill `UPDATE` of a live table | §3.2 |
+| BO-13 | `orders.byStatus` counts the seller orders in every non-terminal status: `pending_payment`, `placed`, `accepted`, `ready_for_pickup`, `picked_up`, `out_for_delivery`, `delivery_failed`, `returning_to_seller`; `delivered`, `cancelled`, `returned_to_seller` are left out | §3.2 |
+| BO-14 | The block events carry spec 02's payload `{ productId, sellerId, at }`. The `product_blocked` notification links to `/seller/products/<productId>` (spec 13 NO-33). `product.unblocked` notifies nobody: it is published, and nothing consumes it in R2 (spec 02 v1.3) | §3.4, §5 |
+| BO-15 | A blocked product refuses only activation (`409 PRODUCT_BLOCKED`); the seller may still edit its fields, variants, images and stock, and delete it, to fix the listing | §3.4 |
+| BO-16 | A block moves an `active` product to `inactive`; a draft or an inactive product keeps its status (the block columns refuse activation either way). Blocking or unblocking a deleted product → `404 PRODUCT_NOT_FOUND` | §3.4 |
+| BO-17 | `GET /admin/users` is new in identity (R1 has only `/admin/admins`); `emailVerifiedAt` and `lastLoginAt` are existing columns; the email prefix filter is served by `idx_users_email_pattern` | §3.3 |

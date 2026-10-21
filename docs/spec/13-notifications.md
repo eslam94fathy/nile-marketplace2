@@ -1,7 +1,7 @@
 # Spec 13 — notifications (minimal)
 
 Status: **v1.1 APPROVED (2026-10-08).** Approved by the user. v1.1: Phase 1 implementation clarifications (§7.1, N-1…N-5). Changes from now on need explicit approval and a version bump.
-**v2.4 APPROVED (2026-10-21):** §8.13 review links NO-32 (R2-P4). **v2.3 APPROVED (2026-10-21):** §8.12 support links NO-31 (R2-P3). **v2.2 APPROVED (2026-10-21):** §8.11 Web Push clarifications NO-22…NO-30 (every recommendation accepted). **v2.1 APPROVED (2026-10-20):** §8.10 R2-P2 implementation clarifications NO-12…NO-21 (every recommendation accepted). **v2.0 APPROVED (2026-10-20):** §8 adds Release 2 push (standard Web Push, R-20), the in-app notification centre and preferences (R-5…R-7). Kept as its own section, so every cross-reference stays valid (R2-Q1).
+**v2.5 APPROVED (2026-10-21):** §8.14 product-block link NO-33 (R2-P5). **v2.4 APPROVED (2026-10-21):** §8.13 review links NO-32 (R2-P4). **v2.3 APPROVED (2026-10-21):** §8.12 support links NO-31 (R2-P3). **v2.2 APPROVED (2026-10-21):** §8.11 Web Push clarifications NO-22…NO-30 (every recommendation accepted). **v2.1 APPROVED (2026-10-20):** §8.10 R2-P2 implementation clarifications NO-12…NO-21 (every recommendation accepted). **v2.0 APPROVED (2026-10-20):** §8 adds Release 2 push (standard Web Push, R-20), the in-app notification centre and preferences (R-5…R-7). Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -241,3 +241,9 @@ RE-9 and PA-26 accepted 2026-10-20. All under `orders`:
 | # | Clarification | Where |
 |---|---|---|
 | NO-32 | Review links: `review_received` (seller) `/seller/reviews`; `review_replied` (reviewer) `/me/reviews/<reviewId>`. The seller is resolved from `sellerId` (sellers `getUserIds`), the reviewer from `customerId` (customers `getUserIds`) (spec 17 RV-11) | §8.8 |
+
+### 8.14 Clarifications (R2-P5 back-office, approved 2026-10-21)
+
+| # | Clarification | Where |
+|---|---|---|
+| NO-33 | `product_blocked` (seller, from `sellerId` through sellers `getUserIds`) links to `/seller/products/<productId>`. `product.unblocked` notifies nobody (spec 20 BO-14). An admin cancel needs nothing new: `seller_order.cancelled` with `admin_cancelled` already notifies the customer and the seller (the §8.2 row, "not cancelled by the seller") | §8.8 |
