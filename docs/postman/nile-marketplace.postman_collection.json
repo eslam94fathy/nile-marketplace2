@@ -1,8 +1,8 @@
 {
   "info": {
-    "name": "Nile Marketplace API (Release 1 + R2-P1…P4)",
+    "name": "Nile Marketplace API (Release 1 + R2-P1…P5)",
     "_postman_id": "c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01",
-    "description": "Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10), delivery (spec 11): governorates and fees, agents, shipments and the work of delivery agents, and finance (spec 12): balances, statements, COD remittances and payouts.\n\nVariables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.\n\nLocal first run (docker compose):\n1. `docker compose run --rm api node dist/seed-admin.js --email you@example.com`, then set the `email` variable to that address.\n2. Local helpers (Mailpit) → \"Latest email\" → \"Extract OTP / invite token\".\n3. Auth → \"Accept invite\" (sets your password and logs you in).\n4. Admin requests now work with the stored access token.\n\nCustomer / seller flow: set `email` to a fresh address → \"Register customer\" (or \"Register seller\") → Local helpers → \"Latest email\" → \"Extract OTP / invite token\" → Auth → \"Verify email\" (logs you in). \"Delivery\" → \"List governorates\" stores Cairo in `governorateId` first, because addresses and pickup addresses need one.\n\nSample delivery fees and a sample catalog for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees; the catalog has a category tree with attributes and an approved demo seller with active products).\n\nCatalog flow: \"Admin: catalog\" → Create category → Add attribute → Add option (stores `categoryId`, `attributeId`, `optionId`). Then log in as an approved seller → \"Seller: catalog\" → Create product → Add variant (put option ids in `optionIds`, or `[]` in a category without attributes) → Activate. \"Catalog\" (public) → List products / Product detail.\n\nCart flow: log in as a customer → \"Catalog\" → List products → Product detail (stores the first variant in `variantId`) → \"Cart\" → Add item (stores the line in `cartItemId`) → My cart → Change quantity / Remove item / Empty cart.\n\nOrder flow (COD): with items in the cart and an address (`addressId`) in a deliverable governorate → \"Checkout & orders\" → Checkout. The first send usually answers 409 ORDER_TOTAL_CHANGED and stores the current total in `expectedTotal`; send again. It stores `orderId`, `sellerOrderId` and `orderItemId`. Log in as that seller → \"Seller: orders\" → Accept → Ready (or Cancel item quantities / Cancel). Ready creates the shipment and assigns it to an on-shift agent of the pickup governorate (the worker must run).\n\nKashier flow (local, PAYMENT_GATEWAY=fake): set `paymentMethod` to kashier → Checkout (the order awaits payment; the fake payment page URL is not a real page). Pay it with `npm run dev:kashier-webhook -- {{orderId}}` (or `... failed`, or an amount to try a mismatch); the worker then places the order. \"Kashier payment page\" asks again for the page while the window is open. Unpaid orders are cancelled by the worker after KASHIER_PAYMENT_TTL_MINUTES. \"Admin: payments\" shows the payment, its webhook events and the refund queue.\n\nDelivery flow: as admin → \"Admin: delivery agents & shipments\" → Create agent (set `agentEmail` to a fresh address and `governorateId` to the seller's governorate). Set `email` to `agentEmail` → Local helpers → Latest email → Extract OTP / invite token → Auth → Accept invite (logs the agent in). \"Agent\" → Go on shift. After a seller marks an order ready: My shipments → Picked up → Out for delivery (stores `amountToCollect`) → Delivered, or Failed attempt. `npm run seed:dev` also creates a demo agent in Cairo.\n\nFinance flow: once an order is delivered (the worker books it in the ledger) → \"Admin: finance\" → List accounts (stores the first in `accountId`) → Account statement; \"Entries of a seller order\" uses `sellerOrderId`. \"Confirm COD remittance\" takes cash from `agentId`; \"Record payout\" pays `sellerId` (set it to the seller's id) with a fresh `payoutReference`. Log in as the seller → \"Seller: finance\", or as the agent → \"Agent: finance\", to see the same money from their side.\n\nRelease 2 so far: the audit log (spec 20 §2), image uploads (spec 14) with product and category images (spec 06 §8), the notification centre and Web Push (spec 13 §8), the web refresh cookie (spec 03 §8), support tickets (spec 16), reviews and ratings (spec 17) and the wishlist (spec 04 §8). The live socket (spec 15) is not HTTP: see docs/realtime.md.\n\nImage flow: \"Media\" → Request upload (stores `mediaId`) → POST the file to the returned `upload.url` with every `upload.fields` entry first and the file last as `file` (multipart/form-data; in Postman a new request, Body → form-data) → Complete upload → poll Get media until `ready` (the worker processes it). Then attach it: \"Seller: product images\" → Add image, or \"Admin: category images\" → Set image.\n\nSupport flow: log in as a customer or seller → \"Support\" → Open ticket (stores `ticketId`) → Messages / Post message. Log in as an admin → \"Admin: support\" → Queue → Reply (the first reply assigns the ticket to you) or Internal note → Resolve / Close. Attachments: upload with purpose support_attachment first, then pass the `mediaId` in `attachmentMediaIds`.\n\nReview flow: a customer with a delivered order → \"Reviews\" → Reviewable items (stores `orderItemId`) → Write a review (stores `reviewId`); the worker moves the product and seller ratings. Log in as the seller → \"Seller: reviews\" → Reply. As an admin → \"Admin: reviews\" → Hide / Unhide. \"Catalog\" → Product reviews / Review summary show the public side.\n\nTokens are per account: log in as the admin again (Auth → Login) before the \"Admin: …\" folders.\n\nErrors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.",
+    "description": "Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10), delivery (spec 11): governorates and fees, agents, shipments and the work of delivery agents, and finance (spec 12): balances, statements, COD remittances and payouts.\n\nVariables: set `baseUrl` (default http://localhost:3000) and `mailpitUrl` (local only). Login, verify, accept-invite and refresh store `accessToken`, `refreshToken` and `userId` automatically; admin routes use the stored `accessToken`.\n\nLocal first run (docker compose):\n1. `docker compose run --rm api node dist/seed-admin.js --email you@example.com`, then set the `email` variable to that address.\n2. Local helpers (Mailpit) → \"Latest email\" → \"Extract OTP / invite token\".\n3. Auth → \"Accept invite\" (sets your password and logs you in).\n4. Admin requests now work with the stored access token.\n\nCustomer / seller flow: set `email` to a fresh address → \"Register customer\" (or \"Register seller\") → Local helpers → \"Latest email\" → \"Extract OTP / invite token\" → Auth → \"Verify email\" (logs you in). \"Delivery\" → \"List governorates\" stores Cairo in `governorateId` first, because addresses and pickup addresses need one.\n\nSample delivery fees and a sample catalog for local dev: `npm run seed:dev` (none is deliverable until an admin sets fees; the catalog has a category tree with attributes and an approved demo seller with active products).\n\nCatalog flow: \"Admin: catalog\" → Create category → Add attribute → Add option (stores `categoryId`, `attributeId`, `optionId`). Then log in as an approved seller → \"Seller: catalog\" → Create product → Add variant (put option ids in `optionIds`, or `[]` in a category without attributes) → Activate. \"Catalog\" (public) → List products / Product detail.\n\nCart flow: log in as a customer → \"Catalog\" → List products → Product detail (stores the first variant in `variantId`) → \"Cart\" → Add item (stores the line in `cartItemId`) → My cart → Change quantity / Remove item / Empty cart.\n\nOrder flow (COD): with items in the cart and an address (`addressId`) in a deliverable governorate → \"Checkout & orders\" → Checkout. The first send usually answers 409 ORDER_TOTAL_CHANGED and stores the current total in `expectedTotal`; send again. It stores `orderId`, `sellerOrderId` and `orderItemId`. Log in as that seller → \"Seller: orders\" → Accept → Ready (or Cancel item quantities / Cancel). Ready creates the shipment and assigns it to an on-shift agent of the pickup governorate (the worker must run).\n\nKashier flow (local, PAYMENT_GATEWAY=fake): set `paymentMethod` to kashier → Checkout (the order awaits payment; the fake payment page URL is not a real page). Pay it with `npm run dev:kashier-webhook -- {{orderId}}` (or `... failed`, or an amount to try a mismatch); the worker then places the order. \"Kashier payment page\" asks again for the page while the window is open. Unpaid orders are cancelled by the worker after KASHIER_PAYMENT_TTL_MINUTES. \"Admin: payments\" shows the payment, its webhook events and the refund queue.\n\nDelivery flow: as admin → \"Admin: delivery agents & shipments\" → Create agent (set `agentEmail` to a fresh address and `governorateId` to the seller's governorate). Set `email` to `agentEmail` → Local helpers → Latest email → Extract OTP / invite token → Auth → Accept invite (logs the agent in). \"Agent\" → Go on shift. After a seller marks an order ready: My shipments → Picked up → Out for delivery (stores `amountToCollect`) → Delivered, or Failed attempt. `npm run seed:dev` also creates a demo agent in Cairo.\n\nFinance flow: once an order is delivered (the worker books it in the ledger) → \"Admin: finance\" → List accounts (stores the first in `accountId`) → Account statement; \"Entries of a seller order\" uses `sellerOrderId`. \"Confirm COD remittance\" takes cash from `agentId`; \"Record payout\" pays `sellerId` (set it to the seller's id) with a fresh `payoutReference`. Log in as the seller → \"Seller: finance\", or as the agent → \"Agent: finance\", to see the same money from their side.\n\nRelease 2 so far: the audit log (spec 20 §2), image uploads (spec 14) with product and category images (spec 06 §8), the notification centre and Web Push (spec 13 §8), the web refresh cookie (spec 03 §8), support tickets (spec 16), reviews and ratings (spec 17) and the wishlist (spec 04 §8). The live socket (spec 15) is not HTTP: see docs/realtime.md.\n\nImage flow: \"Media\" → Request upload (stores `mediaId`) → POST the file to the returned `upload.url` with every `upload.fields` entry first and the file last as `file` (multipart/form-data; in Postman a new request, Body → form-data) → Complete upload → poll Get media until `ready` (the worker processes it). Then attach it: \"Seller: product images\" → Add image, or \"Admin: category images\" → Set image.\n\nSupport flow: log in as a customer or seller → \"Support\" → Open ticket (stores `ticketId`) → Messages / Post message. Log in as an admin → \"Admin: support\" → Queue → Reply (the first reply assigns the ticket to you) or Internal note → Resolve / Close. Attachments: upload with purpose support_attachment first, then pass the `mediaId` in `attachmentMediaIds`.\n\nReview flow: a customer with a delivered order → \"Reviews\" → Reviewable items (stores `orderItemId`) → Write a review (stores `reviewId`); the worker moves the product and seller ratings. Log in as the seller → \"Seller: reviews\" → Reply. As an admin → \"Admin: reviews\" → Hide / Unhide. \"Catalog\" → Product reviews / Review summary show the public side.\n\nBack-office flow (admin): \"Admin: dashboard\" shows the figures (cached for DASHBOARD_CACHE_TTL_SECONDS; generatedAt is their age). \"Admin: users\" → List users finds any account; \"Admin: customers\" → List customers (stores `customerId`) → Customer detail, then \"Admin: orders\" with customerId[eq]. \"Admin: orders\" → Cancel seller order / Cancel order (Idempotency-Key, a reason for the audit log). \"Admin: products\" → Product (admin view) → Block (the seller is notified and can no longer activate it) → Unblock. Every admin write appears in \"Admin: audit log\".\nTokens are per account: log in as the admin again (Auth → Login) before the \"Admin: …\" folders.\n\nErrors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -207,6 +207,10 @@
     },
     {
       "key": "reviewId",
+      "value": ""
+    },
+    {
+      "key": "customerId",
       "value": ""
     }
   ],
@@ -961,6 +965,89 @@
           }
         },
         {
+          "name": "List users",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const { data, meta } = pm.response.json();",
+                  "if (data && data[0]) pm.collectionVariables.set('targetUserId', data[0].id);",
+                  "if (meta) pm.collectionVariables.set('cursor', meta.nextCursor ?? '');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users?limit=20&sort=-createdAt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "sort",
+                  "value": "-createdAt"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true,
+                  "description": "meta.nextCursor of the previous page"
+                },
+                {
+                  "key": "role[eq]",
+                  "value": "customer",
+                  "disabled": true,
+                  "description": "customer, seller, admin, delivery_agent"
+                },
+                {
+                  "key": "status[in]",
+                  "value": "active,suspended",
+                  "disabled": true,
+                  "description": "eq | in: pending_email_verification, invited, active, suspended"
+                },
+                {
+                  "key": "email[like]",
+                  "value": "mona",
+                  "disabled": true,
+                  "description": "email prefix, case-insensitive"
+                },
+                {
+                  "key": "createdAt[gte]",
+                  "value": "2026-01-01",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "spec 20 §3.3. Every role. 200 { id, email, role, status, emailVerifiedAt, lastLoginAt, createdAt }[] + meta. INVALID_QUERY 400. The test stores the first id in `targetUserId`."
+          }
+        },
+        {
           "name": "Resend invite",
           "event": [
             {
@@ -1101,6 +1188,122 @@
               ]
             },
             "description": "suspended → active. 200 { id, email, role, status }. Errors: USER_NOT_FOUND 404, USER_INVALID_STATUS_TRANSITION 409."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin: customers",
+      "description": "spec 20 §3.3. Admin role. Reads only, not audited.",
+      "item": [
+        {
+          "name": "List customers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  const value = body.data[0] && body.data[0].id;",
+                  "  if (value) pm.collectionVariables.set('customerId', value);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/customers?limit=20&sort=-createdAt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "customers"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "sort",
+                  "value": "-createdAt"
+                },
+                {
+                  "key": "name[like]",
+                  "value": "mona",
+                  "disabled": true,
+                  "description": "first or last name, contains"
+                },
+                {
+                  "key": "phone[eq]",
+                  "value": "+201001234567",
+                  "disabled": true,
+                  "description": "E.164"
+                }
+              ]
+            },
+            "description": "200 { id, userId, email, firstName, lastName, phone, userStatus, createdAt }[] + meta. The test stores the first id in `customerId`."
+          }
+        },
+        {
+          "name": "Customer detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/customers/{{customerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "customers",
+                "{{customerId}}"
+              ]
+            },
+            "description": "The list item plus addressCount. Their orders: \"Admin: orders\" → List orders with customerId[eq]. CUSTOMER_NOT_FOUND 404."
           }
         }
       ]
@@ -4653,7 +4856,7 @@
     },
     {
       "name": "Admin: orders",
-      "description": "spec 09 §4.3. Admin role. No admin cancellation in R1 (S-9).",
+      "description": "spec 09 §4.3, §8.4. Admin role. Cancellations need an Idempotency-Key and a reason (3..500, admins only; the customer sees cancelReason admin_cancelled).",
       "item": [
         {
           "name": "List orders",
@@ -4729,7 +4932,9 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const { data } = pm.response.json();",
+                  "if (data && data.sellerOrders && data.sellerOrders[0]) pm.collectionVariables.set('sellerOrderId', data.sellerOrders[0].id);"
                 ]
               }
             }
@@ -4761,6 +4966,323 @@
               ]
             },
             "description": "Adds commission per seller order and the full status histories (actor role, actor id, reason)."
+          }
+        },
+        {
+          "name": "Cancel seller order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Fraudulent order\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/seller-orders/{{sellerOrderId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-orders",
+                "{{sellerOrderId}}",
+                "cancel"
+              ]
+            },
+            "description": "From placed, accepted or ready_for_pickup: releases stock, flags a refund for a paid Kashier order, writes an audit row. 200 the admin order detail. SELLER_ORDER_NOT_FOUND 404, SELLER_ORDER_NOT_CANCELLABLE 409."
+          }
+        },
+        {
+          "name": "Cancel order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Customer fraud report\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/orders/{{orderId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "orders",
+                "{{orderId}}",
+                "cancel"
+              ]
+            },
+            "description": "All or nothing (OR-17): every open seller order is cancelled, or none when one is past ready_for_pickup. 200 the admin order detail. ORDER_NOT_FOUND 404, ORDER_NOT_CANCELLABLE 409 (details: the blocking sellerOrderIds; none when nothing is left to cancel)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin: products",
+      "description": "spec 20 §3.4. Admin role. Uses `productId`. A block takes the product off the shop (active → inactive) and refuses activation until unblocked; the seller may still edit it.",
+      "item": [
+        {
+          "name": "Product (admin view)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "products",
+                "{{productId}}"
+              ]
+            },
+            "description": "The seller's product detail (any status) plus sellerId, adminBlocked and adminBlockReason. PRODUCT_NOT_FOUND 404."
+          }
+        },
+        {
+          "name": "Block product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Prohibited item\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/products/{{productId}}/block",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "products",
+                "{{productId}}",
+                "block"
+              ]
+            },
+            "description": "`reason` 3..500, shown to the seller in their product view. The seller is notified (product_blocked). 200 the admin view. PRODUCT_NOT_FOUND 404, PRODUCT_BLOCK_INVALID_STATUS 409 (already blocked)."
+          }
+        },
+        {
+          "name": "Unblock product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/products/{{productId}}/unblock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "products",
+                "{{productId}}",
+                "unblock"
+              ]
+            },
+            "description": "Clears the block; the product stays inactive for the seller to activate. 200 the admin view. PRODUCT_NOT_FOUND 404, PRODUCT_BLOCK_INVALID_STATUS 409 (not blocked)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin: dashboard",
+      "description": "spec 20 §3.2. Admin role. Days are Cairo business days.",
+      "item": [
+        {
+          "name": "Dashboard",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/dashboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "dashboard"
+              ]
+            },
+            "description": "orders (open seller orders by status, placedToday, placedLast7Days), gmv (30 days ending today: placed and delivered), topSellers (10, by delivered GMV over the same days), sellers.pendingApproval, support, finance (codOutstanding, sellerPayable, agentFeePayable), delivery. Cached for DASHBOARD_CACHE_TTL_SECONDS; generatedAt is when it was computed."
           }
         }
       ]

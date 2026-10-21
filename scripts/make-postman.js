@@ -60,7 +60,7 @@ const idempotencyKey = { key: 'Idempotency-Key', value: '{{$guid}}' };
 const API = '/api/v1';
 const collection = {
   info: {
-    name: 'Nile Marketplace API (Release 1 + R2-P1…P4)',
+    name: 'Nile Marketplace API (Release 1 + R2-P1…P5)',
     _postman_id: 'c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01',
     description: [
       'Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10), delivery (spec 11): governorates and fees, agents, shipments and the work of delivery agents, and finance (spec 12): balances, statements, COD remittances and payouts.',
@@ -97,6 +97,7 @@ const collection = {
       '',
       'Review flow: a customer with a delivered order → "Reviews" → Reviewable items (stores `orderItemId`) → Write a review (stores `reviewId`); the worker moves the product and seller ratings. Log in as the seller → "Seller: reviews" → Reply. As an admin → "Admin: reviews" → Hide / Unhide. "Catalog" → Product reviews / Review summary show the public side.',
       '',
+      'Back-office flow (admin): "Admin: dashboard" shows the figures (cached for DASHBOARD_CACHE_TTL_SECONDS; generatedAt is their age). "Admin: users" → List users finds any account; "Admin: customers" → List customers (stores `customerId`) → Customer detail, then "Admin: orders" with customerId[eq]. "Admin: orders" → Cancel seller order / Cancel order (Idempotency-Key, a reason for the audit log). "Admin: products" → Product (admin view) → Block (the seller is notified and can no longer activate it) → Unblock. Every admin write appears in "Admin: audit log".',
       'Tokens are per account: log in as the admin again (Auth → Login) before the "Admin: …" folders.',
       '',
       'Errors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.',
@@ -164,6 +165,7 @@ const collection = {
     { key: 'ticketId', value: '' },
     { key: 'assigneeUserId', value: '' },
     { key: 'reviewId', value: '' },
+    { key: 'customerId', value: '' },
   ],
   item: [
     {
@@ -341,6 +343,44 @@ const collection = {
           tests: `${expect(200)}\nconst { meta } = pm.response.json();\nif (meta) pm.collectionVariables.set('cursor', meta.nextCursor ?? '');`,
         }),
         req({
+          name: 'List users',
+          method: 'GET',
+          path: `${API}/admin/users`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'sort', value: '-createdAt' },
+            {
+              key: 'cursor',
+              value: '{{cursor}}',
+              disabled: true,
+              description: 'meta.nextCursor of the previous page',
+            },
+            {
+              key: 'role[eq]',
+              value: 'customer',
+              disabled: true,
+              description: 'customer, seller, admin, delivery_agent',
+            },
+            {
+              key: 'status[in]',
+              value: 'active,suspended',
+              disabled: true,
+              description: 'eq | in: pending_email_verification, invited, active, suspended',
+            },
+            {
+              key: 'email[like]',
+              value: 'mona',
+              disabled: true,
+              description: 'email prefix, case-insensitive',
+            },
+            { key: 'createdAt[gte]', value: '2026-01-01', disabled: true },
+          ],
+          description:
+            'spec 20 §3.3. Every role. 200 { id, email, role, status, emailVerifiedAt, lastLoginAt, createdAt }[] + meta. INVALID_QUERY 400. The test stores the first id in `targetUserId`.',
+          tests: `${expect(200)}\nconst { data, meta } = pm.response.json();\nif (data && data[0]) pm.collectionVariables.set('targetUserId', data[0].id);\nif (meta) pm.collectionVariables.set('cursor', meta.nextCursor ?? '');`,
+        }),
+        req({
           name: 'Resend invite',
           method: 'POST',
           path: `${API}/admin/users/{{targetUserId}}/resend-invite`,
@@ -366,6 +406,36 @@ const collection = {
           auth: true,
           description:
             'suspended → active. 200 { id, email, role, status }. Errors: USER_NOT_FOUND 404, USER_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: customers',
+      description: 'spec 20 §3.3. Admin role. Reads only, not audited.',
+      item: [
+        req({
+          name: 'List customers',
+          method: 'GET',
+          path: `${API}/admin/customers`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'sort', value: '-createdAt' },
+            { key: 'name[like]', value: 'mona', disabled: true, description: 'first or last name, contains' },
+            { key: 'phone[eq]', value: '+201001234567', disabled: true, description: 'E.164' },
+          ],
+          description:
+            '200 { id, userId, email, firstName, lastName, phone, userStatus, createdAt }[] + meta. The test stores the first id in `customerId`.',
+          tests: saveId('customerId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Customer detail',
+          method: 'GET',
+          path: `${API}/admin/customers/{{customerId}}`,
+          auth: true,
+          description:
+            'The list item plus addressCount. Their orders: "Admin: orders" → List orders with customerId[eq]. CUSTOMER_NOT_FOUND 404.',
           tests: expect(200),
         }),
       ],
@@ -1170,7 +1240,8 @@ if (pm.response.code === 201) {
     },
     {
       name: 'Admin: orders',
-      description: 'spec 09 §4.3. Admin role. No admin cancellation in R1 (S-9).',
+      description:
+        'spec 09 §4.3, §8.4. Admin role. Cancellations need an Idempotency-Key and a reason (3..500, admins only; the customer sees cancelReason admin_cancelled).',
       item: [
         req({
           name: 'List orders',
@@ -1192,6 +1263,78 @@ if (pm.response.code === 201) {
           auth: true,
           description:
             'Adds commission per seller order and the full status histories (actor role, actor id, reason).',
+          tests: `${expect(200)}\nconst { data } = pm.response.json();\nif (data && data.sellerOrders && data.sellerOrders[0]) pm.collectionVariables.set('sellerOrderId', data.sellerOrders[0].id);`,
+        }),
+        req({
+          name: 'Cancel seller order',
+          method: 'POST',
+          path: `${API}/admin/seller-orders/{{sellerOrderId}}/cancel`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { reason: 'Fraudulent order' },
+          description:
+            'From placed, accepted or ready_for_pickup: releases stock, flags a refund for a paid Kashier order, writes an audit row. 200 the admin order detail. SELLER_ORDER_NOT_FOUND 404, SELLER_ORDER_NOT_CANCELLABLE 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Cancel order',
+          method: 'POST',
+          path: `${API}/admin/orders/{{orderId}}/cancel`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { reason: 'Customer fraud report' },
+          description:
+            'All or nothing (OR-17): every open seller order is cancelled, or none when one is past ready_for_pickup. 200 the admin order detail. ORDER_NOT_FOUND 404, ORDER_NOT_CANCELLABLE 409 (details: the blocking sellerOrderIds; none when nothing is left to cancel).',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: products',
+      description:
+        'spec 20 §3.4. Admin role. Uses `productId`. A block takes the product off the shop (active → inactive) and refuses activation until unblocked; the seller may still edit it.',
+      item: [
+        req({
+          name: 'Product (admin view)',
+          method: 'GET',
+          path: `${API}/admin/products/{{productId}}`,
+          auth: true,
+          description:
+            "The seller's product detail (any status) plus sellerId, adminBlocked and adminBlockReason. PRODUCT_NOT_FOUND 404.",
+          tests: expect(200),
+        }),
+        req({
+          name: 'Block product',
+          method: 'POST',
+          path: `${API}/admin/products/{{productId}}/block`,
+          auth: true,
+          body: { reason: 'Prohibited item' },
+          description:
+            '`reason` 3..500, shown to the seller in their product view. The seller is notified (product_blocked). 200 the admin view. PRODUCT_NOT_FOUND 404, PRODUCT_BLOCK_INVALID_STATUS 409 (already blocked).',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Unblock product',
+          method: 'POST',
+          path: `${API}/admin/products/{{productId}}/unblock`,
+          auth: true,
+          description:
+            'Clears the block; the product stays inactive for the seller to activate. 200 the admin view. PRODUCT_NOT_FOUND 404, PRODUCT_BLOCK_INVALID_STATUS 409 (not blocked).',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: dashboard',
+      description: 'spec 20 §3.2. Admin role. Days are Cairo business days.',
+      item: [
+        req({
+          name: 'Dashboard',
+          method: 'GET',
+          path: `${API}/admin/dashboard`,
+          auth: true,
+          description:
+            'orders (open seller orders by status, placedToday, placedLast7Days), gmv (30 days ending today: placed and delivered), topSellers (10, by delivered GMV over the same days), sellers.pendingApproval, support, finance (codOutstanding, sellerPayable, agentFeePayable), delivery. Cached for DASHBOARD_CACHE_TTL_SECONDS; generatedAt is when it was computed.',
           tests: expect(200),
         }),
       ],
