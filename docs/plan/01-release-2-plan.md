@@ -155,7 +155,7 @@ Cookie transport (set, rotate, clear, CSRF header required, body + cookie reject
 4. Realtime gateway + fan-out consumer + docs.
 5. Notification centre + preferences.
 6. Web Push.
-7. Terraform + staging deploy.
+7. Terraform + staging deploy. **Deferred to P9 (user, 2026-10-21):** written together with the staging deploy once the AWS accounts exist, not offline beforehand. Steps 1–6 are done on `r2-p2-realtime`. Needed then: the realtime ECS service, the ALB `/realtime*` rule and 120 s idle timeout, the worker's Redis access, the `VAPID_PRIVATE_KEY` secret, the web app origins for `CORS_ALLOWED_ORIGINS`, and the VAPID key pairs.
 
 ### 5.5 Done when
 CI green; on staging a browser session logs in with the cookie, receives `order.updated` live and a push notification for a COD order's progress.
