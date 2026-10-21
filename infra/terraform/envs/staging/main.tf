@@ -165,6 +165,10 @@ module "environment" {
     NOTIFICATION_RETENTION_DAYS               = "90"
     JOB_NOTIFICATION_RETENTION_INTERVAL_MS    = "86400000"
     NOTIFICATION_RETENTION_BATCH_SIZE         = "1000"
+    SUPPORT_SLA_HOURS                         = "24"
+    SUPPORT_AUTO_CLOSE_AFTER_HOURS            = "168"
+    JOB_SUPPORT_INTERVAL_MS                   = "60000"
+    SUPPORT_JOBS_BATCH_SIZE                   = "100"
 
     EMAIL_HTTP_TIMEOUT_MS = "10000"
     MAILJET_FROM_EMAIL    = var.mailjet_from_email

@@ -135,14 +135,20 @@ export class SupportTicketRepository {
 
   /**
    * The ticket row `FOR UPDATE` (UC-SU-2, UC-SU-3: lock order ticket → media rows). With
-   * `openerUserId`, another user's ticket reads as missing.
+   * `openerUserId`, another user's ticket reads as missing; with `skipLocked`, a held one too.
    */
-  async lockById(id: string, trx: DbTransaction, openerUserId?: string): Promise<SupportTicket | undefined> {
+  async lockById(
+    id: string,
+    trx: DbTransaction,
+    options: { openerUserId?: string; skipLocked?: boolean } = {},
+  ): Promise<SupportTicket | undefined> {
     const query = trx<SupportTicketRow>(T)
       .select(...COLUMNS)
       .where({ id })
       .forUpdate();
-    if (openerUserId !== undefined) query.andWhere({ opener_user_id: openerUserId });
+    if (options.openerUserId !== undefined) query.andWhere({ opener_user_id: options.openerUserId });
+    // Jobs skip a ticket another transaction holds: the next run picks it up (P5-Q5 pattern).
+    if (options.skipLocked) query.skipLocked();
     const row = await query.first();
     return row ? toModel(row) : undefined;
   }
@@ -221,6 +227,37 @@ export class SupportTicketRepository {
       .where({ id, opener_user_id: openerUserId })
       .first();
     return row ? toModel(row) : undefined;
+  }
+
+  /**
+   * Auto-close candidates (UC-SU-5), read without locks: resolved before the cutoff, oldest first
+   * (idx_support_tickets_resolved_at).
+   */
+  async findResolvedBefore(cutoff: Date, limit: number): Promise<string[]> {
+    const rows = await this.db
+      .knex<SupportTicketRow>(T)
+      .select('id')
+      .where({ status: TicketStatus.RESOLVED })
+      .andWhere('resolved_at', '<', cutoff)
+      .orderBy([{ column: 'resolved_at' }, { column: 'id' }])
+      .limit(limit);
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * SLA candidates (UC-SU-5), read without locks: waiting for an admin since before the cutoff and not
+   * flagged in this wait yet, longest wait first (idx_support_tickets_awaiting_admin_since_id).
+   */
+  async findWaitingSince(cutoff: Date, limit: number): Promise<string[]> {
+    const rows = await this.db
+      .knex<SupportTicketRow>(T)
+      .select('id')
+      .whereIn('status', WAITING_FOR_ADMIN_STATUSES)
+      .andWhere('awaiting_admin_since', '<', cutoff)
+      .whereNull('sla_breached_at')
+      .orderBy([{ column: 'awaiting_admin_since' }, { column: 'id' }])
+      .limit(limit);
+    return rows.map((row) => row.id);
   }
 
   /** Existence on the primary key, optionally of one opener's ticket (G22). */

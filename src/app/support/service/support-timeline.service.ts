@@ -7,11 +7,9 @@ import {
   SupportTicketAssigned,
   SupportTicketStatusChanged,
 } from '../../../lib/events';
-import { MediaPurpose, type MediaService } from '../../media';
 import { MessageKind, SenderRole, type TicketStatus } from '../enums';
 import { type NewSupportMessage, type SupportMessage } from '../model/support-message.model';
 import { type SupportTicket } from '../model/support-ticket.model';
-import { type SupportAttachmentRepository } from '../repository/support-attachment.repository';
 import { type SupportMessageRepository } from '../repository/support-message.repository';
 
 export function systemLine(ticketId: string, body: string): NewSupportMessage {
@@ -20,15 +18,14 @@ export function systemLine(ticketId: string, body: string): NewSupportMessage {
 
 /**
  * The write steps every support action shares, inside the caller's transaction (ticket already
- * locked): messages and system lines, private attachments, and the outbox events (spec 16 §5).
+ * locked): messages and system lines, and the outbox events (spec 16 §5). Used by the api and by the
+ * worker's jobs, so it needs no media (attachments: `SupportAttachmentService`).
  */
 @injectable()
 export class SupportTimelineService {
   constructor(
     @inject(TOKENS.Outbox) private readonly outbox: IOutbox,
     @inject(TOKENS.SupportMessageRepository) private readonly messages: SupportMessageRepository,
-    @inject(TOKENS.SupportAttachmentRepository) private readonly attachments: SupportAttachmentRepository,
-    @inject(TOKENS.MediaService) private readonly media: MediaService,
   ) {}
 
   /** One multi-row insert; the rows come back in the given order. */
@@ -36,17 +33,6 @@ export class SupportTimelineService {
     const inserted = await this.messages.insertMany(lines, trx);
     if (inserted.length !== lines.length) throw new Error('support message insert lost rows');
     return inserted;
-  }
-
-  /** Claims the private images (lock order ticket → media rows) and records them on the message. */
-  async attach(
-    message: SupportMessage,
-    ownerUserId: string,
-    mediaIds: readonly string[],
-    trx: DbTransaction,
-  ): Promise<void> {
-    await this.media.claim(mediaIds, { purpose: MediaPurpose.SUPPORT_ATTACHMENT, ownerUserId }, trx);
-    await this.attachments.insertMany(message.id, mediaIds, trx);
   }
 
   /** One `support.message_created` per message, after the ticket's update (current assignee). */

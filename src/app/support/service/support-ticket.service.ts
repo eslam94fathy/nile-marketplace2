@@ -23,6 +23,7 @@ import { type NewSupportMessage, type SupportMessage } from '../model/support-me
 import { type SupportTicket } from '../model/support-ticket.model';
 import { type SupportReadRepository } from '../repository/support-read.repository';
 import { type SupportTicketRepository } from '../repository/support-ticket.repository';
+import { type SupportAttachmentService } from './support-attachment.service';
 import { type SupportTimelineService, systemLine } from './support-timeline.service';
 import { senderRoleOf } from './support-view.service';
 import { afterUserMessage } from './ticket-transitions';
@@ -59,6 +60,7 @@ export class SupportTicketService {
     @inject(TOKENS.SupportTicketRepository) private readonly tickets: SupportTicketRepository,
     @inject(TOKENS.SupportReadRepository) private readonly reads: SupportReadRepository,
     @inject(TOKENS.SupportTimelineService) private readonly timeline: SupportTimelineService,
+    @inject(TOKENS.SupportAttachmentService) private readonly attachments: SupportAttachmentService,
     @inject(TOKENS.OrderingDirectory) private readonly ordering: IOrderingDirectory,
     @inject(TOKENS.CustomerDirectory) private readonly customers: ICustomerDirectory,
     @inject(TOKENS.SellerDirectory) private readonly sellers: ISellerDirectory,
@@ -92,7 +94,7 @@ export class SupportTicketService {
       );
       const [message] = await this.timeline.append([userMessage(ticket, opener.userId, input.body)], trx);
       if (!message) throw new Error('support message insert returned no row');
-      await this.timeline.attach(message, opener.userId, input.attachmentMediaIds, trx);
+      await this.attachments.attach(message, opener.userId, input.attachmentMediaIds, trx);
       await this.reads.markRead(ticket.id, opener.userId, at, trx);
       await this.outbox.add(trx, {
         contract: SupportTicketOpened,
@@ -118,7 +120,7 @@ export class SupportTicketService {
   ): Promise<{ ticket: SupportTicket; message: SupportMessage }> {
     const at = this.clock.now();
     return this.tx.run(async (trx) => {
-      const locked = await this.tickets.lockById(ticketId, trx, opener.userId);
+      const locked = await this.tickets.lockById(ticketId, trx, { openerUserId: opener.userId });
       if (!locked) throw supportTicketNotFound();
       if (locked.status === TicketStatus.CLOSED) throw supportTicketClosed();
       const transition = afterUserMessage(locked, at);
@@ -128,7 +130,7 @@ export class SupportTicketService {
       const created = await this.timeline.append(lines, trx);
       const [message] = created;
       if (!message) throw new Error('support message insert returned no row');
-      await this.timeline.attach(message, opener.userId, input.attachmentMediaIds, trx);
+      await this.attachments.attach(message, opener.userId, input.attachmentMediaIds, trx);
       const ticket = await this.tickets.update(locked.id, transition.patch, trx);
       await this.reads.markRead(ticket.id, opener.userId, at, trx);
       await this.timeline.messagesCreated(ticket, created, trx);

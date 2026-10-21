@@ -9,9 +9,10 @@
 import { type Router } from 'express';
 import { type DependencyContainer } from 'tsyringe';
 import { type JwtVerifier } from '../../lib/auth';
-import { type ApiEnv } from '../../lib/config';
+import { type ApiEnv, type Env } from '../../lib/config';
 import { TOKENS } from '../../lib/di';
 import { type OpenApiRegistry } from '../../lib/http';
+import { type JobDefinition } from '../../lib/jobs';
 import { type ILogger } from '../../lib/logger';
 import { type RateLimiters, requireIdempotency } from '../../lib/middleware';
 import { type ICache } from '../../pkg/cache';
@@ -23,7 +24,9 @@ import { SupportReadRepository } from './repository/support-read.repository';
 import { SupportTicketRepository } from './repository/support-ticket.repository';
 import { supportRoutes } from './routes';
 import { SupportAdminService } from './service/support-admin.service';
+import { SupportAttachmentService } from './service/support-attachment.service';
 import { SupportDirectory } from './service/support-directory.service';
+import { SupportJobs } from './service/support-jobs.job';
 import { SupportTicketService } from './service/support-ticket.service';
 import { SupportTimelineService } from './service/support-timeline.service';
 import { SupportViewService } from './service/support-view.service';
@@ -51,10 +54,28 @@ export function registerSupportModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.SupportReadRepository, SupportReadRepository);
   container.registerSingleton(TOKENS.SupportViewService, SupportViewService);
   container.registerSingleton(TOKENS.SupportTimelineService, SupportTimelineService);
+  container.registerSingleton(TOKENS.SupportAttachmentService, SupportAttachmentService);
   container.registerSingleton(TOKENS.SupportTicketService, SupportTicketService);
   container.registerSingleton(TOKENS.SupportTicketController, SupportTicketController);
   container.registerSingleton(TOKENS.SupportAdminService, SupportAdminService);
   container.registerSingleton(TOKENS.SupportAdminController, SupportAdminController);
+}
+
+/** worker process: the support jobs (spec 16 UC-SU-5); no media, no HTTP. */
+export function registerSupportWorker(container: DependencyContainer): void {
+  container.registerSingleton(TOKENS.SupportTicketRepository, SupportTicketRepository);
+  container.registerSingleton(TOKENS.SupportMessageRepository, SupportMessageRepository);
+  container.registerSingleton(TOKENS.SupportTimelineService, SupportTimelineService);
+  container.registerSingleton(TOKENS.SupportJobs, SupportJobs);
+}
+
+/** `support-jobs`: auto-close and the SLA flag, one advisory-locked job (architecture §14 jobs). */
+export function createSupportJobs(
+  container: DependencyContainer,
+  env: Pick<Env, 'JOB_SUPPORT_INTERVAL_MS'>,
+): JobDefinition[] {
+  const jobs = container.resolve<SupportJobs>(TOKENS.SupportJobs);
+  return [{ name: 'support-jobs', intervalMs: env.JOB_SUPPORT_INTERVAL_MS, run: () => jobs.run() }];
 }
 
 /** The module's HTTP routes, mounted by the composition root at `basePath` (`/api/v1`). */

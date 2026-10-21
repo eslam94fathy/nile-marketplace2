@@ -6,7 +6,7 @@ import { registerCustomersLookups, registerCustomersModule } from './app/custome
 import { registerDeliveryAgentLookups, registerDeliveryModule, registerDeliveryWorker } from './app/delivery';
 import { registerFinanceModule, registerFinanceWorker } from './app/finance';
 import { registerSellersLookups, registerSellersModule } from './app/sellers';
-import { registerSupportModule } from './app/support';
+import { registerSupportModule, registerSupportWorker } from './app/support';
 import { Dependency, registerHealthModule } from './app/health';
 import { registerIdentityModule } from './app/identity';
 import { registerInventoryModule } from './app/inventory';
@@ -120,6 +120,8 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   container.register(TOKENS.RealtimeEmitter, { useValue: infra.realtimeEmitter });
   container.register(TOKENS.PushSender, { useValue: infra.pushSender });
   registerRealtimeWorker(container);
+  // support-jobs (spec 16 UC-SU-5).
+  registerSupportWorker(container);
   return container;
 }
 

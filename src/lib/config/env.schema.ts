@@ -332,6 +332,14 @@ const notificationJobsShape = {
   NOTIFICATION_RETENTION_BATCH_SIZE: positiveInt(100_000),
 };
 
+/** support jobs (spec 16 UC-SU-5, R-8), worker only. */
+const supportJobsShape = {
+  SUPPORT_SLA_HOURS: positiveInt(24 * 30),
+  SUPPORT_AUTO_CLOSE_AFTER_HOURS: positiveInt(24 * 365),
+  JOB_SUPPORT_INTERVAL_MS: positiveInt(86_400_000),
+  SUPPORT_JOBS_BATCH_SIZE: positiveInt(10_000),
+};
+
 /** media cleanup job (spec 14 UC-ME-4), worker only. */
 const mediaJobsShape = {
   MEDIA_PENDING_RETENTION_HOURS: positiveInt(24 * 30),
@@ -552,6 +560,7 @@ export const workerEnvSchema = z
     ...auditJobsShape,
     ...mediaJobsShape,
     ...notificationJobsShape,
+    ...supportJobsShape,
     ...pushWorkerShape,
     ...storageShape,
     // The payment consumer sets the acceptance deadline when a Kashier order is placed (OR-8).

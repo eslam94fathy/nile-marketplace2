@@ -18,6 +18,7 @@ import { type SupportTicket } from '../model/support-ticket.model';
 import { type SupportReadRepository } from '../repository/support-read.repository';
 import { type SupportTicketRepository } from '../repository/support-ticket.repository';
 import { type MessageInput } from './support-ticket.service';
+import { type SupportAttachmentService } from './support-attachment.service';
 import { type SupportTimelineService, systemLine } from './support-timeline.service';
 import { afterAdminMessage, type TicketPatch } from './ticket-transitions';
 
@@ -41,6 +42,7 @@ export class SupportAdminService {
     @inject(TOKENS.SupportTicketRepository) private readonly tickets: SupportTicketRepository,
     @inject(TOKENS.SupportReadRepository) private readonly reads: SupportReadRepository,
     @inject(TOKENS.SupportTimelineService) private readonly timeline: SupportTimelineService,
+    @inject(TOKENS.SupportAttachmentService) private readonly attachments: SupportAttachmentService,
   ) {}
 
   /**
@@ -65,7 +67,7 @@ export class SupportAdminService {
       if (input.internal) {
         const [note] = await this.timeline.append([own], trx);
         if (!note) throw new Error('support message insert returned no row');
-        await this.timeline.attach(note, admin.userId, input.attachmentMediaIds, trx);
+        await this.attachments.attach(note, admin.userId, input.attachmentMediaIds, trx);
         await this.reads.markRead(locked.id, admin.userId, at, trx);
         await this.timeline.messagesCreated(locked, [note], trx);
         return { ticket: locked, message: note };
@@ -80,7 +82,7 @@ export class SupportAdminService {
       const created = await this.timeline.append(lines, trx);
       const [message] = created;
       if (!message) throw new Error('support message insert returned no row');
-      await this.timeline.attach(message, admin.userId, input.attachmentMediaIds, trx);
+      await this.attachments.attach(message, admin.userId, input.attachmentMediaIds, trx);
       const patch: TicketPatch = autoAssign
         ? { ...transition.patch, assignedAdminUserId: admin.userId }
         : transition.patch;

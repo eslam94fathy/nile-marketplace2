@@ -231,6 +231,8 @@ export const TOKENS = {
   SupportTicketService: Symbol.for('SupportTicketService'),
   SupportTicketController: Symbol.for('SupportTicketController'),
   SupportTimelineService: Symbol.for('SupportTimelineService'),
+  SupportAttachmentService: Symbol.for('SupportAttachmentService'),
+  SupportJobs: Symbol.for('SupportJobs'),
   SupportAdminService: Symbol.for('SupportAdminService'),
   SupportAdminController: Symbol.for('SupportAdminController'),
   /** Public API of support (spec 16 §2), read by realtime and the back-office. */
