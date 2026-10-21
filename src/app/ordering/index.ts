@@ -37,6 +37,7 @@ import { StatusHistoryRepository } from './repository/status-history.repository'
 import { PAYMENT_UPDATES_QUEUE, SHIPMENT_UPDATES_QUEUE } from './constants';
 import { orderingRoutes } from './routes';
 import { AcceptanceTimeoutJob } from './service/acceptance-timeout.job';
+import { AdminOrderActionService } from './service/admin-order-action.service';
 import { CheckoutService } from './service/checkout.service';
 import { OrderActionService } from './service/order-action.service';
 import { OrderLifecycleService } from './service/order-lifecycle.service';
@@ -69,6 +70,7 @@ export function registerOrderingModule(container: DependencyContainer): void {
   registerOrderingCore(container);
   container.registerSingleton(TOKENS.CheckoutService, CheckoutService);
   container.registerSingleton(TOKENS.OrderActionService, OrderActionService);
+  container.registerSingleton(TOKENS.AdminOrderActionService, AdminOrderActionService);
   container.registerSingleton(TOKENS.OrderViewService, OrderViewService);
   container.registerSingleton(TOKENS.OrderController, OrderController);
   container.registerSingleton(TOKENS.SellerOrderController, SellerOrderController);

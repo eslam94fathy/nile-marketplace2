@@ -138,6 +138,11 @@ export class CustomerSellerOrderDto {
   @IsBoolean()
   canCancel!: boolean;
 
+  /** Why it was cancelled, e.g. `admin_cancelled` (spec 09 §8.4); never an admin's text (OR-19). */
+  @IsOptional()
+  @IsIn(Object.values(SellerOrderCancelReason))
+  cancelReason!: SellerOrderCancelReason | null;
+
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)
   items!: OrderItemDto[];
@@ -371,10 +376,6 @@ export class AdminSellerOrderDto extends CustomerSellerOrderDto {
   @IsMoney()
   sellerNet!: string;
 
-  @IsOptional()
-  @IsIn(Object.values(SellerOrderCancelReason))
-  cancelReason!: SellerOrderCancelReason | null;
-
   @ValidateNested({ each: true })
   @Type(() => AdminHistoryEntryDto)
   statusHistory!: AdminHistoryEntryDto[];
@@ -429,6 +430,7 @@ function toCustomerSellerOrderDto(
     status: sellerOrder.status,
     subtotal: sellerOrder.subtotal.toString(),
     canCancel: !orderAwaitsPayment && sellerOrder.status === SellerOrderStatus.PLACED,
+    cancelReason: sellerOrder.cancelReason,
     items: detail.items.map(toOrderItemDto),
     timeline: detail.history.map((entry) => ({ status: entry.toStatus, at: entry.createdAt.toISOString() })),
   };
@@ -482,7 +484,6 @@ export function toAdminOrderDetailDto(detail: OrderDetail): AdminOrderDetailDto 
         commissionRate: s.sellerOrder.commissionRate.toString(),
         commission: s.sellerOrder.commission.toString(),
         sellerNet: s.sellerOrder.sellerNet.toString(),
-        cancelReason: s.sellerOrder.cancelReason,
         statusHistory: s.history.map(toAdminHistoryDto),
       };
     }),

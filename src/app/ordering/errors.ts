@@ -14,6 +14,7 @@ export const OrderingErrorCode = {
   SELLER_ORDER_NOT_FOUND: 'SELLER_ORDER_NOT_FOUND',
   SELLER_ORDER_INVALID_STATUS_TRANSITION: 'SELLER_ORDER_INVALID_STATUS_TRANSITION',
   SELLER_ORDER_NOT_CANCELLABLE: 'SELLER_ORDER_NOT_CANCELLABLE',
+  ORDER_NOT_CANCELLABLE: 'ORDER_NOT_CANCELLABLE',
   ORDER_ITEM_NOT_FOUND: 'ORDER_ITEM_NOT_FOUND',
   ITEM_CANCEL_QUANTITY_INVALID: 'ITEM_CANCEL_QUANTITY_INVALID',
 } as const;
@@ -112,3 +113,17 @@ export const itemCancelQuantityInvalid = (open: number) =>
 /** Registration creates the user and the profile in one transaction, so this is a bug (as cart CT-8). */
 export const profileMissing = (role: string, userId: string) =>
   internalError(new Error(`${role}-role user ${userId} has no ${role} profile`));
+
+/**
+ * UC-OR-10 (OR-17): a seller order is past `ready_for_pickup`, or nothing is open. `details` names each
+ * blocking seller order (none when nothing is open); nothing was cancelled.
+ */
+export const orderNotCancellable = (blocking: readonly { sellerOrderId: string; status: string }[]) =>
+  new AppError(C.ORDER_NOT_CANCELLABLE, 'This order can no longer be cancelled as a whole', S.CONFLICT, {
+    details: blocking.map((s): ErrorDetail => ({
+      field: 'sellerOrderId',
+      constraint: 'not_cancellable',
+      message: `seller order is ${s.status}`,
+      value: s.sellerOrderId,
+    })),
+  });

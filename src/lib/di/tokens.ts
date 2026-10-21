@@ -152,6 +152,7 @@ export const TOKENS = {
   CheckoutService: Symbol.for('CheckoutService'),
   OrderViewService: Symbol.for('OrderViewService'),
   OrderingDirectory: Symbol.for('OrderingDirectory'),
+  AdminOrderActionService: Symbol.for('AdminOrderActionService'),
   RealtimeEmitter: Symbol.for('RealtimeEmitter'),
   RealtimeFanoutService: Symbol.for('RealtimeFanoutService'),
   ProfileRoomsService: Symbol.for('ProfileRoomsService'),
