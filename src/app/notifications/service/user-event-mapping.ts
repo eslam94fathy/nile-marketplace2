@@ -4,6 +4,7 @@ import {
   PaymentFailed,
   OrderPlaced,
   PermanentEventError,
+  ProductBlocked,
   ReviewCreated,
   ReviewReplied,
   SellerOrderAccepted,
@@ -21,7 +22,7 @@ import { type NotificationParty, SellerOrderCancelReason, SellerOrderStatus } fr
 import { NotificationLink } from '../constants';
 import { NotificationCategory, NotificationType } from '../enums';
 
-/** The events of spec 13 §8.2 and §8.8 that exist by R2-P4 (returns come in their phase). */
+/** The events of spec 13 §8.2 and §8.8 that exist by R2-P5 (returns come in their phase). */
 export const USER_EVENTS = [
   OrderPlaced,
   SellerOrderAccepted,
@@ -36,6 +37,7 @@ export const USER_EVENTS = [
   SupportTicketStatusChanged,
   ReviewCreated,
   ReviewReplied,
+  ProductBlocked,
   // Not notifications: they drop the user's push subscriptions (UC-NO-4, NO-8).
   UserSuspended,
   UserSessionsRevoked,
@@ -49,13 +51,14 @@ export const SESSION_END_EVENTS: ReadonlySet<string> = new Set([
 
 /**
  * Events that name their recipient themselves, with nothing of the order to show: support (user ids, the
- * ticket number, NO-31) and reviews (the seller or customer profile, NO-32).
+ * ticket number, NO-31), reviews (the seller or customer profile, NO-32) and the product block (NO-33).
  */
 const NO_PARTY_EVENTS: ReadonlySet<string> = new Set([
   SupportMessageCreated.type,
   SupportTicketStatusChanged.type,
   ReviewCreated.type,
   ReviewReplied.type,
+  ProductBlocked.type,
 ]);
 
 /** Events whose mapping needs the order's parties (order number, customer, seller orders). */
@@ -228,6 +231,18 @@ export function mapUserEvent(
           title: 'Seller replied',
           body: 'The seller replied to your review.',
           link: NotificationLink.myReview(idOf(envelope, 'reviewId')),
+        },
+      ];
+    // Spec 13 §8.8 (BO-8): the reason is only in the seller's product view.
+    case ProductBlocked.type:
+      return [
+        {
+          recipient: { kind: 'seller', id: idOf(envelope, 'sellerId') },
+          category: NotificationCategory.ORDERS,
+          type: NotificationType.PRODUCT_BLOCKED,
+          title: 'Product blocked',
+          body: 'A product was blocked by the platform.',
+          link: NotificationLink.sellerProduct(idOf(envelope, 'productId')),
         },
       ];
     case SellerOrderDelivered.type:

@@ -68,4 +68,6 @@ export const NotificationLink = {
   /** NO-32 (spec 17 RV-11): sellers have no single-review page. */
   sellerReviews: () => '/seller/reviews',
   myReview: (reviewId: string) => `/me/reviews/${reviewId}`,
+  /** NO-33 (spec 20 BO-14). */
+  sellerProduct: (productId: string) => `/seller/products/${productId}`,
 } as const;

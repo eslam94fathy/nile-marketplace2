@@ -115,6 +115,8 @@ describe('product rules', () => {
         publishedAt: null,
         ratingCount: 0,
         ratingAvg: null,
+        adminBlockedAt: null,
+        adminBlockReason: null,
         deletedAt: null,
         createdAt: new Date(),
         updatedAt: new Date(),

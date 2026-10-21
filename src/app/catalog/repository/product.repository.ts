@@ -65,6 +65,8 @@ const COLUMNS = [
   'published_at',
   'rating_count',
   'rating_avg',
+  'admin_blocked_at',
+  'admin_block_reason',
   'deleted_at',
   'created_at',
   'updated_at',
@@ -89,6 +91,8 @@ interface ProductTable {
   rating_avg: string | null;
   /** BIGINT comes back from pg as a string. */
   rating_version: string;
+  admin_blocked_at: Date | null;
+  admin_block_reason: string | null;
   deleted_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -125,6 +129,8 @@ function toModel(row: ProductRow): Product {
     publishedAt: row.published_at,
     ratingCount: row.rating_count,
     ratingAvg: row.rating_avg,
+    adminBlockedAt: row.admin_blocked_at,
+    adminBlockReason: row.admin_block_reason,
     deletedAt: row.deleted_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -378,6 +384,37 @@ export class ProductRepository {
         updated_at: trx.fn.now(),
       });
     return updated > 0;
+  }
+
+  /**
+   * The admin block (spec 20 §3.4): sets or clears both columns; `status`, when given, moves the product
+   * off the shop in the same update (BO-16).
+   */
+  async setAdminBlock(
+    id: string,
+    block: { reason: string; at: Date } | null,
+    status: ProductStatus | null,
+    trx: DbTransaction,
+  ): Promise<void> {
+    await trx<ProductTable>(T)
+      .where({ id })
+      .update({
+        admin_blocked_at: block?.at ?? null,
+        admin_block_reason: block?.reason ?? null,
+        ...(status ? { status } : {}),
+        updated_at: trx.fn.now(),
+      });
+  }
+
+  /** A live product by id, any seller, without a transaction (admin reads). */
+  async findLiveByIdForRead(id: string): Promise<Product | null> {
+    const row = await this.db
+      .knex<ProductTable>(T)
+      .select(...COLUMNS)
+      .where({ id })
+      .whereNull('deleted_at')
+      .first<ProductRow | undefined>();
+    return row ? toModel(row) : null;
   }
 
   /** A visible (VIS) product by id or by slug (uq_products_slug); null when hidden, deleted or missing. */

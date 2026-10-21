@@ -113,6 +113,14 @@ export class SellerProductDto {
   @IsBoolean()
   visible!: boolean;
 
+  /** Blocked by the platform: it can't be activated until an admin unblocks it (spec 20 §3.4). */
+  @IsBoolean()
+  adminBlocked!: boolean;
+
+  @IsOptional()
+  @IsString()
+  adminBlockReason!: string | null;
+
   // Nullable: null while the product has no active variant.
   @IsOptional()
   @IsMoney()
@@ -191,6 +199,8 @@ export function toSellerProductDto(product: Product, primaryImage: ImageView | n
     categoryId: product.categoryId,
     status: product.status,
     visible: product.visible,
+    adminBlocked: product.adminBlockedAt !== null,
+    adminBlockReason: product.adminBlockReason,
     minPrice: product.minPrice?.toString() ?? null,
     maxPrice: product.maxPrice?.toString() ?? null,
     inStock: product.inStock,
@@ -234,4 +244,14 @@ export function toSellerProductDetailDto(detail: ProductDetail): SellerProductDe
 
 export function toStockMovementDto(movement: InventoryMovement): StockMovementDto {
   return { ...movement, createdAt: movement.createdAt.toISOString() };
+}
+
+/** `GET /admin/products/:productId` (spec 20 §3.4): the seller's view of the product, plus its seller. */
+export class AdminProductDetailDto extends SellerProductDetailDto {
+  @IsUUID()
+  sellerId!: string;
+}
+
+export function toAdminProductDetailDto(sellerId: string, detail: ProductDetail): AdminProductDetailDto {
+  return { ...toSellerProductDetailDto(detail), sellerId };
 }

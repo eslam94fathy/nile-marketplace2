@@ -10,6 +10,7 @@ import {
   categoryReferenceNotFound,
   productCategoryLocked,
   productHasNoActiveVariant,
+  productBlocked,
   productInvalidStatusTransition,
   productNotFound,
 } from '../errors';
@@ -123,6 +124,8 @@ export class SellerProductService {
 
   async activate(userId: string, productId: string): Promise<ProductDetail> {
     const sellerId = await this.write(userId, productId, async (product, trx) => {
+      // Only activation is refused while blocked: edits, variants, images and stock stay open (BO-15).
+      if (product.adminBlockedAt !== null) throw productBlocked();
       if (!product.canTransitionTo(ProductStatus.ACTIVE)) throw productInvalidStatusTransition();
       const live = await this.variants.findLiveByProductIds([product.id], trx);
       if (!live.some((variant) => variant.isActive)) throw productHasNoActiveVariant();

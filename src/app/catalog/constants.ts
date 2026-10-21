@@ -23,7 +23,14 @@ export const CATALOG_ADMIN_PATHS = {
   ATTRIBUTE_OPTIONS: '/admin/attributes/:attributeId/options',
   OPTION: '/admin/options/:optionId',
   CATEGORY_IMAGE: '/admin/categories/:categoryId/image',
+  PRODUCT: '/admin/products/:productId',
+  PRODUCT_BLOCK: '/admin/products/:productId/block',
+  PRODUCT_UNBLOCK: '/admin/products/:productId/unblock',
 } as const;
+
+/** The block reason is 3..500 characters (spec 20 §3.4). */
+export const BLOCK_REASON_MIN = 3;
+export const BLOCK_REASON_MAX = 500;
 
 /** Limits (spec 06 §1; a change goes through code review). */
 export const CATEGORY_MAX_DEPTH = 3;

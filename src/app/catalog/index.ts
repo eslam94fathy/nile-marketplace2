@@ -53,6 +53,8 @@ import { ProductDetailCache } from './service/product-detail-cache.service';
 import { ProductProjectionService } from './service/product-projection.service';
 import { SellerGuard } from './service/seller-guard.service';
 import { SellerProductService } from './service/seller-product.service';
+import { ProductBlockService } from './service/product-block.service';
+import { ProductBlockController } from './controller/product-block.controller';
 import { SellerVariantService } from './service/seller-variant.service';
 import { VariantViewService } from './service/variant-view.service';
 
@@ -85,6 +87,7 @@ export function registerCatalogModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.VariantViewService, VariantViewService);
   container.registerSingleton(TOKENS.ProductProjectionService, ProductProjectionService);
   container.registerSingleton(TOKENS.SellerProductService, SellerProductService);
+  container.registerSingleton(TOKENS.ProductBlockService, ProductBlockService);
   container.registerSingleton(TOKENS.SellerVariantService, SellerVariantService);
   container.registerSingleton(TOKENS.ProductDetailCache, ProductDetailCache);
   container.registerSingleton(TOKENS.ProductBrowseService, ProductBrowseService);
@@ -95,6 +98,7 @@ export function registerCatalogModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.SellerVariantController, SellerVariantController);
   container.registerSingleton(TOKENS.ProductImageController, ProductImageController);
   container.registerSingleton(TOKENS.ProductController, ProductController);
+  container.registerSingleton(TOKENS.ProductBlockController, ProductBlockController);
   registerCatalogConstraintErrors(container.resolve<PgErrorMapper>(TOKENS.PgErrorMapper));
 }
 
@@ -150,6 +154,7 @@ export function createCatalogRouter(container: DependencyContainer, basePath: st
     sellerProducts: container.resolve<SellerProductController>(TOKENS.SellerProductController),
     sellerVariants: container.resolve<SellerVariantController>(TOKENS.SellerVariantController),
     productImages: container.resolve<ProductImageController>(TOKENS.ProductImageController),
+    productBlocks: container.resolve<ProductBlockController>(TOKENS.ProductBlockController),
     jwtVerifier: container.resolve<JwtVerifier>(TOKENS.JwtVerifier),
     idempotency: requireIdempotency(
       container.resolve<ICache>(TOKENS.Cache),

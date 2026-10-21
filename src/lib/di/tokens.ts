@@ -111,6 +111,8 @@ export const TOKENS = {
   VariantViewService: Symbol.for('VariantViewService'),
   ProductProjectionService: Symbol.for('ProductProjectionService'),
   SellerProductService: Symbol.for('SellerProductService'),
+  ProductBlockService: Symbol.for('ProductBlockService'),
+  ProductBlockController: Symbol.for('ProductBlockController'),
   SellerVariantService: Symbol.for('SellerVariantService'),
   SellerProductController: Symbol.for('SellerProductController'),
   SellerVariantController: Symbol.for('SellerVariantController'),

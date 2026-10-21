@@ -7,6 +7,9 @@ import { type CategoryAdminController } from './controller/category-admin.contro
 import { type CategoryController } from './controller/category.controller';
 import { type ProductController } from './controller/product.controller';
 import { type ProductImageController } from './controller/product-image.controller';
+import { type ProductBlockController } from './controller/product-block.controller';
+import { BlockProductDto } from './dto/product-request.dto';
+import { AdminProductDetailDto } from './dto/product-response.dto';
 import { SetCategoryImageDto } from './dto/product-image.dto';
 import { ProductDetailDto, ProductListItemDto } from './dto/product-public.dto';
 import { type SellerProductController } from './controller/seller-product.controller';
@@ -38,6 +41,7 @@ export interface CatalogRouteDeps {
   sellerProducts: SellerProductController;
   sellerVariants: SellerVariantController;
   productImages: ProductImageController;
+  productBlocks: ProductBlockController;
   jwtVerifier: JwtVerifier;
   idempotency: RequestHandler;
   docs: OpenApiRegistry;
@@ -67,6 +71,9 @@ export function catalogRoutes(deps: CatalogRouteDeps): Router {
   router.delete(A.OPTION, ...adminOnly, admin.deleteOption);
   router.put(A.CATEGORY_IMAGE, ...adminOnly, admin.setImage);
   router.delete(A.CATEGORY_IMAGE, ...adminOnly, admin.removeImage);
+  router.get(A.PRODUCT, ...adminOnly, deps.productBlocks.get);
+  router.post(A.PRODUCT_BLOCK, ...adminOnly, deps.productBlocks.block);
+  router.post(A.PRODUCT_UNBLOCK, ...adminOnly, deps.productBlocks.unblock);
 
   addCatalogSellerRoutes(router, {
     products: deps.sellerProducts,
@@ -241,6 +248,35 @@ export function catalogRoutes(deps: CatalogRouteDeps): Router {
     tags: ADMIN_TAGS,
     auth: true,
     responses: { 204: { description: 'Removed' } },
+  });
+
+  const adminProduct = { description: 'The admin product view', body: AdminProductDetailDto };
+  docs.add({
+    method: 'get',
+    path: `${basePath}${A.PRODUCT}`,
+    summary: "A product in the seller's view, any status, plus its seller (PRODUCT_NOT_FOUND)",
+    tags: ADMIN_TAGS,
+    auth: true,
+    responses: { 200: adminProduct },
+  });
+  docs.add({
+    method: 'post',
+    path: `${basePath}${A.PRODUCT_BLOCK}`,
+    summary:
+      'Block a product: an active one becomes inactive, activation is refused until unblocked; the seller is notified (PRODUCT_NOT_FOUND, PRODUCT_BLOCK_INVALID_STATUS)',
+    tags: ADMIN_TAGS,
+    auth: true,
+    requestBody: BlockProductDto,
+    responses: { 200: adminProduct },
+  });
+  docs.add({
+    method: 'post',
+    path: `${basePath}${A.PRODUCT_UNBLOCK}`,
+    summary:
+      'Unblock a product; it stays inactive for the seller to re-activate (PRODUCT_NOT_FOUND, PRODUCT_BLOCK_INVALID_STATUS)',
+    tags: ADMIN_TAGS,
+    auth: true,
+    responses: { 200: adminProduct },
   });
   return router;
 }

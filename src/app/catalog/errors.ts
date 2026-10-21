@@ -22,6 +22,8 @@ export const CatalogErrorCode = {
   OPTION_IN_USE: 'OPTION_IN_USE',
   PRODUCT_NOT_FOUND: 'PRODUCT_NOT_FOUND',
   PRODUCT_INVALID_STATUS_TRANSITION: 'PRODUCT_INVALID_STATUS_TRANSITION',
+  PRODUCT_BLOCKED: 'PRODUCT_BLOCKED',
+  PRODUCT_BLOCK_INVALID_STATUS: 'PRODUCT_BLOCK_INVALID_STATUS',
   PRODUCT_HAS_NO_ACTIVE_VARIANT: 'PRODUCT_HAS_NO_ACTIVE_VARIANT',
   PRODUCT_CATEGORY_LOCKED: 'PRODUCT_CATEGORY_LOCKED',
   VARIANT_NOT_FOUND: 'VARIANT_NOT_FOUND',
@@ -194,3 +196,11 @@ export function registerCatalogConstraintErrors(mapper: PgErrorMapper): void {
   mapper.register('fk_variant_attribute_values_attribute_id', attributeInUse);
   mapper.register('fk_variant_attribute_values_option_id', optionInUse);
 }
+
+/** Activation of a product an admin blocked (spec 20 §3.4, BO-15). */
+export const productBlocked = () =>
+  new AppError(C.PRODUCT_BLOCKED, 'This product was blocked by the platform', S.CONFLICT);
+
+/** Block a blocked product, unblock one that isn't (spec 20 §6). */
+export const productBlockInvalidStatus = () =>
+  new AppError(C.PRODUCT_BLOCK_INVALID_STATUS, 'The product is already in that block state', S.CONFLICT);
