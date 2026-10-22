@@ -24,7 +24,7 @@ const MODULE_GRAPH = {
   // R2-P4 (spec 17): reviewable items, product cards, reviewer names, the seller guard, review images.
   reviews: ['ordering', 'catalog', 'customers', 'sellers', 'media'],
   // R2-P5 (spec 20 §3.2, BO-23): the dashboard stats; returns joins in R2-P6.
-  backoffice: ['ordering', 'sellers', 'support', 'finance', 'delivery'],
+  backoffice: ['ordering', 'sellers', 'support', 'finance', 'delivery', 'returns'],
   // R2-P6 (spec 18, A-11): returnable items and recording, restock, refunds, fees, photos, caller profiles.
   returns: ['ordering', 'inventory', 'payments', 'delivery', 'media', 'customers', 'sellers'],
   // R2 (architecture v2.0 §14.2). Modules record audit rows through lib/audit, not by importing audit.

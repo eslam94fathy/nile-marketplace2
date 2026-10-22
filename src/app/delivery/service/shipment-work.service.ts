@@ -349,6 +349,9 @@ function returnEvent(
     payload: {
       shipmentId: shipment.id,
       returnId: shipment.returnId,
+      // For realtime, which reads only ordering (spec 11 DE-27).
+      sellerOrderId: shipment.sellerOrderId,
+      orderId: shipment.orderId,
       agentId: agent.id,
       at: at.toISOString(),
     },

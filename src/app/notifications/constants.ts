@@ -70,4 +70,7 @@ export const NotificationLink = {
   myReview: (reviewId: string) => `/me/reviews/${reviewId}`,
   /** NO-33 (spec 20 BO-14). */
   sellerProduct: (productId: string) => `/seller/products/${productId}`,
+  /** NO-34 (spec 18 RE-16). */
+  customerReturn: (returnId: string) => `/returns/${returnId}`,
+  sellerReturn: (returnId: string) => `/seller/returns/${returnId}`,
 } as const;

@@ -9,7 +9,14 @@ import {
   PaymentExpired,
   PaymentFailed,
   PaymentPaid,
+  PaymentRefunded,
+  PaymentRefundRecorded,
   PermanentEventError,
+  ReturnShipmentDelivered,
+  ReturnShipmentFailed,
+  ReturnShipmentPickedUp,
+  type ReturnStatusValue,
+  ReturnStatusChanged,
   SellerOrderAccepted,
   SellerOrderCancelled,
   SellerOrderDelivered,
@@ -38,9 +45,15 @@ import {
 } from '../../../lib/realtime';
 import { type IOrderingDirectory, type NotificationParty, SellerOrderStatus } from '../../ordering';
 import { type ISupportDirectory, MessageKind } from '../../support';
-import { MediaStatusValue, PaymentStatusValue, ShipmentStatusValue } from '../constants';
+import {
+  MediaStatusValue,
+  PaymentStatusValue,
+  RefundPaymentStatusValue,
+  ShipmentKindValue,
+  ShipmentStatusValue,
+} from '../constants';
 
-/** Every event the fan-out consumes (spec 15 §5, the ones that exist by R2-P3). */
+/** Every event the fan-out consumes (spec 15 §5, §8; the ones that exist by R2-P6). */
 export const FANOUT_EVENTS = [
   OrderPlaced,
   OrderClosed,
@@ -64,6 +77,12 @@ export const FANOUT_EVENTS = [
   SupportMessageCreated,
   SupportTicketAssigned,
   SupportTicketStatusChanged,
+  ReturnStatusChanged,
+  ReturnShipmentPickedUp,
+  ReturnShipmentDelivered,
+  ReturnShipmentFailed,
+  PaymentRefunded,
+  PaymentRefundRecorded,
   UserSuspended,
 ] as const;
 
@@ -102,6 +121,30 @@ const SHIPMENT_STATUS_BY_EVENT: ReadonlyMap<string, (envelope: EventEnvelope) =>
         : ShipmentStatusValue.DELIVERY_FAILED,
   ],
 ]);
+/** Return shipments: the ids come with the event (spec 11 DE-27), the agent alone follows them (RT-22). */
+const RETURN_SHIPMENT_STATUS_BY_EVENT: ReadonlyMap<string, string> = new Map<string, string>([
+  [ReturnShipmentPickedUp.type, ShipmentStatusValue.PICKED_UP],
+  [ReturnShipmentDelivered.type, ShipmentStatusValue.DELIVERED],
+  [ReturnShipmentFailed.type, ShipmentStatusValue.CANCELLED],
+]);
+const REFUND_EVENTS: ReadonlySet<string> = new Set([PaymentRefunded.type, PaymentRefundRecorded.type]);
+const REFUND_PAYMENT_STATUSES: ReadonlySet<unknown> = new Set(Object.values(RefundPaymentStatusValue));
+/** Returns waiting for an admin also go to the `admins` room (spec 15 §8). */
+const ADMIN_RETURN_STATUSES: ReadonlySet<unknown> = new Set<ReturnStatusValue>(['escalated', 'disputed']);
+const RETURN_STATUSES: ReadonlySet<unknown> = new Set<ReturnStatusValue>([
+  'requested',
+  'rejected',
+  'escalated',
+  'approved',
+  'picked_up',
+  'received',
+  'disputed',
+  'completed',
+  'refused',
+  'cancelled',
+  'pickup_failed',
+]);
+
 const MEDIA_STATUS_BY_EVENT: ReadonlyMap<string, string> = new Map<string, string>([
   [MediaReady.type, MediaStatusValue.READY],
   [MediaFailed.type, MediaStatusValue.FAILED],
@@ -155,6 +198,10 @@ export class RealtimeFanoutService {
     if (type === ShipmentAssigned.type) return this.shipmentAssigned(envelope);
     const shipmentStatus = SHIPMENT_STATUS_BY_EVENT.get(type);
     if (shipmentStatus !== undefined) return this.shipmentUpdated(envelope, shipmentStatus(envelope));
+    const returnShipmentStatus = RETURN_SHIPMENT_STATUS_BY_EVENT.get(type);
+    if (returnShipmentStatus !== undefined) return this.returnShipmentUpdated(envelope, returnShipmentStatus);
+    if (type === ReturnStatusChanged.type) return this.returnUpdated(envelope);
+    if (REFUND_EVENTS.has(type)) return this.refunded(envelope);
     const mediaStatus = MEDIA_STATUS_BY_EVENT.get(type);
     if (mediaStatus !== undefined) return this.mediaUpdated(envelope, mediaStatus);
     if (type === SupportMessageCreated.type) return this.supportMessageCreated(envelope);
@@ -234,8 +281,51 @@ export class RealtimeFanoutService {
         sellerOrderId,
         orderId: party.orderId,
         status,
+        kind: ShipmentKindValue.DELIVERY,
       },
     );
+  }
+
+  private returnShipmentUpdated(envelope: EventEnvelope, status: string): void {
+    this.send(envelope, T.SHIPMENT_UPDATED, [RealtimeRoom.agent(idOf(envelope, 'agentId'))], {
+      shipmentId: idOf(envelope, 'shipmentId'),
+      sellerOrderId: idOf(envelope, 'sellerOrderId'),
+      orderId: idOf(envelope, 'orderId'),
+      status,
+      kind: ShipmentKindValue.RETURN,
+    });
+  }
+
+  /** No re-read: the payload names both sides, and the client refetches the return (spec 15 §8). */
+  private returnUpdated(envelope: EventEnvelope): void {
+    const status = envelope.payload.to;
+    if (typeof status !== 'string' || !RETURN_STATUSES.has(status)) {
+      throw new PermanentEventError(`${envelope.eventType} payload has no valid to`);
+    }
+    const rooms = [
+      RealtimeRoom.customer(idOf(envelope, 'customerId')),
+      RealtimeRoom.seller(idOf(envelope, 'sellerId')),
+    ];
+    if (ADMIN_RETURN_STATUSES.has(status)) rooms.push(RealtimeRoom.ADMINS);
+    this.send(envelope, T.RETURN_UPDATED, rooms, {
+      returnId: idOf(envelope, 'returnId'),
+      sellerOrderId: idOf(envelope, 'sellerOrderId'),
+      orderId: idOf(envelope, 'orderId'),
+      status,
+    });
+  }
+
+  /** RT-23: only a refund that moved the payment's status; a recorded COD refund (`null`) sends nothing. */
+  private refunded(envelope: EventEnvelope): void {
+    const status = envelope.payload.newPaymentStatus;
+    if (status === null) return;
+    if (typeof status !== 'string' || !REFUND_PAYMENT_STATUSES.has(status)) {
+      throw new PermanentEventError(`${envelope.eventType} payload has no valid newPaymentStatus`);
+    }
+    this.send(envelope, T.PAYMENT_UPDATED, [RealtimeRoom.customer(idOf(envelope, 'customerId'))], {
+      orderId: idOf(envelope, 'orderId'),
+      paymentStatus: status,
+    });
   }
 
   private mediaUpdated(envelope: EventEnvelope, status: string): void {

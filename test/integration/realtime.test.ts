@@ -1,8 +1,14 @@
 import request from 'supertest';
-import { ShipmentStatus } from '../../src/app/delivery/enums';
+import { ShipmentKind, ShipmentStatus } from '../../src/app/delivery/enums';
 import { MediaStatus } from '../../src/app/media/enums';
 import { PaymentStatus } from '../../src/app/payments/enums';
-import { MediaStatusValue, PaymentStatusValue, ShipmentStatusValue } from '../../src/app/realtime/constants';
+import {
+  MediaStatusValue,
+  PaymentStatusValue,
+  RefundPaymentStatusValue,
+  ShipmentKindValue,
+  ShipmentStatusValue,
+} from '../../src/app/realtime/constants';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createWorkerContainer } from '../../src/container';
 import { createEventHandlers } from '../../src/event-handlers';
@@ -235,6 +241,8 @@ describe('realtime gateway and fan-out', () => {
       expect(Object.values(owner)).toEqual(expect.arrayContaining(Object.values(mirror)));
     subsetOf(PaymentStatusValue, PaymentStatus);
     subsetOf(ShipmentStatusValue, ShipmentStatus);
+    subsetOf(RefundPaymentStatusValue, PaymentStatus);
+    subsetOf(ShipmentKindValue, ShipmentKind);
     subsetOf(MediaStatusValue, MediaStatus);
   });
 });

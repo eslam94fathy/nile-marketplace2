@@ -46,7 +46,7 @@ import { ReturnViewService } from './service/return-view.service';
 export { ReturnsErrorCode } from './errors';
 export { ReturnStatus, ReturnReason, OPEN_RETURN_STATUSES, type OpenReturnStatus } from './enums';
 /** Inject with `TOKENS.ReturnsDirectory` (finance, backoffice). */
-export type { IReturnsDirectory } from './service/returns-directory.service';
+export type { IReturnsDirectory, ReturnsDashboardStats } from './service/returns-directory.service';
 
 /** What both processes need: the repositories, the transition path and the completion (UC-RE-7). */
 function registerReturnsCore(container: DependencyContainer): void {

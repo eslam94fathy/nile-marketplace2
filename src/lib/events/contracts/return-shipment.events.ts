@@ -7,6 +7,9 @@ import { defineEvent } from './define-event';
 export interface ReturnShipmentPayload {
   shipmentId: string;
   returnId: string;
+  /** The returned seller order and its order (spec 11 DE-27). */
+  sellerOrderId: string;
+  orderId: string;
   agentId: string;
   /** ISO-8601: when it happened. */
   at: string;

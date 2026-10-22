@@ -461,4 +461,14 @@ export class ShipmentRepository {
       .groupBy('status');
     return new Map(rows.map((row) => [row.status, Number(row.count)]));
   }
+
+  /** BO-24: return shipments still under way. */
+  async countReturnsInProgress(): Promise<number> {
+    const row = await this.db
+      .knex(T)
+      .where({ kind: ShipmentKind.RETURN })
+      .whereNotIn('status', [ShipmentStatus.DELIVERED, ShipmentStatus.CANCELLED])
+      .first<{ count: string }>(this.db.knex.raw('count(*) AS count'));
+    return Number(row.count);
+  }
 }

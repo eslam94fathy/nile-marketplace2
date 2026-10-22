@@ -13,6 +13,8 @@ export const RealtimeMessageType = {
   SHIPMENT_ASSIGNED: 'shipment.assigned',
   SHIPMENT_UNASSIGNED: 'shipment.unassigned',
   PAYMENT_UPDATED: 'payment.updated',
+  /** Spec 18: a return changed status; the client refetches it (RT-22). */
+  RETURN_UPDATED: 'return.updated',
   MEDIA_UPDATED: 'media.updated',
   /** Spec 16: something changed on a ticket; the client refetches over REST. */
   SUPPORT_MESSAGE_CREATED: 'support.message_created',
@@ -53,10 +55,18 @@ export interface RealtimeMessageData {
     sellerOrderId: string;
     orderId: string;
     status: string;
+    /** RT-22: `delivery` or `return` (spec 11 §8). */
+    kind: string;
   };
   [RealtimeMessageType.SHIPMENT_ASSIGNED]: { shipmentId: string; sellerOrderId: string };
   [RealtimeMessageType.SHIPMENT_UNASSIGNED]: { shipmentId: string; sellerOrderId: string };
   [RealtimeMessageType.PAYMENT_UPDATED]: { orderId: string; paymentStatus: string };
+  [RealtimeMessageType.RETURN_UPDATED]: {
+    returnId: string;
+    sellerOrderId: string;
+    orderId: string;
+    status: string;
+  };
   [RealtimeMessageType.MEDIA_UPDATED]: { mediaId: string; status: string };
   [RealtimeMessageType.SUPPORT_MESSAGE_CREATED]: { ticketId: string; messageId: string };
   [RealtimeMessageType.SUPPORT_TICKET_UPDATED]: {

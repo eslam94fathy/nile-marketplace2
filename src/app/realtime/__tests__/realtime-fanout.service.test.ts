@@ -158,10 +158,101 @@ describe('RealtimeFanoutService (spec 15 UC-RT-2, §3.1)', () => {
         [
           'shipment.updated',
           [`customer:${CUSTOMER}`, `agent:${AGENT}`],
-          { shipmentId: SHIPMENT, sellerOrderId: SO_A, orderId: ORDER, status },
+          { shipmentId: SHIPMENT, sellerOrderId: SO_A, orderId: ORDER, status, kind: 'delivery' },
         ],
       ]);
     }
+  });
+
+  describe('returns and refunds (spec 15 §8, RT-22, RT-23)', () => {
+    const RETURN = randomUUID();
+    const changed = (to: string) =>
+      envelope('return.status_changed', {
+        returnId: RETURN,
+        returnNumber: 'R-000000001',
+        orderId: ORDER,
+        orderNumber: 'NM-000000123',
+        sellerOrderId: SO_A,
+        customerId: CUSTOMER,
+        sellerId: SELLER_A,
+        from: null,
+        to,
+        actor: 'customer',
+      });
+
+    it('return.status_changed: return.updated to both sides, admins too while it waits for one; no reads', async () => {
+      const { service, emits, getNotificationParties } = setup();
+      await service.handle(changed('requested'));
+      await service.handle(changed('escalated'));
+      await service.handle(changed('disputed'));
+      const data = (status: string) => ({ returnId: RETURN, sellerOrderId: SO_A, orderId: ORDER, status });
+      const sides = [`customer:${CUSTOMER}`, `seller:${SELLER_A}`];
+      expect(emits()).toEqual([
+        ['return.updated', sides, data('requested')],
+        ['return.updated', [...sides, 'admins'], data('escalated')],
+        ['return.updated', [...sides, 'admins'], data('disputed')],
+      ]);
+      expect(getNotificationParties).not.toHaveBeenCalled();
+      await expect(service.handle(changed('lost'))).rejects.toBeInstanceOf(PermanentEventError);
+    });
+
+    it('return_shipment.*: shipment.updated with kind return to the agent only, ids from the payload', async () => {
+      const cases = [
+        ['return_shipment.picked_up', 'picked_up'],
+        ['return_shipment.delivered', 'delivered'],
+        ['return_shipment.failed', 'cancelled'],
+      ] as const;
+      for (const [eventType, status] of cases) {
+        const { service, emits, getNotificationParties } = setup();
+        await service.handle(
+          envelope(eventType, {
+            shipmentId: SHIPMENT,
+            returnId: RETURN,
+            sellerOrderId: SO_A,
+            orderId: ORDER,
+            agentId: AGENT,
+            at: '2026-10-20T10:00:00.000Z',
+          }),
+        );
+        expect(emits()).toEqual([
+          [
+            'shipment.updated',
+            [`agent:${AGENT}`],
+            { shipmentId: SHIPMENT, sellerOrderId: SO_A, orderId: ORDER, status, kind: 'return' },
+          ],
+        ]);
+        expect(getNotificationParties).not.toHaveBeenCalled();
+      }
+    });
+
+    it('refunds: payment.updated with the new status; a recorded COD refund sends nothing', async () => {
+      const refund = (eventType: string, newPaymentStatus: unknown) =>
+        envelope(eventType, {
+          paymentId: randomUUID(),
+          orderId: ORDER,
+          customerId: CUSTOMER,
+          refundId: randomUUID(),
+          returnId: null,
+          reason: 'return',
+          amount: '50.00',
+          newPaymentStatus,
+        });
+      const { service, emits } = setup();
+      await service.handle(refund('payment.refunded', 'partially_refunded'));
+      await service.handle(refund('payment.refund_recorded', 'refunded'));
+      await service.handle(refund('payment.refund_recorded', null));
+      expect(emits()).toEqual([
+        [
+          'payment.updated',
+          [`customer:${CUSTOMER}`],
+          { orderId: ORDER, paymentStatus: 'partially_refunded' },
+        ],
+        ['payment.updated', [`customer:${CUSTOMER}`], { orderId: ORDER, paymentStatus: 'refunded' }],
+      ]);
+      await expect(service.handle(refund('payment.refunded', 'paid'))).rejects.toBeInstanceOf(
+        PermanentEventError,
+      );
+    });
   });
 
   it('shipment.assigned: the new agent; shipment.unassigned to a replaced one; no reads', async () => {

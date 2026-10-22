@@ -33,11 +33,18 @@ export const CONNECT_RATE_LIMIT_KEY_PREFIX = 'rl:realtime-connect';
  * media; architecture §14.2). They mirror those enums; a unit test keeps them equal.
  */
 export const PaymentStatusValue = { PAID: 'paid', FAILED: 'failed', EXPIRED: 'expired' } as const;
+/** Refund statuses are sent as the event carries them (RT-23); this only checks they are payment statuses. */
+export const RefundPaymentStatusValue = {
+  PARTIALLY_REFUNDED: 'partially_refunded',
+  REFUNDED: 'refunded',
+} as const;
 export const ShipmentStatusValue = {
   PICKED_UP: 'picked_up',
   OUT_FOR_DELIVERY: 'out_for_delivery',
   DELIVERY_FAILED: 'delivery_failed',
   RETURNING_TO_SELLER: 'returning_to_seller',
   DELIVERED: 'delivered',
+  CANCELLED: 'cancelled',
 } as const;
+export const ShipmentKindValue = { DELIVERY: 'delivery', RETURN: 'return' } as const;
 export const MediaStatusValue = { READY: 'ready', FAILED: 'failed' } as const;

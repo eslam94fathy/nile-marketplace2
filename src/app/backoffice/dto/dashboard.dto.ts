@@ -73,7 +73,7 @@ export class DashboardGmvDayDto {
   @IsString()
   placed!: string;
 
-  /** Σ subtotals of the seller orders delivered that day (BO-7). */
+  /** Σ subtotals of the seller orders delivered that day, less the returns recorded that day; may be negative (BO-25). */
   @IsString()
   delivered!: string;
 }
@@ -85,6 +85,7 @@ export class DashboardTopSellerDto {
   @IsString()
   businessName!: string;
 
+  /** Net of the returns recorded in the window (BO-25). */
   @IsString()
   deliveredGmv!: string;
 }
@@ -113,11 +114,20 @@ export class DashboardFinanceDto {
   @IsString()
   codOutstanding!: string;
 
+  /** Available to sellers; may include negative balances (FI-12). */
   @IsString()
   sellerPayable!: string;
 
+  /** Held while return windows run (spec 12 §8.6). */
+  @IsString()
+  sellerPending!: string;
+
   @IsString()
   agentFeePayable!: string;
+
+  /** Return refunds owed and not yet paid (spec 12 §8.6). */
+  @IsString()
+  customerRefundPayable!: string;
 }
 
 export class DashboardDeliveryDto {
@@ -128,6 +138,48 @@ export class DashboardDeliveryDto {
   @IsInt()
   @Min(0)
   outForDelivery!: number;
+
+  /** Return shipments not yet delivered to the seller or cancelled (BO-24). */
+  @IsInt()
+  @Min(0)
+  returnsInProgress!: number;
+}
+
+/** Open returns per status (spec 18 §2); `rejected` only while it can still be escalated. Every key is present. */
+export class OpenReturnCountsDto {
+  @IsInt()
+  @Min(0)
+  requested!: number;
+
+  @IsInt()
+  @Min(0)
+  rejected!: number;
+
+  @IsInt()
+  @Min(0)
+  escalated!: number;
+
+  @IsInt()
+  @Min(0)
+  approved!: number;
+
+  @IsInt()
+  @Min(0)
+  picked_up!: number;
+
+  @IsInt()
+  @Min(0)
+  received!: number;
+
+  @IsInt()
+  @Min(0)
+  disputed!: number;
+}
+
+export class DashboardReturnsDto {
+  @ValidateNested()
+  @Type(() => OpenReturnCountsDto)
+  byStatus!: OpenReturnCountsDto;
 }
 
 export class DashboardDto {
@@ -168,4 +220,8 @@ export class DashboardDto {
   @ValidateNested()
   @Type(() => DashboardDeliveryDto)
   delivery!: DashboardDeliveryDto;
+
+  @ValidateNested()
+  @Type(() => DashboardReturnsDto)
+  returns!: DashboardReturnsDto;
 }

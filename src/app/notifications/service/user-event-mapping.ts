@@ -2,9 +2,12 @@ import {
   type EventEnvelope,
   PaymentExpired,
   PaymentFailed,
+  PaymentRefunded,
+  PaymentRefundRecorded,
   OrderPlaced,
   PermanentEventError,
   ProductBlocked,
+  ReturnStatusChanged,
   ReviewCreated,
   ReviewReplied,
   SellerOrderAccepted,
@@ -22,7 +25,7 @@ import { type NotificationParty, SellerOrderCancelReason, SellerOrderStatus } fr
 import { NotificationLink } from '../constants';
 import { NotificationCategory, NotificationType } from '../enums';
 
-/** The events of spec 13 §8.2 and §8.8 that exist by R2-P5 (returns come in their phase). */
+/** The events of spec 13 §8.2, §8.8 and §8.9 (coupons add none). */
 export const USER_EVENTS = [
   OrderPlaced,
   SellerOrderAccepted,
@@ -38,6 +41,9 @@ export const USER_EVENTS = [
   ReviewCreated,
   ReviewReplied,
   ProductBlocked,
+  ReturnStatusChanged,
+  PaymentRefunded,
+  PaymentRefundRecorded,
   // Not notifications: they drop the user's push subscriptions (UC-NO-4, NO-8).
   UserSuspended,
   UserSessionsRevoked,
@@ -51,7 +57,8 @@ export const SESSION_END_EVENTS: ReadonlySet<string> = new Set([
 
 /**
  * Events that name their recipient themselves, with nothing of the order to show: support (user ids, the
- * ticket number, NO-31), reviews (the seller or customer profile, NO-32) and the product block (NO-33).
+ * ticket number, NO-31), reviews (the seller or customer profile, NO-32), the product block (NO-33) and
+ * returns (both profiles and both numbers, NO-34).
  */
 const NO_PARTY_EVENTS: ReadonlySet<string> = new Set([
   SupportMessageCreated.type,
@@ -59,6 +66,7 @@ const NO_PARTY_EVENTS: ReadonlySet<string> = new Set([
   ReviewCreated.type,
   ReviewReplied.type,
   ProductBlocked.type,
+  ReturnStatusChanged.type,
 ]);
 
 /** Events whose mapping needs the order's parties (order number, customer, seller orders). */
@@ -245,6 +253,19 @@ export function mapUserEvent(
           link: NotificationLink.sellerProduct(idOf(envelope, 'productId')),
         },
       ];
+    case ReturnStatusChanged.type:
+      return returnStatusChanged(envelope);
+    // NO-34: every refund reason, R1 manual refunds included (spec 10 PA-26).
+    case PaymentRefunded.type:
+    case PaymentRefundRecorded.type:
+      return [
+        customer({
+          category: NotificationCategory.ORDERS,
+          type: NotificationType.REFUND_ISSUED,
+          title: 'Refund issued',
+          body: `Your refund for order #${n} was issued.`,
+        }),
+      ];
     case SellerOrderDelivered.type:
       return [
         customer({
@@ -339,4 +360,96 @@ function supportMessageCreated(envelope: EventEnvelope): NotificationDraft[] {
       link: NotificationLink.adminSupportTicket(ticketId),
     },
   ];
+}
+
+// As the DB CHECKs: 9 digits or more.
+const RETURN_NUMBER_PATTERN = /^R-\d{9,}$/;
+const ORDER_NUMBER_PATTERN = /^NM-\d{9,}$/;
+
+function numberOf(envelope: EventEnvelope, key: string, pattern: RegExp): string {
+  const value = envelope.payload[key];
+  if (typeof value !== 'string' || !pattern.test(value)) {
+    throw new PermanentEventError(`${envelope.eventType} payload has no valid ${key}`);
+  }
+  return value;
+}
+
+/** Spec 13 §8.9: one row per listed status; the other moves notify nobody (the realtime message still goes). */
+function returnStatusChanged(envelope: EventEnvelope): NotificationDraft[] {
+  const returnId = idOf(envelope, 'returnId');
+  const returnNumber = numberOf(envelope, 'returnNumber', RETURN_NUMBER_PATTERN);
+  const toCustomer = (type: NotificationType, title: string, body: string): NotificationDraft => ({
+    recipient: { kind: 'customer', id: idOf(envelope, 'customerId') },
+    category: NotificationCategory.ORDERS,
+    type,
+    title,
+    body,
+    link: NotificationLink.customerReturn(returnId),
+  });
+  const toSeller = (type: NotificationType, title: string, body: string): NotificationDraft => ({
+    recipient: { kind: 'seller', id: idOf(envelope, 'sellerId') },
+    category: NotificationCategory.ORDERS,
+    type,
+    title,
+    body,
+    link: NotificationLink.sellerReturn(returnId),
+  });
+  const T = NotificationType;
+  switch (envelope.payload.to) {
+    case 'requested': {
+      const orderNumber = numberOf(envelope, 'orderNumber', ORDER_NUMBER_PATTERN);
+      return [
+        toSeller(T.RETURN_REQUESTED, 'Return requested', `A return was requested on order #${orderNumber}.`),
+      ];
+    }
+    case 'approved':
+      return [
+        toCustomer(
+          T.RETURN_APPROVED,
+          'Return approved',
+          `Your return ${returnNumber} was approved. An agent will pick it up.`,
+        ),
+      ];
+    case 'rejected':
+      return [
+        toCustomer(
+          T.RETURN_REJECTED,
+          'Return rejected',
+          `Your return ${returnNumber} was rejected. You can escalate it.`,
+        ),
+      ];
+    case 'picked_up':
+      return [
+        toCustomer(
+          T.RETURN_PICKED_UP,
+          'Return picked up',
+          `Your return ${returnNumber} is on its way to the seller.`,
+        ),
+      ];
+    case 'received':
+      return [
+        toSeller(
+          T.RETURN_RECEIVED,
+          'Return arrived',
+          `Return ${returnNumber} was delivered to you. Please inspect it.`,
+        ),
+      ];
+    case 'completed':
+      return [
+        toCustomer(
+          T.RETURN_COMPLETED,
+          'Return accepted',
+          `Return ${returnNumber} is complete. Your refund is on its way.`,
+        ),
+      ];
+    case 'refused': {
+      const body = `Return ${returnNumber} was closed without a refund.`;
+      return [
+        toCustomer(T.RETURN_REFUSED, 'Return closed', body),
+        toSeller(T.RETURN_REFUSED, 'Return closed', body),
+      ];
+    }
+    default:
+      return [];
+  }
 }

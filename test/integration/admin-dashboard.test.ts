@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type DashboardDto } from '../../src/app/backoffice/dto/dashboard.dto';
 import { type IOrderingDirectory } from '../../src/app/ordering';
+import { deliveryFixtures } from '../helpers/delivery-fixtures';
 import { TOKENS } from '../../src/lib/di';
 import { successBody } from '../helpers/http';
 import { API } from '../helpers/identity';
@@ -158,9 +160,12 @@ describe('admin dashboard', () => {
       expect(dashboard.finance).toEqual({
         codOutstanding: '150.50',
         sellerPayable: '200.00',
+        sellerPending: '0.00',
         agentFeePayable: '0.00',
+        customerRefundPayable: '0.00',
       });
-      expect(dashboard.delivery).toEqual({ awaitingAssignment: 0, outForDelivery: 0 });
+      expect(dashboard.delivery).toEqual({ awaitingAssignment: 0, outForDelivery: 0, returnsInProgress: 0 });
+      expect(Object.values(dashboard.returns.byStatus).every((n) => n === 0)).toBe(true);
 
       // Cached: a new pending seller shows only once the value is gone (no invalidation, spec 20 §3.2).
       await fx.insertSeller('pending_approval');
@@ -181,6 +186,118 @@ describe('admin dashboard', () => {
       const res = await request(t.app).get(`${API}/admin/dashboard`).set('Authorization', `Bearer ${token}`);
       expect(res.status).toBe(403);
       expect((await request(t.app).get(`${API}/admin/dashboard`)).status).toBe(401);
+    });
+  });
+
+  /* BO-24, BO-25 (spec 20 v1.6). After the endpoint tests: these rows have order lines and returns. */
+  describe('returns', () => {
+    /** A return row of the chain's seller order, in `status`. */
+    const returnOf = async (
+      chain: { sellerOrderId: string; orderId: string; customerId: string; sellerId: string },
+      status: string,
+      overrides: Record<string, unknown> = {},
+    ) => {
+      const [row] = await knex()('return_requests')
+        .insert({
+          return_number: knex().raw(`'R-' || lpad(nextval('return_number_seq')::text, 9, '0')`),
+          seller_order_id: chain.sellerOrderId,
+          order_id: chain.orderId,
+          customer_id: chain.customerId,
+          seller_id: chain.sellerId,
+          status,
+          reason: 'changed_mind',
+          return_fee: '50.00',
+          return_fee_payer: 'customer',
+          agent_share_rate: '0.7000',
+          refund_amount: '50.00',
+          seller_decision_deadline_at: new Date(),
+          ...overrides,
+        })
+        .returning<{ id: string }[]>('id');
+      if (!row) throw new Error('fixture');
+      return row.id;
+    };
+
+    it('returns recorded on a day reduce delivered GMV of that day and the rank of the seller (BO-25)', async () => {
+      const returned = await fx.insertOrderChain();
+      const kept = await fx.insertOrderChain();
+      for (const chain of [returned, kept]) {
+        await knex()('seller_orders')
+          .where({ id: chain.sellerOrderId })
+          .update(delivered('2026-03-10T10:00:00Z'));
+      }
+      // The GMV reads only order_item_returns; a terminal row keeps the fixture simple.
+      const returnId = await returnOf(returned, 'cancelled');
+      await knex()('order_item_returns').insert({
+        return_id: returnId,
+        order_item_id: returned.orderItemId,
+        quantity: 1,
+        subtotal_amount: '50.00',
+        discount_amount: '0.00',
+        paid_amount: '50.00',
+        commission_amount: '5.00',
+        created_at: new Date('2026-03-12T09:00:00Z'),
+      });
+
+      const stats = await ordering().getDashboardStats({ now: new Date('2026-03-12T10:00:00Z'), ...WINDOW });
+      const day = (d: string) => stats.gmv.find((g) => g.day === d)?.delivered;
+      expect([day('2026-03-10'), day('2026-03-11'), day('2026-03-12')]).toEqual(['200.00', '0.00', '-50.00']);
+      expect(stats.topSellers).toEqual([
+        { sellerId: kept.sellerId, deliveredGmv: '100.00' },
+        { sellerId: returned.sellerId, deliveredGmv: '50.00' },
+      ]);
+    });
+
+    it('open returns by status, return shipments under way, held and owed money (BO-24)', async () => {
+      const dfx = deliveryFixtures(knex());
+      const past = new Date(Date.now() - 86_400_000);
+      const future = new Date(Date.now() + 86_400_000);
+      await returnOf(await fx.insertOrderChain(), 'requested');
+      await returnOf(await fx.insertOrderChain(), 'rejected', {
+        escalation_deadline_at: future,
+        rejection_reason: 'Used',
+      });
+      // Its escalation window is over: no longer open.
+      await returnOf(await fx.insertOrderChain(), 'rejected', {
+        escalation_deadline_at: past,
+        rejection_reason: 'Used',
+      });
+      const { agentId } = await dfx.insertAgent();
+      for (const status of ['unassigned', 'delivered', 'cancelled']) {
+        const chain = await fx.insertOrderChain();
+        await dfx.insertShipment(
+          { sellerOrderId: chain.sellerOrderId, orderId: chain.orderId },
+          {
+            kind: 'return',
+            return_id: await returnOf(chain, 'cancelled'),
+            status,
+            order_delivery_fee: '0.00',
+            cod_items_amount: '0.00',
+            agent_id: status === 'delivered' ? agentId : null,
+            delivered_at: status === 'delivered' ? new Date() : null,
+          },
+        );
+      }
+      await knex()('finance_accounts').insert([
+        { account_type: 'seller_pending', owner_id: randomUUID(), balance: '90.00' },
+        { account_type: 'customer_refund_payable', owner_id: randomUUID(), balance: '50.00' },
+      ]);
+      await t.infra.cache.delete('v1:backoffice:dashboard');
+
+      const dashboard = successBody<DashboardDto>(
+        await request(t.app).get(`${API}/admin/dashboard`).set('Authorization', `Bearer ${adminToken}`),
+      ).data;
+      expect(dashboard.returns.byStatus).toEqual({
+        requested: 1,
+        rejected: 1,
+        escalated: 0,
+        approved: 0,
+        picked_up: 0,
+        received: 0,
+        disputed: 0,
+      });
+      expect(dashboard.delivery.returnsInProgress).toBe(1);
+      expect(dashboard.finance).toMatchObject({ sellerPending: '90.00', customerRefundPayable: '50.00' });
     });
   });
 });

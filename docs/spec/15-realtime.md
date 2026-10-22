@@ -1,6 +1,6 @@
 # Spec 15 — realtime
 
-Status: **v1.3 APPROVED (2026-10-21):** §9 RT-21 (R2-P6). **v1.2 APPROVED (2026-10-21):** §9 RT-20 (R2-P3). **v1.1 APPROVED (2026-10-20):** §9 R2-P2 implementation clarifications RT-8…RT-19 (every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.3 (realtime rules), R-4 (web client), R-5, R-21. §7 RT-1…RT-7 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.4 APPROVED (2026-10-22):** §9 RT-22, RT-23 (R2-P6). **v1.3 APPROVED (2026-10-21):** §9 RT-21 (R2-P6). **v1.2 APPROVED (2026-10-21):** §9 RT-20 (R2-P3). **v1.1 APPROVED (2026-10-20):** §9 R2-P2 implementation clarifications RT-8…RT-19 (every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.3 (realtime rules), R-4 (web client), R-5, R-21. §7 RT-1…RT-7 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -164,3 +164,5 @@ No re-read for returns: `return.status_changed` carries the customer and seller 
 | RT-19 | On shutdown the gateway waits up to 1 s for the `session.ended` frames to flush before it closes the server (closing at once dropped them) | UC-RT-4 |
 | RT-20 | `ticket.subscribe` is acked `INTERNAL_ERROR` when the access check fails (database down); the client retries. Logged at `error` (v1.2) | §3.3, §6 |
 | RT-21 | The §8 return and refund messages (`return.updated`, `shipment.updated` with `kind`, `payment.updated` from `payment.refunded` / `payment.refund_recorded`) ship in R2-P6 (spec 18 RE-17) (v1.3) | §8 |
+| RT-22 | Amends §8: `return.updated` comes only from `return.status_changed` (status = the payload's `to`); every shipment step that changes a return already makes returns publish one, so `return_shipment.*` sends no `return.updated`. `return_shipment.*` sends `shipment.updated { shipmentId, sellerOrderId, orderId, status, kind: 'return' }` to `agent:<id>` only (statuses `picked_up`, `delivered`, `cancelled` from the event type, RT-9), using the ids in the payload (spec 11 DE-27). Delivery shipments' `shipment.updated` gains `kind: 'delivery'`. Realtime gains no edge (v1.4) | §8 |
+| RT-23 | `payment.updated` from a refund is sent only when `newPaymentStatus` is set (Kashier `partially_refunded` / `refunded`); a recorded COD refund (`null`, the payment keeps its status) sends nothing: the customer gets `refund_issued` as `notification.created` (v1.4) | §8 |

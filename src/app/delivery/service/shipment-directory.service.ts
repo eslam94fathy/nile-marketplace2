@@ -7,6 +7,8 @@ import { type ShipmentRepository } from '../repository/shipment.repository';
 export interface DeliveryDashboardStats {
   awaitingAssignment: number;
   outForDelivery: number;
+  /** Return shipments not yet `delivered` or `cancelled` (spec 11 §8.4, BO-24). */
+  returnsInProgress: number;
 }
 
 /** Public API of delivery for the back-office (spec 20 §3.2) and returns (DE-23). Reads without locks. */
@@ -25,13 +27,14 @@ export class ShipmentDirectory implements IShipmentDirectory {
   }
 
   async getDashboardStats(): Promise<DeliveryDashboardStats> {
-    const counts = await this.shipments.countByStatuses([
-      ShipmentStatus.UNASSIGNED,
-      ShipmentStatus.OUT_FOR_DELIVERY,
+    const [counts, returnsInProgress] = await Promise.all([
+      this.shipments.countByStatuses([ShipmentStatus.UNASSIGNED, ShipmentStatus.OUT_FOR_DELIVERY]),
+      this.shipments.countReturnsInProgress(),
     ]);
     return {
       awaitingAssignment: counts.get(ShipmentStatus.UNASSIGNED) ?? 0,
       outForDelivery: counts.get(ShipmentStatus.OUT_FOR_DELIVERY) ?? 0,
+      returnsInProgress,
     };
   }
 }

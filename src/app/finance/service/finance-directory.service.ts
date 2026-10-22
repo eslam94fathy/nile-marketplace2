@@ -10,7 +10,11 @@ export interface FinanceDashboardStats {
   codOutstanding: string;
   /** Σ `seller_payable`; may include negative balances (FI-12). */
   sellerPayable: string;
+  /** Σ `seller_pending`: earnings held while return windows run (spec 12 §8.6). */
+  sellerPending: string;
   agentFeePayable: string;
+  /** Σ `customer_refund_payable`: return refunds owed and not yet paid (spec 12 §8.6). */
+  customerRefundPayable: string;
 }
 
 /** Public API of finance for the back-office (spec 20 §3.2). Reads without locks. */
@@ -26,13 +30,17 @@ export class FinanceDirectory implements IFinanceDirectory {
     const sums = await this.accounts.sumBalances([
       AccountType.AGENT_COD_CASH,
       AccountType.SELLER_PAYABLE,
+      AccountType.SELLER_PENDING,
       AccountType.AGENT_FEE_PAYABLE,
+      AccountType.CUSTOMER_REFUND_PAYABLE,
     ]);
     const of = (type: AccountType) => (sums.get(type) ?? Money.zero()).toString();
     return {
       codOutstanding: of(AccountType.AGENT_COD_CASH),
       sellerPayable: of(AccountType.SELLER_PAYABLE),
+      sellerPending: of(AccountType.SELLER_PENDING),
       agentFeePayable: of(AccountType.AGENT_FEE_PAYABLE),
+      customerRefundPayable: of(AccountType.CUSTOMER_REFUND_PAYABLE),
     };
   }
 }

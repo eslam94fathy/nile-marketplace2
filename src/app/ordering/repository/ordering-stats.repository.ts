@@ -9,6 +9,8 @@ import { type DashboardStatsQuery, type OrderingDashboardStats } from '../model/
 
 const ORDERS = ORDERING_TABLES.ORDERS;
 const SELLER_ORDERS = ORDERING_TABLES.SELLER_ORDERS;
+const ORDER_ITEMS = ORDERING_TABLES.ORDER_ITEMS;
+const ITEM_RETURNS = ORDERING_TABLES.ORDER_ITEM_RETURNS;
 
 interface BusinessDay {
   day: string;
@@ -33,11 +35,12 @@ export class OrderingStatsRepository {
     if (!first || !today || !recent) throw new Error('dashboard windows need at least one day');
     const window = { from: first.starts_at, to: today.ends_at };
 
-    const [byStatus, placed, placedGmv, deliveredGmv, topSellers] = await Promise.all([
+    const [byStatus, placed, placedGmv, deliveredGmv, returnedByDay, topSellers] = await Promise.all([
       this.openStatusCounts(),
       this.placedCounts(today.starts_at, recent.starts_at, window.to),
       this.placedGmvByDay(window),
       this.deliveredGmvByDay(window),
+      this.returnedByDay(window),
       this.topSellers(window, query.topSellers),
     ]);
     const zero = Money.zero().toString();
@@ -47,7 +50,10 @@ export class OrderingStatsRepository {
       gmv: days.map(({ day }) => ({
         day,
         placed: placedGmv.get(day) ?? zero,
-        delivered: deliveredGmv.get(day) ?? zero,
+        // BO-25: net of the returns recorded that day; a day may end below 0.
+        delivered: Money.of(deliveredGmv.get(day) ?? zero)
+          .minus(Money.of(returnedByDay.get(day) ?? zero))
+          .toString(),
       })),
       topSellers,
     };
@@ -130,22 +136,50 @@ export class OrderingStatsRepository {
     return toAmounts(result.rows);
   }
 
+  /**
+   * BO-25: subtotals of the returns ordering recorded that day (completion). `order_item_returns` is read
+   * by `created_at` without an index: returns are a small share of the lines and the dashboard reads once
+   * per cache TTL.
+   */
+  private async returnedByDay(window: { from: Date; to: Date }): Promise<Map<string, string>> {
+    const result = await this.db.knex.raw<{ rows: { day: string; amount: string }[] }>(
+      `SELECT to_char(created_at AT TIME ZONE :tz, 'YYYY-MM-DD') AS day, sum(subtotal_amount) AS amount
+         FROM ${ITEM_RETURNS}
+        WHERE created_at >= :from AND created_at < :to
+        GROUP BY 1`,
+      { tz: BUSINESS_TIME_ZONE, ...window },
+    );
+    return toAmounts(result.rows);
+  }
+
+  /** The sellers who delivered in the window, by delivered GMV net of the returns recorded in it (BO-25). */
   private async topSellers(
     window: { from: Date; to: Date },
     limit: number,
   ): Promise<{ sellerId: string; deliveredGmv: string }[]> {
-    const rows = await this.db
-      .knex(SELLER_ORDERS)
-      .select('seller_id')
-      .sum<{ seller_id: string; amount: string }[]>('subtotal as amount')
-      .where('delivered_at', '>=', window.from)
-      .where('delivered_at', '<', window.to)
-      .groupBy('seller_id')
-      .orderBy([
-        { column: 'amount', order: 'desc' },
-        { column: 'seller_id', order: 'asc' },
-      ])
-      .limit(limit);
+    const result = await this.db.knex.raw<{ rows: { seller_id: string; amount: string }[] }>(
+      `WITH delivered AS (
+              SELECT seller_id, sum(subtotal) AS amount
+                FROM ${SELLER_ORDERS}
+               WHERE delivered_at >= :from AND delivered_at < :to
+               GROUP BY seller_id
+            ),
+            returned AS (
+              SELECT so.seller_id, sum(r.subtotal_amount) AS amount
+                FROM ${ITEM_RETURNS} r
+                JOIN ${ORDER_ITEMS} i ON i.id = r.order_item_id
+                JOIN ${SELLER_ORDERS} so ON so.id = i.seller_order_id
+               WHERE r.created_at >= :from AND r.created_at < :to
+               GROUP BY so.seller_id
+            )
+       SELECT d.seller_id, d.amount - coalesce(r.amount, 0) AS amount
+         FROM delivered d
+         LEFT JOIN returned r ON r.seller_id = d.seller_id
+        ORDER BY amount DESC, d.seller_id
+        LIMIT :limit`,
+      { ...window, limit },
+    );
+    const rows = result.rows;
     return rows.map((row) => ({ sellerId: row.seller_id, deliveredGmv: Money.of(row.amount).toString() }));
   }
 }

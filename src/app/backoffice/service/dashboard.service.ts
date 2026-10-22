@@ -7,6 +7,7 @@ import { type ICache } from '../../../pkg/cache';
 import { type IShipmentDirectory } from '../../delivery';
 import { type IFinanceDirectory } from '../../finance';
 import { type IOrderingDirectory } from '../../ordering';
+import { type IReturnsDirectory } from '../../returns';
 import { type ISellerDirectory } from '../../sellers';
 import { type ISupportDirectory } from '../../support';
 import {
@@ -32,6 +33,7 @@ export class DashboardService {
     @inject(TOKENS.SupportDirectory) private readonly support: ISupportDirectory,
     @inject(TOKENS.FinanceDirectory) private readonly finance: IFinanceDirectory,
     @inject(TOKENS.ShipmentDirectory) private readonly shipments: IShipmentDirectory,
+    @inject(TOKENS.ReturnsDirectory) private readonly returns: IReturnsDirectory,
     @inject(TOKENS.Cache) private readonly cache: ICache,
     @inject(TOKENS.Clock) private readonly clock: IClock,
     @inject(TOKENS.Env) private readonly env: CacheEnv,
@@ -48,7 +50,7 @@ export class DashboardService {
 
   private async compute(): Promise<DashboardDto> {
     const now = this.clock.now();
-    const [orders, pendingApproval, support, finance, delivery] = await Promise.all([
+    const [orders, pendingApproval, support, finance, delivery, returns] = await Promise.all([
       this.ordering.getDashboardStats({
         now,
         gmvDays: DASHBOARD_GMV_DAYS,
@@ -59,6 +61,7 @@ export class DashboardService {
       this.support.getStats(),
       this.finance.getDashboardStats(),
       this.shipments.getDashboardStats(),
+      this.returns.getDashboardStats(),
     ]);
     const names = new Map(
       (await this.sellers.getSummaries(orders.topSellers.map((s) => s.sellerId))).map((s) => [
@@ -84,6 +87,7 @@ export class DashboardService {
       support,
       finance,
       delivery,
+      returns,
     };
   }
 
@@ -92,7 +96,13 @@ export class DashboardService {
       const raw = await this.cache.get(DASHBOARD_CACHE_KEY);
       if (raw === null) return undefined;
       const parsed = JSON.parse(raw) as Partial<DashboardDto> | null;
-      if (typeof parsed?.generatedAt !== 'string' || !Array.isArray(parsed.gmv) || !parsed.orders) {
+      // An entry cached before R2-P6 has no `returns` block: a miss (BO-24).
+      if (
+        typeof parsed?.generatedAt !== 'string' ||
+        !Array.isArray(parsed.gmv) ||
+        !parsed.orders ||
+        !parsed.returns
+      ) {
         throw new TypeError('cached dashboard has an unexpected shape');
       }
       return parsed as DashboardDto;

@@ -280,4 +280,125 @@ describe('mapUserEvent (spec 13 §8.2)', () => {
       );
     });
   });
+
+  describe('returns and refunds (spec 13 §8.9, NO-34)', () => {
+    const RETURN = randomUUID();
+    const changed = (to: string, overrides: Record<string, unknown> = {}) =>
+      envelope('return.status_changed', {
+        returnId: RETURN,
+        returnNumber: 'R-000000042',
+        orderId: ORDER,
+        orderNumber: N,
+        sellerOrderId: SO_A,
+        customerId: CUSTOMER,
+        sellerId: SELLER_A,
+        from: null,
+        to,
+        actor: 'customer',
+        ...overrides,
+      });
+    const customer = `customer:${CUSTOMER}`;
+    const seller = `seller:${SELLER_A}`;
+    const mine = `/returns/${RETURN}`;
+    const theirs = `/seller/returns/${RETURN}`;
+
+    it('each listed status notifies its side, linked to the return; the others nobody', () => {
+      const map = (to: string) => rows(mapUserEvent(changed(to), undefined));
+      expect(map('requested')).toEqual([
+        [
+          seller,
+          'return_requested',
+          'orders',
+          'Return requested',
+          `A return was requested on order #${N}.`,
+          theirs,
+        ],
+      ]);
+      expect(map('approved')).toEqual([
+        [
+          customer,
+          'return_approved',
+          'orders',
+          'Return approved',
+          'Your return R-000000042 was approved. An agent will pick it up.',
+          mine,
+        ],
+      ]);
+      expect(map('rejected')).toEqual([
+        [
+          customer,
+          'return_rejected',
+          'orders',
+          'Return rejected',
+          'Your return R-000000042 was rejected. You can escalate it.',
+          mine,
+        ],
+      ]);
+      expect(map('picked_up')).toEqual([
+        [
+          customer,
+          'return_picked_up',
+          'orders',
+          'Return picked up',
+          'Your return R-000000042 is on its way to the seller.',
+          mine,
+        ],
+      ]);
+      expect(map('received')).toEqual([
+        [
+          seller,
+          'return_received',
+          'orders',
+          'Return arrived',
+          'Return R-000000042 was delivered to you. Please inspect it.',
+          theirs,
+        ],
+      ]);
+      expect(map('completed')).toEqual([
+        [
+          customer,
+          'return_completed',
+          'orders',
+          'Return accepted',
+          'Return R-000000042 is complete. Your refund is on its way.',
+          mine,
+        ],
+      ]);
+      const closed = 'Return R-000000042 was closed without a refund.';
+      expect(map('refused')).toEqual([
+        [customer, 'return_refused', 'orders', 'Return closed', closed, mine],
+        [seller, 'return_refused', 'orders', 'Return closed', closed, theirs],
+      ]);
+      for (const to of ['escalated', 'disputed', 'cancelled', 'pickup_failed']) expect(map(to)).toEqual([]);
+    });
+
+    it('a malformed return number, order number or profile is permanent', () => {
+      expect(() => mapUserEvent(changed('approved', { returnNumber: 'R-1' }), undefined)).toThrow(
+        PermanentEventError,
+      );
+      expect(() => mapUserEvent(changed('requested', { orderNumber: 'x' }), undefined)).toThrow(
+        PermanentEventError,
+      );
+      expect(() => mapUserEvent(changed('approved', { customerId: 'x' }), undefined)).toThrow(
+        PermanentEventError,
+      );
+    });
+
+    it('refund_issued to the customer for every reason, linked to the order', () => {
+      for (const eventType of ['payment.refunded', 'payment.refund_recorded']) {
+        for (const reason of ['return', 'seller_order_cancelled']) {
+          expect(rows(mapUserEvent(envelope(eventType, { orderId: ORDER, reason }), one))).toEqual([
+            [
+              customer,
+              'refund_issued',
+              'orders',
+              'Refund issued',
+              `Your refund for order #${N} was issued.`,
+              `/orders/${ORDER}`,
+            ],
+          ]);
+        }
+      }
+    });
+  });
 });

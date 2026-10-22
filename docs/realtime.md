@@ -70,10 +70,11 @@ One domain event can produce several messages that share its `eventId` (for exam
 | `order.updated` | `{ orderId, orderNumber, status }` | The customer. On order placed and closed, and on payment paid / failed / expired. `status` is the order's current status |
 | `seller_order.placed` | `{ sellerOrderId, orderNumber }` | Each seller of a new order (not while it awaits payment) |
 | `seller_order.updated` | `{ sellerOrderId, orderId, status }` | The customer and that seller: accepted, ready for pickup, items cancelled, cancelled, returned, delivered. `status` is current |
-| `shipment.updated` | `{ shipmentId, sellerOrderId, orderId, status }` | The customer and the agent: `picked_up`, `out_for_delivery`, `delivery_failed`, `returning_to_seller`, `delivered` |
+| `shipment.updated` | `{ shipmentId, sellerOrderId, orderId, status, kind }` | `kind: delivery`: the customer and the agent, `picked_up`, `out_for_delivery`, `delivery_failed`, `returning_to_seller`, `delivered`. `kind: return`: the agent only, `picked_up`, `delivered` (handed to the seller), `cancelled` (pickup attempts ended) |
 | `shipment.assigned` | `{ shipmentId, sellerOrderId }` | The newly assigned agent |
 | `shipment.unassigned` | `{ shipmentId, sellerOrderId }` | The agent the shipment was taken from |
-| `payment.updated` | `{ orderId, paymentStatus }` | The customer: `paid`, `failed`, `expired`. After the Kashier redirect, wait for this (about 30 s) instead of polling. Fall back to `GET /orders/:id` every 5 s (RT-4) |
+| `payment.updated` | `{ orderId, paymentStatus }` | The customer: `paid`, `failed`, `expired`. After the Kashier redirect, wait for this (about 30 s) instead of polling. Fall back to `GET /orders/:id` every 5 s (RT-4). Also `partially_refunded` / `refunded` when a Kashier refund lands; a cash (COD) refund changes no payment status and sends none (RT-23) |
+| `return.updated` | `{ returnId, sellerOrderId, orderId, status }` | The customer and the seller on every status change of a return; also `admins` for `escalated` and `disputed`. Refetch the return |
 | `media.updated` | `{ mediaId, status }` | The uploader: `ready` or `failed` |
 | `notification.created` | `{ notificationId, category, title, body, link }` | The recipient, after the in-app notification is stored (spec 13). `link` is a web app route or null |
 | `support.message_created` | `{ ticketId, messageId }` | Sockets in the ticket's room, plus the other side: the opener for an admin reply or a system line, the `admins` room for the opener's message. An internal note goes to `admins` only. Refetch `…/messages` |
@@ -81,7 +82,6 @@ One domain event can produce several messages that share its `eventId` (for exam
 | `support.typing` | `{ ticketId, userId, role }` | The others in the ticket's room, relayed from a `support.typing` signal. Never stored; show it for a few seconds |
 | `session.ended` | `{ reason }` | That socket, just before the server closes it (see above) |
 
-Arrive in later Release 2 phases: `return.updated` and refund `payment.updated` (specs 18, 10).
 
 ## Signals (client → server)
 

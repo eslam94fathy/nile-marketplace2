@@ -10,6 +10,7 @@ import {
   type ReturnReason,
   type ReturnRefusalReason,
   OPEN_RETURN_STATUSES,
+  type OpenReturnStatus,
   ReturnStatus,
 } from '../enums';
 import { type NewReturnRequest, type ReturnPatch, type ReturnRequest } from '../model/return-request.model';
@@ -278,6 +279,23 @@ export class ReturnRequestRepository {
         void qb.whereNot({ status: ReturnStatus.REJECTED }).orWhere('escalation_deadline_at', '>', now);
       });
     return rows.map((row) => row.seller_order_id);
+  }
+
+  /**
+   * Open returns per status (spec 18 §2, spec 20 BO-24), a `rejected` one only inside its escalation window
+   * (the same rule as findOpenSellerOrderIds). One aggregate over the open-return partial index.
+   */
+  async countOpenByStatus(now: Date): Promise<Map<OpenReturnStatus, number>> {
+    const rows = await this.db
+      .knex<ReturnRequestTable>(T)
+      .select('status')
+      .count<{ status: OpenReturnStatus; count: string }[]>('* as count')
+      .whereIn('status', [...OPEN_RETURN_STATUSES])
+      .where((qb) => {
+        void qb.whereNot({ status: ReturnStatus.REJECTED }).orWhere('escalation_deadline_at', '>', now);
+      })
+      .groupBy('status');
+    return new Map(rows.map((row) => [row.status, Number(row.count)]));
   }
 
   /**
