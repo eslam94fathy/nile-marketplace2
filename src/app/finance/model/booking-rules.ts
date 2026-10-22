@@ -12,6 +12,8 @@ const PLATFORM_COMMISSION: AccountKey = {
   ownerId: null,
 };
 const PLATFORM_DELIVERY: AccountKey = { accountType: AccountType.PLATFORM_DELIVERY_REVENUE, ownerId: null };
+/** Platform-funded coupon discounts: only goes negative (FI-14, FI-20). */
+const PLATFORM_PROMOTIONS: AccountKey = { accountType: AccountType.PLATFORM_PROMOTIONS, ownerId: null };
 
 /** What `seller_order.delivered` carries for the ledger, parsed (events §3.4). */
 export interface DeliveredAmounts {
@@ -21,6 +23,8 @@ export interface DeliveredAmounts {
   paymentMethod: PaymentMethod;
   sellerNet: Money;
   commission: Money;
+  /** The discount the platform funded on this seller order (spec 12 §8.2 row 8). */
+  platformDiscount: Money;
   agentFeeShare: Money;
   /** COD: cash the agent took. Kashier: null. */
   codCollectedAmount: Money | null;
@@ -46,7 +50,11 @@ const posting = (
 /** Entries only for amounts > 0 (spec 12 FI-4): a share of 0.00 writes nothing. */
 const positive = (postings: readonly Posting[]): Posting[] => postings.filter((p) => !p.amount.isZero());
 
-/** Rows 1–6 of spec 12 §1.2 for one delivered seller order, row 1 into `seller_pending` (§8.2). */
+/**
+ * Rows 1–6 of spec 12 §1.2 for one delivered seller order, row 1 into `seller_pending`, and row 8: the
+ * platform's coupon cost (§8.2, FI-20). Seller net + commission − platform discount = what the customer
+ * paid for the items.
+ */
 export function deliveryBooking(delivered: DeliveredAmounts, sourceEventId: string): Booking {
   const { CREDIT, DEBIT } = EntryDirection;
   const agentFee: AccountKey = { accountType: AccountType.AGENT_FEE_PAYABLE, ownerId: delivered.agentId };
@@ -59,6 +67,7 @@ export function deliveryBooking(delivered: DeliveredAmounts, sourceEventId: stri
       EntryType.SELLER_NET_HELD,
     ),
     posting(PLATFORM_COMMISSION, CREDIT, delivered.commission, EntryType.COMMISSION_EARNED),
+    posting(PLATFORM_PROMOTIONS, DEBIT, delivered.platformDiscount, EntryType.PROMOTION_FUNDED),
     // The agent's share comes out of the platform's delivery revenue (rows 3/4).
     posting(agentFee, CREDIT, delivered.agentFeeShare, EntryType.AGENT_FEE_EARNED),
     posting(PLATFORM_DELIVERY, DEBIT, delivered.agentFeeShare, EntryType.AGENT_FEE_EARNED),
@@ -108,6 +117,8 @@ export interface ReturnedAmounts {
   customerId: string;
   agentId: string;
   commissionReversed: Money;
+  /** A platform coupon's share of the returned units, given back to the platform (row 11). */
+  platformDiscountReversed: Money;
   refundAmount: Money;
   returnFee: Money;
   agentFeeShare: Money;
@@ -123,9 +134,9 @@ const sellerPayable = (sellerId: string): AccountKey => ({
 });
 
 /**
- * Rows 9, 10, 12–15 of spec 12 §8.4 (rows 11 and 8 come with coupons, FI-16). The seller debits are split
- * between pending and available by FI-18. Debits = seller net + commission (+ the fee if the seller pays)
- * = credits = refund + fee.
+ * Rows 9–15 of spec 12 §8.4 (row 11 with coupons, FI-20). The seller debits are split between pending and
+ * available by FI-18. Debits = seller net + commission (+ the fee if the seller pays) = credits = refund +
+ * the reversed platform discount + fee.
  */
 export function returnBooking(
   returned: ReturnedAmounts,
@@ -138,6 +149,7 @@ export function returnBooking(
     posting(sellerPending(returned.sellerId), DEBIT, split.netFromPending, EntryType.SELLER_NET_REVERSED),
     posting(sellerPayable(returned.sellerId), DEBIT, split.netFromAvailable, EntryType.SELLER_NET_REVERSED),
     posting(PLATFORM_COMMISSION, DEBIT, returned.commissionReversed, EntryType.COMMISSION_REVERSED),
+    posting(PLATFORM_PROMOTIONS, CREDIT, returned.platformDiscountReversed, EntryType.PROMOTION_REVERSED),
     posting(
       { accountType: AccountType.CUSTOMER_REFUND_PAYABLE, ownerId: returned.customerId },
       CREDIT,

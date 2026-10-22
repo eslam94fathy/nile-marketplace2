@@ -12,18 +12,20 @@ export const FINANCE_TABLES = {
 export const LEDGER_QUEUE = 'finance.ledger';
 
 /**
- * Accounts allowed below 0 (spec 12 §1.1, FI-1, FI-12); `chk_finance_accounts_balance_non_negative`. A
+ * Accounts allowed below 0 (spec 12 §1.1, §8.1, FI-1, FI-12, FI-14); `chk_finance_accounts_balance_non_negative`. A
  * payout never takes a seller below 0 (strict bookings, §8.1).
  */
 export const MAY_GO_NEGATIVE: readonly AccountType[] = [
   AccountType.PLATFORM_DELIVERY_REVENUE,
   AccountType.SELLER_PAYABLE,
+  AccountType.PLATFORM_PROMOTIONS,
 ];
 
 /** Platform accounts have no owner (owner_id null). */
 export const PLATFORM_ACCOUNT_TYPES: readonly AccountType[] = [
   AccountType.PLATFORM_COMMISSION_REVENUE,
   AccountType.PLATFORM_DELIVERY_REVENUE,
+  AccountType.PLATFORM_PROMOTIONS,
 ];
 
 /** Admin paths under /api/v1 (spec 12 §4.1). */

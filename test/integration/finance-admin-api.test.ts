@@ -65,6 +65,7 @@ describe('finance: admin API', () => {
             paymentMethod: 'cod',
             sellerNet: m(options.sellerNet ?? '90.00'),
             commission: m('10.00'),
+            platformDiscount: m('0.00'),
             agentFeeShare: m('14.00'),
             codCollectedAmount: m(options.cash ?? '160.00'),
             deliveryFeeCollected: true,

@@ -42,6 +42,7 @@ const delivered = (overrides: Partial<DeliveredAmounts> = {}): DeliveredAmounts 
   paymentMethod: 'cod',
   sellerNet: m('90.00'),
   commission: m('10.00'),
+  platformDiscount: m('0.00'),
   agentFeeShare: m('14.00'),
   codCollectedAmount: m('160.00'),
   deliveryFeeCollected: true,
@@ -97,6 +98,28 @@ describe('booking rules (spec 12 §1.2)', () => {
       'platform_commission_revenue',
       'agent_fee_payable',
       'platform_delivery_revenue',
+    ]);
+  });
+
+  it('a platform-funded discount books row 8: net + commission − discount = what the customer paid', () => {
+    const booking = deliveryBooking(
+      delivered({
+        paymentMethod: 'kashier',
+        sellerNet: m('180.00'),
+        commission: m('20.00'),
+        platformDiscount: m('20.00'),
+        codCollectedAmount: null,
+        deliveryFeeCollected: false,
+        deliveryFeeAmount: m('0.00'),
+      }),
+      'event-c',
+    );
+    expect(rows(booking)).toEqual([
+      ['seller_pending', 'credit', '180.00', 'seller_net_held'],
+      ['platform_commission_revenue', 'credit', '20.00', 'commission_earned'],
+      ['platform_promotions', 'debit', '20.00', 'promotion_funded'],
+      ['agent_fee_payable', 'credit', '14.00', 'agent_fee_earned'],
+      ['platform_delivery_revenue', 'debit', '14.00', 'agent_fee_earned'],
     ]);
   });
 
@@ -193,6 +216,7 @@ const returned = (overrides: Partial<ReturnedAmounts> = {}): ReturnedAmounts => 
   customerId: CUSTOMER,
   agentId: AGENT,
   commissionReversed: m('20.00'),
+  platformDiscountReversed: m('0.00'),
   refundAmount: m('150.00'),
   returnFee: m('50.00'),
   agentFeeShare: m('35.00'),
@@ -222,6 +246,27 @@ describe('return bookings (spec 12 §8.4, FI-18)', () => {
       ['seller_pending', 'debit', '180.00', 'seller_net_reversed'],
       ['platform_commission_revenue', 'debit', '20.00', 'commission_reversed'],
       ['customer_refund_payable', 'credit', '150.00', 'customer_refund_owed'],
+      ['platform_delivery_revenue', 'credit', '50.00', 'return_fee_earned'],
+      ['agent_fee_payable', 'credit', '35.00', 'agent_fee_earned'],
+      ['platform_delivery_revenue', 'debit', '35.00', 'agent_fee_earned'],
+    ]);
+    const total = (direction: EntryDirection) =>
+      Money.sum(booking.postings.filter((p) => p.direction === direction).map((p) => p.amount)).toString();
+    expect(total(EntryDirection.DEBIT)).toBe(total(EntryDirection.CREDIT));
+  });
+
+  it('§8.4 example with a platform coupon of 10 %: the discount goes back to promotions (row 11) and it balances', () => {
+    const split = splitReturnDebits(m('180.00'), m('180.00'), m('0.00'));
+    const booking = returnBooking(
+      returned({ platformDiscountReversed: m('20.00'), refundAmount: m('130.00') }),
+      split,
+      'event-r',
+    );
+    expect(rows(booking)).toEqual([
+      ['seller_pending', 'debit', '180.00', 'seller_net_reversed'],
+      ['platform_commission_revenue', 'debit', '20.00', 'commission_reversed'],
+      ['platform_promotions', 'credit', '20.00', 'promotion_reversed'],
+      ['customer_refund_payable', 'credit', '130.00', 'customer_refund_owed'],
       ['platform_delivery_revenue', 'credit', '50.00', 'return_fee_earned'],
       ['agent_fee_payable', 'credit', '35.00', 'agent_fee_earned'],
       ['platform_delivery_revenue', 'debit', '35.00', 'agent_fee_earned'],

@@ -91,6 +91,11 @@ export class LedgerBookingService {
             paymentMethod,
             sellerNet,
             commission: moneyField(envelope, 'commission'),
+            // Absent only on events from before coupons, which had none (spec 02 §6.5).
+            platformDiscount:
+              envelope.payload.platformDiscount === undefined
+                ? Money.zero()
+                : moneyField(envelope, 'platformDiscount'),
             agentFeeShare: moneyField(envelope, 'agentFeeShare'),
             codCollectedAmount: paymentMethod === 'cod' ? moneyField(envelope, 'codCollectedAmount') : null,
             deliveryFeeCollected: booleanField(envelope, 'deliveryFeeCollected'),
@@ -131,6 +136,7 @@ export class LedgerBookingService {
             customerId: uuidField(envelope, 'customerId'),
             agentId: uuidField(envelope, 'agentId'),
             commissionReversed: moneyField(envelope, 'commissionReversed'),
+            platformDiscountReversed: moneyField(envelope, 'platformDiscountReversed'),
             refundAmount: moneyField(envelope, 'refundAmount'),
             returnFee,
             agentFeeShare: moneyField(envelope, 'agentFeeShare'),

@@ -260,6 +260,69 @@ describe('finance: holding period, returns and refunds', () => {
     expect(await balance('customer_refund_payable', d.customerId)).toBe('0.00');
   });
 
+  it('a platform coupon books its cost to platform_promotions and a return gives it back (rows 8, 11, FI-20)', async () => {
+    const promotions = async () =>
+      (
+        await knex()('finance_accounts')
+          .where({ account_type: 'platform_promotions' })
+          .whereNull('owner_id')
+          .first<{ balance: string } | undefined>('balance')
+      )?.balance ?? '0.00';
+    const start = Number(await promotions());
+    const chain = await fx.insertOrderChain();
+    await consume('seller_order.delivered', {
+      sellerOrderId: chain.sellerOrderId,
+      orderId: chain.orderId,
+      sellerId: chain.sellerId,
+      paymentMethod: 'kashier',
+      subtotal: '100.00',
+      commissionRate: '0.1000',
+      commission: '10.00',
+      sellerNet: '90.00',
+      discountAmount: '10.00',
+      discountFunding: 'platform',
+      platformDiscount: '10.00',
+      agentId: randomUUID(),
+      agentFeeShare: '0.00',
+      codCollectedAmount: null,
+      deliveryFeeCollected: false,
+      deliveryFeeAmount: '0.00',
+      deliveredAt: new Date().toISOString(),
+    });
+    expect(Number(await promotions())).toBeCloseTo(start - 10, 2);
+    const entries = await knex()('ledger_entries')
+      .where({
+        reference_type: 'seller_order',
+        reference_id: chain.sellerOrderId,
+        entry_type: 'promotion_funded',
+      })
+      .select<{ direction: string; amount: string }[]>('direction', 'amount');
+    expect(entries).toEqual([{ direction: 'debit', amount: '10.00' }]);
+
+    const d = { ...chain, deliveredAt: new Date(), token: '' };
+    const returnId = await returnOf(d, 'cancelled');
+    await consume('return.completed', {
+      returnId,
+      sellerOrderId: chain.sellerOrderId,
+      orderId: chain.orderId,
+      customerId: chain.customerId,
+      sellerId: chain.sellerId,
+      paymentMethod: 'kashier',
+      itemsPaid: '45.00',
+      itemsSubtotal: '50.00',
+      commissionReversed: '5.00',
+      sellerNetReversed: '45.00',
+      platformDiscountReversed: '5.00',
+      returnFee: '0.00',
+      returnFeePayer: 'seller',
+      agentId: randomUUID(),
+      agentFeeShare: '0.00',
+      refundAmount: '45.00',
+      refundPayoutEncrypted: null,
+    });
+    expect(Number(await promotions())).toBeCloseTo(start - 5, 2);
+  });
+
   it('after the release a return debits available, which may go negative; no payout then (FI-12, §8.1)', async () => {
     const first = await delivered(20);
     await release();

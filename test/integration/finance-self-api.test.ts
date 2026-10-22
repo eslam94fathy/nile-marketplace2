@@ -56,6 +56,7 @@ describe('finance: seller and agent self-service', () => {
             paymentMethod: 'cod',
             sellerNet: m('90.00'),
             commission: m('10.00'),
+            platformDiscount: m('0.00'),
             agentFeeShare: m('14.00'),
             codCollectedAmount: m('160.00'),
             deliveryFeeCollected: true,
