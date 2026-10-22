@@ -104,7 +104,7 @@ All paths are under `/api/v1`.
 | `CONSTRAINT_VIOLATION` | 422 | Unmapped check violation (`23514`) |
 | `RATE_LIMITED` | 429 | Over the limit. `Retry-After` header set |
 | `INTERNAL_ERROR` | 500 | Anything unexpected. Generic message |
-| `SERVICE_UNAVAILABLE` | 503 | A fail-closed dependency (Redis on auth/checkout) is down |
+| `SERVICE_UNAVAILABLE` | 503 | A fail-closed dependency (Redis on auth/checkout/coupon preview) is down |
 
 Module error codes are **globally unique** and listed in each module spec. A code raised by several modules lives here instead (e.g. `GOVERNORATE_NOT_FOUND`); each module still maps its own constraint names to it. Repositories map known constraint names to module codes (e.g. `uq_users_email` → `EMAIL_ALREADY_REGISTERED`). Anything unmapped falls back to the generic codes above.
 

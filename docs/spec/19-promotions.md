@@ -1,6 +1,6 @@
 # Spec 19 — promotions (coupons)
 
-Status: **v1.1 APPROVED (2026-10-22).** v1.1: R2-P7 plan clarifications PR-10…PR-22 (§7.1): `quote` inside the checkout transaction, the admin block of a seller coupon, Kashier at a zero total. **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (coupons), R-17, R-18, spec 09 v2.0 §8.8 (checkout and snapshots), spec 12 v2.0 §8 (funding in the ledger). §7 PR-1…PR-9 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.2 APPROVED (2026-10-22).** v1.2: PR-23 the `coupon-preview` limit fails closed (§7.1). **v1.1 APPROVED (2026-10-22).** v1.1: R2-P7 plan clarifications PR-10…PR-22 (§7.1): `quote` inside the checkout transaction, the admin block of a seller coupon, Kashier at a zero total. **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (coupons), R-17, R-18, spec 09 v2.0 §8.8 (checkout and snapshots), spec 12 v2.0 §8 (funding in the ledger). §7 PR-1…PR-9 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -148,7 +148,7 @@ Consumed: none.
 | `COUPON_BLOCK_INVALID_STATUS` | 409 | Block a blocked or a platform coupon, unblock an unblocked one (PR-20) |
 | `COUPON_SELLER_FUNDED` | 409 | Admin `PATCH` of a seller coupon (PR-20: block / unblock instead) |
 
-New rate-limit class `coupon-preview`: user id, `RATE_LIMIT_COUPON_PREVIEW_POINTS` / `_WINDOW_SECONDS` (20 per 60 s, PR-16), so codes can't be guessed by brute force (PR-6). Checkout keeps its `checkout` limit.
+New rate-limit class `coupon-preview`: user id, `RATE_LIMIT_COUPON_PREVIEW_POINTS` / `_WINDOW_SECONDS` (20 per 60 s, PR-16), so codes can't be guessed by brute force (PR-6); it fails closed (PR-23). Checkout keeps its `checkout` limit.
 
 ## 7. Decisions (answered 2026-10-20)
 
@@ -183,3 +183,4 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | PR-20 | **Admin block of a seller coupon** (amends PR-9, as the product block, spec 20 §3.4): `coupons.admin_blocked_at`, `admin_block_reason VARCHAR(500)` (both null or both set, seller coupons only). `block` also sets `status = inactive`; while blocked the seller can't activate it (`409 COUPON_BLOCKED`) but may change its other unlocked fields. `unblock` clears the columns and leaves it `inactive` for the seller to re-activate. Admin `PATCH` is for platform coupons only. Audited as `coupon.blocked` / `coupon.unblocked` (spec 20 BO-27); `coupon.blocked` notifies the seller (`coupon_blocked`, spec 13 NO-35). `CouponDto` gains `adminBlocked: boolean`, `adminBlockReason: string | null` | §4.3, §5, §6 |
 | PR-21 | A Kashier checkout whose total is `0.00` (a fixed coupon covering every item and a zero delivery fee) → `422 KASHIER_TOTAL_ZERO` (ordering); the client offers COD, which works at zero (spec 09 OR-32) | spec 09 §8.8 |
 | PR-22 | Order of work: plan §10.1 | plan |
+| PR-23 | The `coupon-preview` rate class **fails closed**, like `checkout`: while Redis is down the preview answers `503 SERVICE_UNAVAILABLE`, so codes can't be guessed without a counter (R2-P7 security review). Checkout's own limit already fails closed | §6 |

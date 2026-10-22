@@ -125,6 +125,23 @@ describe('cart coupon preview', () => {
     );
   });
 
+  it('fails closed while Redis is down: 503, never an unlimited guess (PR-23)', async () => {
+    const fresh = await startTestApp();
+    try {
+      const freshApi = orderingApi(fresh);
+      await freshApi.init();
+      const buyer = await freshApi.customer();
+      fresh.infra.redis.disconnect();
+      const res = await request(fresh.app)
+        .post(`${API}/cart/coupon-preview`)
+        .set('Authorization', `Bearer ${buyer.token}`)
+        .send({ code: 'GUESS-1' });
+      expect([res.status, errorBody(res).error.code]).toEqual([503, 'SERVICE_UNAVAILABLE']);
+    } finally {
+      await fresh.close();
+    }
+  }, 120_000);
+
   it('limits previews per user with coupon-preview (PR-6)', async () => {
     const buyer = await api.customer();
     for (let i = 0; i < PREVIEW_LIMIT; i += 1)

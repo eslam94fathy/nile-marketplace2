@@ -17,7 +17,7 @@ export const RateLimitClass = {
   UPLOAD: 'upload',
   /** Ticket opens and message posts, keyed by user (spec 16 §6); fails open like general. */
   SUPPORT_MESSAGE: 'support-message',
-  /** Coupon previews, keyed by user, against guessing codes (spec 19 PR-6); fails open like general. */
+  /** Coupon previews, keyed by user, against guessing codes (spec 19 PR-6); fails closed (PR-23). */
   COUPON_PREVIEW: 'coupon-preview',
 } as const;
 export type RateLimitClass = (typeof RateLimitClass)[keyof typeof RateLimitClass];
@@ -27,6 +27,8 @@ const FAIL_CLOSED: ReadonlySet<RateLimitClass> = new Set([
   RateLimitClass.STRICT_AUTH,
   RateLimitClass.REFRESH,
   RateLimitClass.CHECKOUT,
+  // Without its counter the preview would let codes be guessed freely (spec 19 PR-23).
+  RateLimitClass.COUPON_PREVIEW,
 ]);
 
 type RateEnv = Pick<

@@ -185,7 +185,7 @@ Every job runs under `pg_try_advisory_lock(<job key>)`, so only one worker insta
 
 - Cache keys use constants with a version prefix (`v1:catalog:category-tree`).
 - Redis failures degrade to reading from the DB, logged at `warn`. They never fail the request.
-- Rate limiting and idempotency **fail closed** on sensitive routes (auth, checkout) and fail open elsewhere (config).
+- Rate limiting and idempotency **fail closed** on sensitive routes (auth, checkout, the coupon preview: spec 19 PR-23) and fail open elsewhere (config).
 
 ## 9. Search & filtering (catalog)
 
