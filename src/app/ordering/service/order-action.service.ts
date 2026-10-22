@@ -21,7 +21,8 @@ import {
   sellerOrderNotCancellable,
   sellerOrderNotFound,
 } from '../errors';
-import { openQuantity, type SellerOrder } from '../model/order.model';
+import { sellerOrderMoney } from '../model/checkout-money.model';
+import { openQuantity, paidSubtotal, type SellerOrder } from '../model/order.model';
 import { type OrderItemCancellationRepository } from '../repository/order-item-cancellation.repository';
 import { type OrderItemRepository } from '../repository/order-item.repository';
 import { type SellerOrderRepository } from '../repository/seller-order.repository';
@@ -149,9 +150,11 @@ export class OrderActionService {
   }
 
   /**
-   * UC-OR-5: cancels quantities of one line, releases them and recomputes the money. When every line
-   * is then fully cancelled the seller order becomes cancelled and only `seller_order.cancelled` is
-   * published, with the subtotal before this cancellation as `amountCancelled` (OR-12).
+   * UC-OR-5: cancels quantities of one line, releases them and recomputes the money over the kept units
+   * (OR-31): the line keeps round(discountOriginal × kept / quantity) of its coupon share, and commission
+   * and net follow the funding. The event amounts are paid amounts (spec 09 §8.8). When every line is then
+   * fully cancelled the seller order becomes cancelled and only `seller_order.cancelled` is published,
+   * with the paid subtotal before this cancellation as `amountCancelled` (OR-12).
    */
   cancelItems(
     seller: SellerCaller,
@@ -168,7 +171,11 @@ export class OrderActionService {
 
       const cancelledQuantity = line.cancelledQuantity + cancellation.quantity;
       const lineTotal = line.unitPrice.timesQuantity(line.quantity - cancelledQuantity);
-      await this.items.setCancelledQuantity(line.id, cancelledQuantity, lineTotal, trx);
+      const discountAmount = line.discountOriginal.timesRatio(
+        line.quantity - cancelledQuantity - line.returnedQuantity,
+        line.quantity,
+      );
+      await this.items.setCancelledQuantity(line.id, cancelledQuantity, lineTotal, discountAmount, trx);
       await this.cancellations.insert(
         { orderItemId: line.id, ...cancellation, actorUserId: seller.userId },
         trx,
@@ -176,15 +183,19 @@ export class OrderActionService {
       await this.inventory.release([{ orderItemId: line.id, quantity: cancellation.quantity }], trx);
 
       const after = lines.map((item) =>
-        item.id === line.id ? { ...item, cancelledQuantity, lineTotal } : item,
+        item.id === line.id ? { ...item, cancelledQuantity, lineTotal, discountAmount } : item,
       );
       const subtotal = Money.sum(after.map((item) => item.lineTotal));
-      const commission = subtotal.timesRate(target.commissionRate);
-      const sellerNet = subtotal.minus(commission);
-      await this.sellerOrders.updateMoney(target.id, { subtotal, commission, sellerNet }, trx);
-      locked.sellerOrders = locked.sellerOrders.map((s) =>
-        s.id === target.id ? { ...s, subtotal, commission, sellerNet } : s,
+      const discount = Money.sum(after.map((item) => item.discountAmount));
+      const discountFunding = discount.isZero() ? null : target.discountFunding;
+      const { commission, sellerNet } = sellerOrderMoney(
+        subtotal,
+        { amount: discount, funding: discountFunding },
+        target.commissionRate,
       );
+      const money = { subtotal, discountAmount: discount, discountFunding, commission, sellerNet };
+      await this.sellerOrders.updateMoney(target.id, money, trx);
+      locked.sellerOrders = locked.sellerOrders.map((s) => (s.id === target.id ? { ...s, ...money } : s));
 
       if (after.every((item) => openQuantity(item) === 0)) {
         await this.lifecycle.cancelSellerOrder(
@@ -194,14 +205,15 @@ export class OrderActionService {
           {
             reason: SellerOrderCancelReason.SELLER_CANCELLED,
             note: cancellation.note,
-            amountCancelled: target.subtotal,
+            amountCancelled: paidSubtotal(target),
           },
           actor,
           trx,
         );
         return;
       }
-      const amount = line.unitPrice.timesQuantity(cancellation.quantity);
+      // The paid difference: the units' price less the coupon share they took with them.
+      const amount = line.lineTotal.minus(line.discountAmount).minus(lineTotal.minus(discountAmount));
       await this.outbox.add(trx, {
         contract: SellerOrderItemsCancelled,
         aggregateId: target.id,
@@ -221,6 +233,7 @@ export class OrderActionService {
           ],
           amountCancelled: amount.toString(),
           newSubtotal: subtotal.toString(),
+          newPaidSubtotal: subtotal.minus(discount).toString(),
           newCommission: commission.toString(),
           newSellerNet: sellerNet.toString(),
           reason: cancellation.reason,
@@ -252,7 +265,7 @@ export class OrderActionService {
           orderId: locked.order.id,
           sellerId: done.sellerId,
           paymentMethod: locked.order.paymentMethod,
-          subtotal: done.subtotal.toString(),
+          subtotal: paidSubtotal(done).toString(),
           returnedAt: returnedAt.toISOString(),
         },
       });
@@ -299,7 +312,7 @@ export class OrderActionService {
         orderNumber: order.orderNumber,
         sellerId: sellerOrder.sellerId,
         paymentMethod: order.paymentMethod,
-        codItemsAmount: (cod ? sellerOrder.subtotal : Money.zero()).toString(),
+        codItemsAmount: (cod ? paidSubtotal(sellerOrder) : Money.zero()).toString(),
         orderDeliveryFee: (cod ? order.deliveryFee : Money.zero()).toString(),
         pickup: { businessName: summary.businessName, ...sellerOrder.pickup },
         dropoff: { ...order.shipping },

@@ -6,7 +6,7 @@ import { registerCustomersLookups, registerCustomersModule } from './app/custome
 import { registerDeliveryAgentLookups, registerDeliveryModule, registerDeliveryWorker } from './app/delivery';
 import { registerFinanceModule, registerFinanceWorker } from './app/finance';
 import { registerReturnsModule, registerReturnsWorker } from './app/returns';
-import { registerPromotionsModule } from './app/promotions';
+import { registerPromotionsModule, registerPromotionsWorker } from './app/promotions';
 import { registerReviewsModule } from './app/reviews';
 import { registerBackofficeModule } from './app/backoffice';
 import { registerSellersLookups, registerSellersModule, registerSellersWorker } from './app/sellers';
@@ -120,6 +120,8 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   registerInventoryModule(container);
   registerCatalogProjections(container);
   registerPaymentsModule(container);
+  // The close step releases coupon redemptions (spec 19 UC-PR-3).
+  registerPromotionsWorker(container);
   // ordering.shipment-updates and the order jobs (spec 09 §3.6–§3.10).
   registerOrderingWorker(container);
   // delivery.seller-order-updates and the assignment retry job (spec 11 DE-13).

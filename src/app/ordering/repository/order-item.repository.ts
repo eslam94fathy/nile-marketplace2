@@ -25,6 +25,8 @@ const COLUMNS = [
   'cancelled_quantity',
   'returned_quantity',
   'line_total',
+  'discount_original',
+  'discount_amount',
   'image_media_id',
 ] as const;
 
@@ -64,6 +66,8 @@ function toModel(row: OrderItemRow): OrderItem {
     cancelledQuantity: row.cancelled_quantity,
     returnedQuantity: row.returned_quantity,
     lineTotal: Money.of(row.line_total),
+    discountOriginal: Money.of(row.discount_original),
+    discountAmount: Money.of(row.discount_amount),
     imageMediaId: row.image_media_id,
   };
 }
@@ -96,9 +100,8 @@ export class OrderItemRepository {
           cancelled_quantity: 0,
           returned_quantity: 0,
           line_total: item.lineTotal.toString(),
-          // R2-P7 step 5 passes the coupon share (spec 09 §8.8).
-          discount_original: Money.zero().toString(),
-          discount_amount: Money.zero().toString(),
+          discount_original: item.discountOriginal.toString(),
+          discount_amount: item.discountAmount.toString(),
           image_media_id: item.imageMediaId,
         })),
       )
@@ -111,12 +114,14 @@ export class OrderItemRepository {
     id: string,
     cancelledQuantity: number,
     lineTotal: Money,
+    discountAmount: Money,
     trx: DbTransaction,
   ): Promise<void> {
     await trx<OrderItemTable>(T)
       .update({
         cancelled_quantity: cancelledQuantity,
         line_total: lineTotal.toString(),
+        discount_amount: discountAmount.toString(),
         updated_at: trx.fn.now(),
       })
       .where({ id });

@@ -129,6 +129,8 @@ import * as m20261022140010 from './20261022140010_add_ledger_entries_promotion_
 import * as m20261022140011 from './20261022140011_validate_ledger_entries_promotion_types';
 import * as m20261022140012 from './20261022140012_add_coupon_blocked_notification_type';
 import * as m20261022140013 from './20261022140013_add_coupon_audit_actions';
+import * as m20261022140014 from './20261022140014_replace_seller_orders_net_check';
+import * as m20261022140015 from './20261022140015_validate_seller_orders_net_check';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -263,5 +265,7 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261022140011_validate_ledger_entries_promotion_types', module: m20261022140011 },
   { name: '20261022140012_add_coupon_blocked_notification_type', module: m20261022140012 },
   { name: '20261022140013_add_coupon_audit_actions', module: m20261022140013 },
+  { name: '20261022140014_replace_seller_orders_net_check', module: m20261022140014 },
+  { name: '20261022140015_validate_seller_orders_net_check', module: m20261022140015 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

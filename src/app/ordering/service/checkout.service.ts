@@ -14,6 +14,7 @@ import { CustomersErrorCode, type AddressSnapshot, type ICustomerDirectory } fro
 import { type IDeliveryReferenceService } from '../../delivery';
 import { type IInventoryService } from '../../inventory';
 import { type IPaymentDirectory, PaymentMethod } from '../../payments';
+import { type CouponQuote, type IPromotions } from '../../promotions';
 import { type ISellerDirectory, SellerStatus } from '../../sellers';
 import { ActorRole, OrderStatus, SellerOrderStatus } from '../enums';
 import {
@@ -21,6 +22,7 @@ import {
   cartHasIssues,
   checkoutAddressNotFound,
   governorateNotDeliverable,
+  kashierTotalZero,
   orderNotAwaitingPayment,
   orderNotFound,
   orderPaymentPending,
@@ -40,6 +42,8 @@ export interface CheckoutInput {
   paymentMethod: PaymentMethod;
   /** Money string the client showed (S-8). */
   expectedTotal: string;
+  /** Spec 09 §8.8; the quote upper-cases it (PR-12). */
+  couponCode?: string;
 }
 
 /** What checkout returns: the order, and for Kashier the payment page (null when it failed, SD-5). */
@@ -69,8 +73,9 @@ interface CheckoutContext {
 
 /**
  * UC-OR-1 checkout (spec 09 §3.1, architecture §7.1). Reads the address, fee and fee-share rate first,
- * then one transaction across modules in the lock order of spec 09 OR-3: cart → orders → seller
- * orders → inventory items → payments. Any failure rolls back everything, the cart included.
+ * then one transaction across modules in the lock order of spec 09 OR-3 (extended by §8.8): cart → orders
+ * → seller orders → inventory items → payments → coupons. Any failure rolls back everything, the cart
+ * included.
  */
 @injectable()
 export class CheckoutService {
@@ -87,6 +92,7 @@ export class CheckoutService {
     @inject(TOKENS.SellerDirectory) private readonly sellers: ISellerDirectory,
     @inject(TOKENS.InventoryService) private readonly inventory: IInventoryService,
     @inject(TOKENS.PaymentDirectory) private readonly payments: IPaymentDirectory,
+    @inject(TOKENS.Promotions) private readonly promotions: IPromotions,
     @inject(TOKENS.OrderRepository) private readonly orders: OrderRepository,
     @inject(TOKENS.SellerOrderRepository) private readonly sellerOrders: SellerOrderRepository,
     @inject(TOKENS.OrderItemRepository) private readonly items: OrderItemRepository,
@@ -216,8 +222,18 @@ export class CheckoutService {
       if (pending) throw orderPaymentPending(pending);
     }
     const { lines, commissionRates, pickups } = await this.priceLines(cartLines, trx);
-    const money = computeCheckoutMoney(lines, commissionRates, context.deliveryFee);
+    const quote = input.couponCode ? await this.quote(input.couponCode, customerId, lines, trx) : null;
+    const money = computeCheckoutMoney(
+      lines,
+      commissionRates,
+      context.deliveryFee,
+      quote && {
+        funding: quote.funding,
+        lineDiscounts: new Map(quote.lines.map((line) => [line.variantId, line.discount])),
+      },
+    );
     if (!Money.of(input.expectedTotal).equals(money.total)) throw orderTotalChanged(money.total.toString());
+    if (input.paymentMethod === PaymentMethod.KASHIER && money.total.isZero()) throw kashierTotalZero();
 
     const now = this.clock.now();
     const start = this.startState(input.paymentMethod, now);
@@ -230,6 +246,8 @@ export class CheckoutService {
         deliveryFee: money.deliveryFee,
         agentFeeShareRate: context.agentFeeShareRate,
         total: money.total,
+        coupon: quote && { id: quote.couponId, code: quote.code },
+        discountTotal: money.discountTotal,
         shipping: context.shipping,
         paymentExpiresAt: start.paymentExpiresAt,
         placedAt: start.placedAt,
@@ -255,6 +273,13 @@ export class CheckoutService {
       { orderId: order.id, customerId, method: input.paymentMethod, amount: money.total },
       trx,
     );
+    // The last lock of the checkout (spec 19 UC-PR-2): a popular coupon's row is held the shortest time.
+    if (quote) {
+      await this.promotions.redeem(
+        { couponId: quote.couponId, customerId, orderId: order.id, discountTotal: money.discountTotal },
+        trx,
+      );
+    }
     await this.cart.clear(customerId, trx);
     // Kashier: `order.placed` is published when the payment arrives (spec 09 §3.11).
     if (!start.placedAt) return order;
@@ -274,6 +299,27 @@ export class CheckoutService {
       },
     });
     return order;
+  }
+
+  /** §8.8: after step 4, inside the transaction (PR-10); reads only. Its 422s abort the checkout. */
+  private quote(
+    code: string,
+    customerId: string,
+    lines: readonly PricedLine[],
+    trx: DbTransaction,
+  ): Promise<CouponQuote> {
+    return this.promotions.quote(
+      code,
+      customerId,
+      lines.map((line) => ({
+        variantId: line.variantId,
+        productId: line.productId,
+        sellerId: line.sellerId,
+        categoryId: line.categoryId,
+        lineTotal: line.unitPrice.timesQuantity(line.quantity),
+      })),
+      trx,
+    );
   }
 
   /** Step 4: live purchasability and seller status, then the snapshot each order line keeps. */
@@ -307,6 +353,7 @@ export class CheckoutService {
         variantId: variant.variantId,
         productId: variant.productId,
         sellerId: variant.sellerId,
+        categoryId: variant.categoryId,
         productName: variant.productName,
         sku: variant.sku,
         attributes: variant.attributes,
@@ -341,6 +388,8 @@ export class CheckoutService {
           sellerId: split.sellerId,
           status: start.sellerOrderStatus,
           subtotal: split.subtotal,
+          discountAmount: split.discountAmount,
+          discountFunding: split.discountFunding,
           commissionRate: split.commissionRate,
           commission: split.commission,
           sellerNet: split.sellerNet,
@@ -363,6 +412,8 @@ export class CheckoutService {
           unitPrice: line.unitPrice,
           quantity: line.quantity,
           lineTotal: line.lineTotal,
+          discountOriginal: line.discount,
+          discountAmount: line.discount,
           imageMediaId: line.imageMediaId,
         })),
       ),

@@ -19,6 +19,8 @@ const COLUMNS = [
   'commission_rate',
   'commission',
   'seller_net',
+  'discount_amount',
+  'discount_funding',
   'returned_subtotal',
   'returned_paid',
   'returned_commission',
@@ -89,6 +91,8 @@ function toModel(row: SellerOrderRow): SellerOrder {
     commissionRate: Rate.of(row.commission_rate),
     commission: Money.of(row.commission),
     sellerNet: Money.of(row.seller_net),
+    discountAmount: Money.of(row.discount_amount),
+    discountFunding: row.discount_funding,
     returnedSubtotal: Money.of(row.returned_subtotal),
     returnedPaid: Money.of(row.returned_paid),
     returnedCommission: Money.of(row.returned_commission),
@@ -123,6 +127,8 @@ export interface NewSellerOrder {
   commissionRate: Rate;
   commission: Money;
   sellerNet: Money;
+  discountAmount: Money;
+  discountFunding: CouponFunding | null;
   pickup: PickupSnapshot;
   acceptDeadlineAt: Date | null;
 }
@@ -160,9 +166,8 @@ export class SellerOrderRepository {
           commission_rate: s.commissionRate.toString(),
           commission: s.commission.toString(),
           seller_net: s.sellerNet.toString(),
-          // R2-P7 step 5 passes the coupon share (spec 09 §8.8).
-          discount_amount: Money.zero().toString(),
-          discount_funding: null,
+          discount_amount: s.discountAmount.toString(),
+          discount_funding: s.discountFunding,
           returned_subtotal: Money.zero().toString(),
           returned_paid: Money.zero().toString(),
           returned_commission: Money.zero().toString(),
@@ -256,12 +261,20 @@ export class SellerOrderRepository {
   /** Partial item cancellation (spec 09 §3.5 step 3), under the order lock. */
   async updateMoney(
     id: string,
-    money: { subtotal: Money; commission: Money; sellerNet: Money },
+    money: {
+      subtotal: Money;
+      discountAmount: Money;
+      discountFunding: CouponFunding | null;
+      commission: Money;
+      sellerNet: Money;
+    },
     trx: DbTransaction,
   ): Promise<void> {
     await trx<SellerOrderTable>(T)
       .update({
         subtotal: money.subtotal.toString(),
+        discount_amount: money.discountAmount.toString(),
+        discount_funding: money.discountFunding,
         commission: money.commission.toString(),
         seller_net: money.sellerNet.toString(),
         updated_at: trx.fn.now(),

@@ -90,6 +90,21 @@ export class Money {
   }
 
   /**
+   * Multiply by `numerator / denominator`, rounded half-up to the piastre: a line's coupon share on the
+   * units it still keeps, `round(discount × kept / quantity)` (spec 09 §8.7).
+   */
+  timesRatio(numerator: number, denominator: number): Money {
+    if (!Number.isSafeInteger(numerator) || !Number.isSafeInteger(denominator) || denominator <= 0) {
+      throw new RangeError(
+        `ratio must be integers over a positive denominator, got ${numerator}/${denominator}`,
+      );
+    }
+    return new Money(
+      this.amount.times(numerator).dividedBy(denominator).toDecimalPlaces(MONEY_SCALE, Decimal.ROUND_HALF_UP),
+    );
+  }
+
+  /**
    * Splits into `parts` equal shares rounded DOWN to the piastre, plus the leftover piastres
    * (docs/spec/09-ordering.md §3.8: `base × parts + remainder = this`).
    */

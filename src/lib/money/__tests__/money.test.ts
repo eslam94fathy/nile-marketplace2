@@ -90,6 +90,14 @@ describe('lib/money Money', () => {
     }
   });
 
+  it('multiplies by a ratio, rounded half-up (kept coupon shares, spec 09 §8.7)', () => {
+    expect(m('10.00').timesRatio(1, 3).toString()).toBe('3.33');
+    expect(m('10.00').timesRatio(2, 3).toString()).toBe('6.67');
+    expect(m('0.05').timesRatio(1, 2).toString()).toBe('0.03'); // 0.025 → 0.03
+    expect(m('7.00').timesRatio(0, 4).toString()).toBe('0.00');
+    expect(() => m('1.00').timesRatio(1, 0)).toThrow(RangeError);
+  });
+
   it('compares values', () => {
     expect(m('1.00').equals(m('1'))).toBe(true);
     expect(m('2.00').greaterThan(m('1.99'))).toBe(true);

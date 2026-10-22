@@ -141,6 +141,8 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261022140011_validate_ledger_entries_promotion_types',
       '20261022140012_add_coupon_blocked_notification_type',
       '20261022140013_add_coupon_audit_actions',
+      '20261022140014_replace_seller_orders_net_check',
+      '20261022140015_validate_seller_orders_net_check',
     ]);
   });
 

@@ -17,6 +17,7 @@ import { CouponRedemptionRepository } from './repository/coupon-redemption.repos
 import { CouponRepository } from './repository/coupon.repository';
 import { promotionsRoutes } from './routes';
 import { CouponManagementService } from './service/coupon-management.service';
+import { CouponRedemptionService } from './service/coupon-redemption.service';
 import { PromotionsService } from './service/promotions.service';
 
 export {
@@ -29,17 +30,27 @@ export {
 } from './enums';
 export { PromotionsErrorCode } from './errors';
 export type { QuoteLine } from './model/coupon.model';
+export type { ICouponRedemptions } from './service/coupon-redemption.service';
 export type { CouponQuote, IPromotions } from './service/promotions.service';
 
 /** api process. Needs sellers and catalog registered. */
 export function registerPromotionsModule(container: DependencyContainer): void {
-  container.registerSingleton(TOKENS.CouponRepository, CouponRepository);
-  container.registerSingleton(TOKENS.CouponRedemptionRepository, CouponRedemptionRepository);
+  registerPromotionsWorker(container);
   container.registerSingleton(TOKENS.Promotions, PromotionsService);
   container.registerSingleton(TOKENS.CouponManagementService, CouponManagementService);
   container.registerSingleton(TOKENS.SellerCouponController, SellerCouponController);
   container.registerSingleton(TOKENS.AdminCouponController, AdminCouponController);
   registerPromotionsConstraintErrors(container.resolve<PgErrorMapper>(TOKENS.PgErrorMapper));
+}
+
+/**
+ * worker process: redeem and release only (the close step of the order jobs and shipment updates); no
+ * lookups into other modules.
+ */
+export function registerPromotionsWorker(container: DependencyContainer): void {
+  container.registerSingleton(TOKENS.CouponRepository, CouponRepository);
+  container.registerSingleton(TOKENS.CouponRedemptionRepository, CouponRedemptionRepository);
+  container.registerSingleton(TOKENS.CouponRedemptions, CouponRedemptionService);
 }
 
 /** The module's HTTP routes, mounted by the composition root at `basePath` (`/api/v1`). */

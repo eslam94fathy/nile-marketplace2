@@ -15,6 +15,7 @@ import { type ILogger } from '../../../lib/logger';
 import { Money } from '../../../lib/money';
 import { type IInventoryService } from '../../inventory';
 import { PaymentMethod } from '../../payments';
+import { CouponFunding } from '../../promotions';
 import { ActorRole, SellerOrderStatus } from '../enums';
 import { isTerminal } from '../model/order-status.model';
 import { type SellerOrder } from '../model/order.model';
@@ -150,6 +151,12 @@ export class ShipmentUpdateService {
         commissionRate: sellerOrder.commissionRate.toString(),
         commission: sellerOrder.commission.toString(),
         sellerNet: sellerOrder.sellerNet.toString(),
+        discountAmount: sellerOrder.discountAmount.toString(),
+        discountFunding: sellerOrder.discountFunding,
+        platformDiscount: (sellerOrder.discountFunding === CouponFunding.PLATFORM
+          ? sellerOrder.discountAmount
+          : Money.zero()
+        ).toString(),
         agentId: uuidField(envelope, 'agentId'),
         agentFeeShare: agentFeeShare(locked, sellerOrder.id).toString(),
         codCollectedAmount: cod ? moneyField(envelope, 'codCollectedAmount').toString() : null,

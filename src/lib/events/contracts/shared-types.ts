@@ -4,6 +4,9 @@
  */
 export type PaymentMethod = 'cod' | 'kashier';
 
+/** Who funds a coupon discount (spec 19 §1, promotions `CouponFunding`). */
+export type CouponFunding = 'platform' | 'seller';
+
 export type UserRoleValue = 'customer' | 'seller' | 'admin' | 'delivery_agent';
 
 export type SellerOrderStatus =

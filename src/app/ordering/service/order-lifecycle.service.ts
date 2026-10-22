@@ -5,9 +5,16 @@ import { TOKENS } from '../../../lib/di';
 import { type IOutbox, OrderClosed, SellerOrderCancelled } from '../../../lib/events';
 import { Money } from '../../../lib/money';
 import { type IInventoryService } from '../../inventory';
+import { type ICouponRedemptions } from '../../promotions';
 import { type ActorRole, OrderStatus, type SellerOrderCancelReason, SellerOrderStatus } from '../enums';
 import { deriveOrderStatus, isBilled, isClosed } from '../model/order-status.model';
-import { type Order, type OrderItem, openQuantity, type SellerOrder } from '../model/order.model';
+import {
+  type Order,
+  type OrderItem,
+  openQuantity,
+  paidSubtotal,
+  type SellerOrder,
+} from '../model/order.model';
 import { type OrderItemRepository } from '../repository/order-item.repository';
 import { type OrderRepository } from '../repository/order.repository';
 import {
@@ -40,6 +47,7 @@ export class OrderLifecycleService {
     @inject(TOKENS.Clock) private readonly clock: IClock,
     @inject(TOKENS.Outbox) private readonly outbox: IOutbox,
     @inject(TOKENS.InventoryService) private readonly inventory: IInventoryService,
+    @inject(TOKENS.CouponRedemptions) private readonly coupons: ICouponRedemptions,
     @inject(TOKENS.OrderRepository) private readonly orders: OrderRepository,
     @inject(TOKENS.SellerOrderRepository) private readonly sellerOrders: SellerOrderRepository,
     @inject(TOKENS.OrderItemRepository) private readonly items: OrderItemRepository,
@@ -98,7 +106,8 @@ export class OrderLifecycleService {
   /**
    * Whole seller-order cancellation (UC-OR-2, UC-OR-4, timeout, payment expiry / failure): releases
    * every open unit and publishes `seller_order.cancelled`. `amountCancelled` defaults to the current
-   * subtotal; a partial cancellation that empties the seller order passes the subtotal before it (OR-12).
+   * paid subtotal (after its coupon share, spec 09 §8.8); a partial cancellation that empties the seller
+   * order passes the paid subtotal before it (OR-12).
    */
   async cancelSellerOrder(
     locked: LockedOrder,
@@ -132,7 +141,7 @@ export class OrderLifecycleService {
         paymentMethod: locked.order.paymentMethod,
         previousStatus: previous.status,
         reason: cancel.reason,
-        amountCancelled: (cancel.amountCancelled ?? cancelled.subtotal).toString(),
+        amountCancelled: (cancel.amountCancelled ?? paidSubtotal(cancelled)).toString(),
         cancelledAt: at.toISOString(),
       },
     });
@@ -148,14 +157,17 @@ export class OrderLifecycleService {
   }
 
   /**
-   * Re-derives and stores the order after its seller orders changed (spec 09 §1.1): items total of
-   * the seller orders still billed (OR-13), status, history row on a change, and the close step
-   * (§3.9) the first time every seller order is terminal.
+   * Re-derives and stores the order after its seller orders changed (spec 09 §1.1): the paid items total
+   * and the discount of the seller orders still billed (OR-13, §8.8), status, history row on a change, and
+   * the close step (§3.9) the first time every seller order is terminal. An order that closes `cancelled`
+   * gives its coupon use back, still the last lock (spec 19 UC-PR-3, R-18).
    */
   async settle(locked: LockedOrder, actor: Actor, trx: DbTransaction): Promise<Order> {
     const { order, sellerOrders } = locked;
     const status = deriveOrderStatus(sellerOrders.map((s) => s.status));
-    const itemsTotal = Money.sum(sellerOrders.filter((s) => isBilled(s.status)).map((s) => s.subtotal));
+    const billed = sellerOrders.filter((s) => isBilled(s.status));
+    const itemsTotal = Money.sum(billed.map(paidSubtotal));
+    const discountTotal = Money.sum(billed.map((s) => s.discountAmount));
     const closing = isClosed(status) && !isClosed(order.status);
     const delivered = sellerOrders.filter((s) => s.status === SellerOrderStatus.DELIVERED);
     // Q-28: nothing delivered → no delivery fee.
@@ -166,6 +178,7 @@ export class OrderLifecycleService {
       ...order,
       status,
       itemsTotal,
+      discountTotal,
       deliveryFee,
       total: itemsTotal.plus(deliveryFee),
       completedAt: closing && status !== OrderStatus.CANCELLED ? now : order.completedAt,
@@ -196,12 +209,13 @@ export class OrderLifecycleService {
           customerId: order.customerId,
           paymentMethod: order.paymentMethod,
           finalStatus: status,
-          deliveredItemsTotal: Money.sum(delivered.map((s) => s.subtotal)).toString(),
+          deliveredItemsTotal: Money.sum(delivered.map(paidSubtotal)).toString(),
           deliveryFee: deliveryFee.toString(),
           originalDeliveryFee: order.deliveryFee.toString(),
           closedAt: now.toISOString(),
         },
       });
+      if (status === OrderStatus.CANCELLED) await this.coupons.release(order.id, trx);
     }
     locked.order = updated;
     return updated;

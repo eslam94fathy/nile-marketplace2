@@ -2354,7 +2354,7 @@ describe('migrations on a real Postgres 18', () => {
         (await pgFailure(() => sellerOrder({ discount_amount: '10.00', discount_funding: 'partner' })))
           .constraint,
       ).toBe('chk_seller_orders_discount_funding');
-      await sellerOrder({ discount_amount: '10.00', discount_funding: 'seller' });
+      await sellerOrder({ discount_amount: '10.00', discount_funding: 'platform' });
 
       const item = (values: Record<string, unknown>) =>
         db('order_items').where({ id: chain.orderItemId }).update(values);
@@ -2377,6 +2377,21 @@ describe('migrations on a real Postgres 18', () => {
         cancelled_quantity: 1,
         line_total: '50.00',
       });
+    });
+
+    it('seller_net drops by a seller-funded discount only (R-17, chk_seller_orders_net)', async () => {
+      const chain = await fx().insertOrderChain();
+      const sellerOrder = (values: Record<string, unknown>) =>
+        db('seller_orders').where({ id: chain.sellerOrderId }).update(values);
+      expect(
+        (await pgFailure(() => sellerOrder({ discount_amount: '10.00', discount_funding: 'seller' })))
+          .constraint,
+      ).toBe('chk_seller_orders_net');
+      await sellerOrder({ discount_amount: '10.00', discount_funding: 'seller', seller_net: '80.00' });
+      expect((await pgFailure(() => sellerOrder({ discount_funding: 'platform' }))).constraint).toBe(
+        'chk_seller_orders_net',
+      );
+      await sellerOrder({ discount_funding: 'platform', seller_net: '90.00' });
     });
 
     it('finance, notifications and audit accept the R2-P7 values; platform_promotions may go negative', async () => {

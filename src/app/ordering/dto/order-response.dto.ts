@@ -12,6 +12,7 @@ import {
 import { IsMoney, IsRate } from '../../../lib/http';
 import { ImageDto, toImageDto } from '../../media';
 import { PaymentMethod, PaymentStatus } from '../../payments';
+import { CouponFunding } from '../../promotions';
 import { ActorRole, OrderStatus, SellerOrderCancelReason, SellerOrderStatus } from '../enums';
 import {
   type OrderDetail,
@@ -68,6 +69,14 @@ export class OrderItemDto {
   /** unitPrice × (quantity − cancelledQuantity). */
   @IsMoney()
   lineTotal!: string;
+
+  /** The coupon share the kept units carry (spec 09 §8.8); "0.00" without a coupon. */
+  @IsMoney()
+  discountAmount!: string;
+
+  /** lineTotal − discountAmount: what the customer pays for the line. */
+  @IsMoney()
+  paidTotal!: string;
 
   // Nullable: the variant's image at checkout, null when it had none.
   @IsOptional()
@@ -138,6 +147,14 @@ export class CustomerSellerOrderDto {
   @IsMoney()
   subtotal!: string;
 
+  /** Its coupon share (spec 09 §8.8); the customer pays subtotal − discountAmount. */
+  @IsMoney()
+  discountAmount!: string;
+
+  @IsOptional()
+  @IsIn(Object.values(CouponFunding))
+  discountFunding!: CouponFunding | null;
+
   /** What its completed returns paid back for items (spec 09 §8.7); "0.00" without one. */
   @IsMoney()
   returnedPaid!: string;
@@ -187,6 +204,16 @@ export class OrderSummaryDto {
   createdAt!: string;
 }
 
+/** The checkout's coupon (spec 09 §8.8). */
+export class OrderCouponDto {
+  @IsString()
+  code!: string;
+
+  /** The discount the billed seller orders still carry. */
+  @IsMoney()
+  discountTotal!: string;
+}
+
 export class OrderDetailDto {
   @IsUUID()
   id!: string;
@@ -203,6 +230,7 @@ export class OrderDetailDto {
   @IsIn(Object.values(PaymentStatus))
   paymentStatus!: PaymentStatus;
 
+  /** What the customer pays for the items, after the coupon. */
   @IsMoney()
   itemsTotal!: string;
 
@@ -211,6 +239,12 @@ export class OrderDetailDto {
 
   @IsMoney()
   total!: string;
+
+  // Nullable: no coupon at checkout.
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => OrderCouponDto)
+  coupon!: OrderCouponDto | null;
 
   @ValidateNested()
   @Type(() => ShippingAddressDto)
@@ -297,6 +331,14 @@ export class SellerOrderDto {
 
   @IsMoney()
   subtotal!: string;
+
+  /** Its coupon share and who funds it (PR-7): a seller coupon lowers the commission base and the net. */
+  @IsMoney()
+  discountAmount!: string;
+
+  @IsOptional()
+  @IsIn(Object.values(CouponFunding))
+  discountFunding!: CouponFunding | null;
 
   @IsRate()
   commissionRate!: string;
@@ -450,6 +492,8 @@ function toOrderItemDto(item: OrderItemView): OrderItemDto {
     cancelledQuantity: item.cancelledQuantity,
     returnedQuantity: item.returnedQuantity,
     lineTotal: item.lineTotal.toString(),
+    discountAmount: item.discountAmount.toString(),
+    paidTotal: item.lineTotal.minus(item.discountAmount).toString(),
     image: item.image ? toImageDto(item.image) : null,
   };
 }
@@ -465,6 +509,8 @@ function toCustomerSellerOrderDto(
     businessName: detail.businessName,
     status: sellerOrder.status,
     subtotal: sellerOrder.subtotal.toString(),
+    discountAmount: sellerOrder.discountAmount.toString(),
+    discountFunding: sellerOrder.discountFunding,
     returnedPaid: sellerOrder.returnedPaid.toString(),
     canCancel: !orderAwaitsPayment && sellerOrder.status === SellerOrderStatus.PLACED,
     cancelReason: sellerOrder.cancelReason,
@@ -486,6 +532,10 @@ export function toOrderDetailDto(detail: OrderDetail): OrderDetailDto {
     itemsTotal: order.itemsTotal.toString(),
     deliveryFee: order.deliveryFee.toString(),
     total: order.total.toString(),
+    coupon:
+      order.couponCode === null
+        ? null
+        : { code: order.couponCode, discountTotal: order.discountTotal.toString() },
     shippingAddress: { ...order.shipping },
     sellerOrders: detail.sellerOrders.map((s) => toCustomerSellerOrderDto(s, awaitsPayment)),
     paymentExpiresAt: iso(order.paymentExpiresAt),
@@ -555,6 +605,8 @@ export function toSellerOrderDto(view: SellerOrderView): SellerOrderDto {
     status: s.status,
     paymentMethod: order.paymentMethod,
     subtotal: s.subtotal.toString(),
+    discountAmount: s.discountAmount.toString(),
+    discountFunding: s.discountFunding,
     commissionRate: s.commissionRate.toString(),
     commission: s.commission.toString(),
     sellerNet: s.sellerNet.toString(),

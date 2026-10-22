@@ -82,7 +82,7 @@ export function orderingRoutes(deps: OrderingRouteDeps): Router {
     method: 'post',
     path: `${basePath}${P.CHECKOUT}`,
     summary:
-      'Place an order from my cart, split per seller; reserves stock and empties the cart. COD: placed at once. Kashier: awaiting payment for KASHIER_PAYMENT_TTL_MINUTES, with the payment page in kashier.checkoutUrl (null when Kashier failed; ask again through kashier-session) (CART_EMPTY 422, CART_HAS_ISSUES 409, ADDRESS_NOT_FOUND 422, GOVERNORATE_NOT_DELIVERABLE 422, ORDER_TOTAL_CHANGED 409, ORDER_PAYMENT_PENDING 409 (Kashier, an unpaid order exists), INSUFFICIENT_STOCK 409)',
+      'Place an order from my cart, split per seller; reserves stock and empties the cart. COD: placed at once. Kashier: awaiting payment for KASHIER_PAYMENT_TTL_MINUTES, with the payment page in kashier.checkoutUrl (null when Kashier failed; ask again through kashier-session) (CART_EMPTY 422, CART_HAS_ISSUES 409, ADDRESS_NOT_FOUND 422, GOVERNORATE_NOT_DELIVERABLE 422, ORDER_TOTAL_CHANGED 409, ORDER_PAYMENT_PENDING 409 (Kashier, an unpaid order exists), INSUFFICIENT_STOCK 409). Optional couponCode: the items are discounted and expectedTotal includes the discount; the coupon codes of POST /cart/coupon-preview answer 422; KASHIER_TOTAL_ZERO 422 when a Kashier order would cost 0.00',
     requestBody: CheckoutDto,
     idempotent: true,
     responses: { 201: { description: 'The placed order', body: CheckoutResultDto } },

@@ -293,6 +293,7 @@ export const TOKENS = {
   CouponRepository: Symbol.for('CouponRepository'),
   CouponRedemptionRepository: Symbol.for('CouponRedemptionRepository'),
   Promotions: Symbol.for('Promotions'),
+  CouponRedemptions: Symbol.for('CouponRedemptions'),
   CouponManagementService: Symbol.for('CouponManagementService'),
   SellerCouponController: Symbol.for('SellerCouponController'),
   AdminCouponController: Symbol.for('AdminCouponController'),

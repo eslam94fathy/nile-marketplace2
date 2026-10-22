@@ -1,5 +1,6 @@
 import { type Money, type Rate } from '../../../lib/money';
 import { type PaymentMethod } from '../../payments';
+import { type CouponFunding } from '../../promotions';
 import {
   type ActorRole,
   type OrderStatus,
@@ -42,6 +43,11 @@ export interface Order {
   deliveryFee: Money;
   agentFeeShareRate: Rate;
   total: Money;
+  /** The checkout's coupon (spec 09 §8.8); null without one. */
+  couponId: string | null;
+  couponCode: string | null;
+  /** The discount the billed seller orders still carry (like `itemsTotal`, OR-13); 0 without a coupon. */
+  discountTotal: Money;
   shipping: ShippingSnapshot;
   paymentExpiresAt: Date | null;
   placedAt: Date | null;
@@ -59,6 +65,10 @@ export interface SellerOrder {
   commissionRate: Rate;
   commission: Money;
   sellerNet: Money;
+  /** The coupon share its kept units carry (OR-31); `subtotal` stays undiscounted. */
+  discountAmount: Money;
+  /** Who funds `discountAmount`; null when it is 0. */
+  discountFunding: CouponFunding | null;
   /** Sums of its returns, next to the delivered amounts (spec 09 §8.7); zero until a return completes. */
   returnedSubtotal: Money;
   returnedPaid: Money;
@@ -91,6 +101,10 @@ export interface OrderItem {
   /** Units returned (spec 09 §8.7); `lineTotal` keeps them, a return leaves the delivered amounts. */
   returnedQuantity: number;
   lineTotal: Money;
+  /** The line's coupon share at checkout (spec 09 §8.8). */
+  discountOriginal: Money;
+  /** The share its kept units still carry: round(discountOriginal × kept / quantity) (§8.7). */
+  discountAmount: Money;
   /** The variant's image at checkout (spec 09 §8.3); null when it had none. */
   imageMediaId: string | null;
 }
@@ -101,6 +115,10 @@ export const openQuantity = (item: OrderItem): number => item.quantity - item.ca
 /** Units the customer keeps: not cancelled, not returned (spec 09 §8.7, OR-9). */
 export const keptQuantity = (item: OrderItem): number =>
   item.quantity - item.cancelledQuantity - item.returnedQuantity;
+
+/** What the customer pays for a seller order's items: the subtotal less its coupon share. */
+export const paidSubtotal = (sellerOrder: Pick<SellerOrder, 'subtotal' | 'discountAmount'>): Money =>
+  sellerOrder.subtotal.minus(sellerOrder.discountAmount);
 
 /** One row of an order or seller-order status history (append-only). */
 export interface StatusHistoryEntry<S extends string> {

@@ -1,4 +1,4 @@
-import { IsIn, IsString, ValidateIf } from 'class-validator';
+import { IsIn, IsString, Length, ValidateIf } from 'class-validator';
 import {
   FieldType,
   FilterOp,
@@ -27,6 +27,12 @@ export class CheckoutDto {
   @IsString()
   @IsMoney()
   expectedTotal!: string;
+
+  /** A coupon (spec 09 §8.8): upper-cased by promotions, never trimmed (spec 19 PR-12). */
+  @Optional()
+  @IsString()
+  @Length(4, 32)
+  couponCode?: string;
 }
 
 export class OrderIdParamsDto {

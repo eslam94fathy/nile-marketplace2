@@ -21,6 +21,8 @@ const item = (
   cancelledQuantity: done.cancelled ?? 0,
   returnedQuantity: done.returned ?? 0,
   lineTotal: Money.of(price).timesQuantity(quantity - (done.cancelled ?? 0)),
+  discountOriginal: Money.zero(),
+  discountAmount: Money.zero(),
   imageMediaId: null,
 });
 

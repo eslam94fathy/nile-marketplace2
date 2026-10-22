@@ -1,5 +1,5 @@
 import { defineEvent } from './define-event';
-import { type PaymentMethod } from './shared-types';
+import { type CouponFunding, type PaymentMethod } from './shared-types';
 
 /** Publisher: ordering. Consumers: payments, finance (books the whole delivery atomically). */
 export interface SellerOrderDeliveredPayload {
@@ -11,6 +11,11 @@ export interface SellerOrderDeliveredPayload {
   commissionRate: string;
   commission: string;
   sellerNet: string;
+  /** The coupon share of the delivered units (spec 02 §6.5); "0.00" without one. */
+  discountAmount: string;
+  discountFunding: CouponFunding | null;
+  /** `discountAmount` when the platform funds it, else "0.00": finance's row 8 (spec 12 §8.2). */
+  platformDiscount: string;
   agentId: string;
   /** Computed by ordering (docs/spec/09-ordering.md §3.8). */
   agentFeeShare: string;

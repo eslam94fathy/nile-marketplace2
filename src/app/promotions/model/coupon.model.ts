@@ -1,4 +1,5 @@
 import { Money, type Rate } from '../../../lib/money';
+import { couponExpired, couponInactive, couponNotActiveYet } from '../errors';
 import {
   CouponDisplayStatus,
   CouponScope,
@@ -147,4 +148,11 @@ export function computeDiscount(
     discountTotal,
     lines: lines.map((line, i) => ({ variantId: line.variantId, discount: shares[i] ?? Money.zero() })),
   };
+}
+
+/** Spec 19 §3.1 step 1 after the lookup: the stored status, then the window `[startsAt, endsAt)`. */
+export function assertRedeemableAt(coupon: Coupon, now: Date): void {
+  if (coupon.status !== CouponStatus.ACTIVE) throw couponInactive();
+  if (now < coupon.startsAt) throw couponNotActiveYet();
+  if (now >= coupon.endsAt) throw couponExpired();
 }

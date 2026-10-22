@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Money, Rate } from '../../../lib/money';
+import { CouponFunding } from '../../promotions';
 import { OrderStatus, SellerOrderStatus as S } from '../enums';
 import { computeCheckoutMoney, type PricedLine } from '../model/checkout-money.model';
 import { deriveOrderStatus } from '../model/order-status.model';
@@ -13,6 +14,7 @@ const line = (
   variantId,
   productId: 'product',
   sellerId,
+  categoryId: 'category',
   productName: 'Thing',
   sku: 'SKU',
   attributes: [],
@@ -62,6 +64,60 @@ describe('computeCheckoutMoney (spec 09 §3.1 step 5)', () => {
       Money.zero(),
     );
     expect(money.sellers[0]?.commission.toString()).toBe('0.13');
+  });
+
+  it('with a coupon: commission per funding, paid items total, the fee untouched (R-17, spec 09 §8.8)', () => {
+    const rates = new Map([
+      ['a', Rate.of('0.1000')],
+      ['b', Rate.of('0.1000')],
+    ]);
+    const lines = [line('a', '100.00', 2), line('b', '50.00', 1)];
+    const platform = computeCheckoutMoney(lines, rates, Money.of('50.00'), {
+      funding: CouponFunding.PLATFORM,
+      lineDiscounts: new Map([['a-100.00', Money.of('20.00')]]),
+    });
+    const [a, b] = platform.sellers;
+    // Platform-funded: commission on the undiscounted 200, the platform absorbs the 20.
+    expect([
+      a?.discountAmount.toString(),
+      a?.discountFunding,
+      a?.commission.toString(),
+      a?.sellerNet.toString(),
+    ]).toEqual(['20.00', 'platform', '20.00', '180.00']);
+    expect([b?.discountAmount.toString(), b?.discountFunding]).toEqual(['0.00', null]);
+    expect([platform.itemsTotal, platform.discountTotal, platform.total].map(String)).toEqual([
+      '230.00',
+      '20.00',
+      '280.00',
+    ]);
+
+    // Seller-funded: commission on the discounted 180, the seller's net drops by the discount too.
+    const seller = computeCheckoutMoney(lines, rates, Money.of('50.00'), {
+      funding: CouponFunding.SELLER,
+      lineDiscounts: new Map([['a-100.00', Money.of('20.00')]]),
+    });
+    expect([seller.sellers[0]?.commission.toString(), seller.sellers[0]?.sellerNet.toString()]).toEqual([
+      '18.00',
+      '162.00',
+    ]);
+    expect(seller.total.toString()).toBe('280.00');
+  });
+
+  it('a fixed coupon may take every item: the total is the fee alone', () => {
+    const money = computeCheckoutMoney(
+      [line('a', '30.00', 1)],
+      new Map([['a', Rate.of('0.1000')]]),
+      Money.zero(),
+      {
+        funding: CouponFunding.PLATFORM,
+        lineDiscounts: new Map([['a-30.00', Money.of('30.00')]]),
+      },
+    );
+    expect([money.itemsTotal, money.total, money.sellers[0]?.sellerNet].map(String)).toEqual([
+      '0.00',
+      '0.00',
+      '27.00',
+    ]);
   });
 
   it('a seller without a commission rate is a bug', () => {

@@ -8,6 +8,7 @@ export const OrderingErrorCode = {
   CART_HAS_ISSUES: 'CART_HAS_ISSUES',
   GOVERNORATE_NOT_DELIVERABLE: 'GOVERNORATE_NOT_DELIVERABLE',
   ORDER_TOTAL_CHANGED: 'ORDER_TOTAL_CHANGED',
+  KASHIER_TOTAL_ZERO: 'KASHIER_TOTAL_ZERO',
   ORDER_PAYMENT_PENDING: 'ORDER_PAYMENT_PENDING',
   ORDER_NOT_FOUND: 'ORDER_NOT_FOUND',
   ORDER_NOT_AWAITING_PAYMENT: 'ORDER_NOT_AWAITING_PAYMENT',
@@ -56,6 +57,14 @@ export const orderPaymentPending = (orderId: string) =>
         { field: 'orderId', value: orderId, constraint: 'pending_payment', message: 'awaiting payment' },
       ],
     },
+  );
+
+/** A coupon took every item and the delivery fee is 0: Kashier can't charge 0.00 (spec 09 OR-32). */
+export const kashierTotalZero = () =>
+  new AppError(
+    C.KASHIER_TOTAL_ZERO,
+    'This order costs nothing; choose cash on delivery',
+    S.UNPROCESSABLE_ENTITY,
   );
 
 export const orderTotalChanged = (currentTotal: string) =>
