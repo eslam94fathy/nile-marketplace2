@@ -43,10 +43,12 @@ export * from './return-approved.event';
 export * from './return-completed.event';
 export * from './return-shipment.events';
 export * from './payment-refunded.event';
+export * from './coupon-blocked.event';
 
 import { CodRemittanceConfirmed } from './cod-remittance-confirmed.event';
 import { InventoryStockStatusChanged } from './inventory-stock-status-changed.event';
 import { MediaFailed } from './media-failed.event';
+import { CouponBlocked } from './coupon-blocked.event';
 import { MediaReady } from './media-ready.event';
 import { MediaUploaded } from './media-uploaded.event';
 import { NotificationEmailRequested } from './notification-email-requested.event';
@@ -137,4 +139,5 @@ export const ALL_EVENT_CONTRACTS = [
   ReturnShipmentDelivered,
   ReturnShipmentFailed,
   PaymentRefunded,
+  CouponBlocked,
 ] as const;

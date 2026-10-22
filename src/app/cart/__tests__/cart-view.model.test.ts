@@ -23,6 +23,7 @@ const variant = (
   productId: `product-${variantId}`,
   productName: `Product ${variantId}`,
   productSlug: `product-${variantId}`,
+  categoryId: 'category-1',
   sku: `SKU-${variantId}`,
   price,
   sellerId,

@@ -15,6 +15,7 @@ import { createNotificationsRouter } from './app/notifications';
 import { createOrderingRouter } from './app/ordering';
 import { createPaymentsRouter, createPaymentsWebhookRouter, PAYMENTS_PATHS } from './app/payments';
 import { createReturnsRouter } from './app/returns';
+import { createPromotionsRouter } from './app/promotions';
 import { createReviewsRouter } from './app/reviews';
 import { createBackofficeRouter } from './app/backoffice';
 import { createSellersRouter } from './app/sellers';
@@ -96,6 +97,7 @@ export function createApp(
   app.use(API_BASE_PATH, recordMountPath(), createSellersRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createCatalogRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createCartRouter(container, API_BASE_PATH));
+  app.use(API_BASE_PATH, recordMountPath(), createPromotionsRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createOrderingRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createPaymentsRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createFinanceRouter(container, API_BASE_PATH));

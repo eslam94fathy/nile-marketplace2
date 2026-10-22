@@ -20,6 +20,7 @@ interface PurchaseRow {
   product_id: string;
   product_name: string;
   product_slug: string;
+  category_id: string;
   sku: string;
   /** NUMERIC as a string. */
   price: string;
@@ -186,7 +187,7 @@ export class ProductVariantRepository {
     if (variantIds.length === 0) return [];
     const result = await this.exec(trx).raw<{ rows: PurchaseRow[] }>(
       `SELECT v.id AS variant_id, v.product_id, p.name AS product_name, p.slug AS product_slug,
-              v.sku, v.price, v.seller_id,
+              p.category_id, v.sku, v.price, v.seller_id,
               (v.status = ? AND v.deleted_at IS NULL
                  AND p.status = ? AND p.seller_active AND p.deleted_at IS NULL) AS purchasable,
               (SELECT i.media_id FROM ${IMAGES} i
@@ -212,6 +213,7 @@ export class ProductVariantRepository {
       productId: row.product_id,
       productName: row.product_name,
       productSlug: row.product_slug,
+      categoryId: row.category_id,
       sku: row.sku,
       price: row.price,
       sellerId: row.seller_id,

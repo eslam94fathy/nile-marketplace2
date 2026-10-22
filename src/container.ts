@@ -6,6 +6,7 @@ import { registerCustomersLookups, registerCustomersModule } from './app/custome
 import { registerDeliveryAgentLookups, registerDeliveryModule, registerDeliveryWorker } from './app/delivery';
 import { registerFinanceModule, registerFinanceWorker } from './app/finance';
 import { registerReturnsModule, registerReturnsWorker } from './app/returns';
+import { registerPromotionsModule } from './app/promotions';
 import { registerReviewsModule } from './app/reviews';
 import { registerBackofficeModule } from './app/backoffice';
 import { registerSellersLookups, registerSellersModule, registerSellersWorker } from './app/sellers';
@@ -80,6 +81,8 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
   registerDeliveryModule(container);
   registerInventoryModule(container);
   registerCatalogModule(container);
+  // After sellers and catalog (spec 19 §1); before cart and ordering, which call it.
+  registerPromotionsModule(container);
   registerCartModule(container);
   registerPaymentsModule(container);
   registerPaymentsHttp(container);

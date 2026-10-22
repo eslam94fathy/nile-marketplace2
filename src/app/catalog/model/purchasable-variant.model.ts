@@ -4,6 +4,8 @@ export interface PurchasableVariant {
   productId: string;
   productName: string;
   productSlug: string;
+  /** The product's category: the coupon scope (spec 06 CA-20). */
+  categoryId: string;
   sku: string;
   /** Decimal string, e.g. "150.00" (EGP). */
   price: string;

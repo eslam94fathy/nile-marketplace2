@@ -13,7 +13,17 @@ const MODULE_GRAPH = {
   catalog: ['sellers', 'inventory', 'media'],
   cart: ['catalog', 'customers', 'inventory', 'sellers', 'media'],
   // R2-P7 (spec 09 §8.8): coupon quote, redemption and release.
-  ordering: ['customers', 'cart', 'catalog', 'sellers', 'inventory', 'payments', 'delivery', 'media', 'promotions'],
+  ordering: [
+    'customers',
+    'cart',
+    'catalog',
+    'sellers',
+    'inventory',
+    'payments',
+    'delivery',
+    'media',
+    'promotions',
+  ],
   // R2-P6 (spec 12 §8, A-12): the holding release asks returns; the holds view reads order numbers.
   finance: ['sellers', 'delivery', 'returns', 'ordering'],
   // R2-P2 (spec 15): profiles at connect, parties and statuses for the fan-out; R2-P3: support (canView).
@@ -28,6 +38,8 @@ const MODULE_GRAPH = {
   backoffice: ['ordering', 'sellers', 'support', 'finance', 'delivery', 'returns'],
   // R2-P6 (spec 18, A-11): returnable items and recording, restock, refunds, fees, photos, caller profiles.
   returns: ['ordering', 'inventory', 'payments', 'delivery', 'media', 'customers', 'sellers'],
+  // R2-P7 (spec 19 §1): the seller guard and funding seller status, the category subtree.
+  promotions: ['sellers', 'catalog'],
   // R2 (architecture v2.0 §14.2). Modules record audit rows through lib/audit, not by importing audit.
   audit: ['identity'],
 };

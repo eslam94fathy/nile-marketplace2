@@ -289,6 +289,14 @@ export const TOKENS = {
   SellerReviewController: Symbol.for('SellerReviewController'),
   AdminReviewController: Symbol.for('AdminReviewController'),
 
+  // promotions module (R2-P7, spec 19)
+  CouponRepository: Symbol.for('CouponRepository'),
+  CouponRedemptionRepository: Symbol.for('CouponRedemptionRepository'),
+  Promotions: Symbol.for('Promotions'),
+  CouponManagementService: Symbol.for('CouponManagementService'),
+  SellerCouponController: Symbol.for('SellerCouponController'),
+  AdminCouponController: Symbol.for('AdminCouponController'),
+
   // health module
   HealthService: Symbol.for('HealthService'),
   HealthChecks: Symbol.for('HealthChecks'),

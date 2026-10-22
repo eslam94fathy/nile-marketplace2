@@ -279,6 +279,7 @@ describe('catalog: public browse, search, detail (spec 06 §4.1, UC-CA-6)', () =
         productId: headphones.id,
         productName: 'Wireless Headphones',
         productSlug: headphones.slug,
+        categoryId: child,
         sku: expect.stringMatching(/^SKU-/) as unknown,
         price: '150.00',
         sellerId: seller.sellerId,
@@ -291,6 +292,13 @@ describe('catalog: public browse, search, detail (spec 06 §4.1, UC-CA-6)', () =
       });
       for (const id of ids.slice(1, 5)) expect(byId.get(id)?.purchasable, id).toBe(false);
       expect(await directory.getVariantsForPurchase([])).toEqual([]);
+    });
+
+    it('getCategorySubtreeIds: the category and its descendants; [] for an unknown id (CA-20)', async () => {
+      const directory = t.container.resolve<ICatalogDirectory>(TOKENS.CatalogDirectory);
+      expect((await directory.getCategorySubtreeIds(root)).sort()).toEqual([root, child].sort());
+      expect(await directory.getCategorySubtreeIds(child)).toEqual([child]);
+      expect(await directory.getCategorySubtreeIds(UNKNOWN_ID)).toEqual([]);
     });
   });
 });
