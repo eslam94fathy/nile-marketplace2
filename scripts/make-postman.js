@@ -60,7 +60,7 @@ const idempotencyKey = { key: 'Idempotency-Key', value: '{{$guid}}' };
 const API = '/api/v1';
 const collection = {
   info: {
-    name: 'Nile Marketplace API (Release 1 + R2-P1…P5)',
+    name: 'Nile Marketplace API (Release 1 + R2-P1…P6)',
     _postman_id: 'c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01',
     description: [
       'Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10), delivery (spec 11): governorates and fees, agents, shipments and the work of delivery agents, and finance (spec 12): balances, statements, COD remittances and payouts.',
@@ -89,7 +89,7 @@ const collection = {
       '',
       'Finance flow: once an order is delivered (the worker books it in the ledger) → "Admin: finance" → List accounts (stores the first in `accountId`) → Account statement; "Entries of a seller order" uses `sellerOrderId`. "Confirm COD remittance" takes cash from `agentId`; "Record payout" pays `sellerId` (set it to the seller\'s id) with a fresh `payoutReference`. Log in as the seller → "Seller: finance", or as the agent → "Agent: finance", to see the same money from their side.',
       '',
-      'Release 2 so far: the audit log (spec 20 §2), image uploads (spec 14) with product and category images (spec 06 §8), the notification centre and Web Push (spec 13 §8), the web refresh cookie (spec 03 §8), support tickets (spec 16), reviews and ratings (spec 17) and the wishlist (spec 04 §8). The live socket (spec 15) is not HTTP: see docs/realtime.md.',
+      'Release 2 so far: the audit log (spec 20 §2), image uploads (spec 14) with product and category images (spec 06 §8), the notification centre and Web Push (spec 13 §8), the web refresh cookie (spec 03 §8), support tickets (spec 16), reviews and ratings (spec 17), the wishlist (spec 04 §8), and returns (spec 18) with automated refunds (spec 10 §8) and the seller holding period (spec 12 §8). The live socket (spec 15) is not HTTP: see docs/realtime.md.',
       '',
       'Image flow: "Media" → Request upload (stores `mediaId`) → POST the file to the returned `upload.url` with every `upload.fields` entry first and the file last as `file` (multipart/form-data; in Postman a new request, Body → form-data) → Complete upload → poll Get media until `ready` (the worker processes it). Then attach it: "Seller: product images" → Add image, or "Admin: category images" → Set image.',
       '',
@@ -98,6 +98,8 @@ const collection = {
       'Review flow: a customer with a delivered order → "Reviews" → Reviewable items (stores `orderItemId`) → Write a review (stores `reviewId`); the worker moves the product and seller ratings. Log in as the seller → "Seller: reviews" → Reply. As an admin → "Admin: reviews" → Hide / Unhide. "Catalog" → Product reviews / Review summary show the public side.',
       '',
       'Back-office flow (admin): "Admin: dashboard" shows the figures (cached for DASHBOARD_CACHE_TTL_SECONDS; generatedAt is their age). "Admin: users" → List users finds any account; "Admin: customers" → List customers (stores `customerId`) → Customer detail, then "Admin: orders" with customerId[eq]. "Admin: orders" → Cancel seller order / Cancel order (Idempotency-Key, a reason for the audit log). "Admin: products" → Product (admin view) → Block (the seller is notified and can no longer activate it) → Unblock. Every admin write appears in "Admin: audit log".',
+      '',
+      'Return flow: a customer with a delivered order → "Returns" → Returnable items (uses `orderId` and `sellerOrderId`; stores the first line in `orderItemId`) → Request a return (Idempotency-Key; stores `returnId`; damaged / wrong_item / not_as_described need a photo: upload with purpose return_photo first; a COD order needs `refundPayout`). Log in as the seller → "Seller: returns" → Approve (or Reject; the customer may then Escalate and an admin decides in "Admin: returns"). The worker assigns the return pickup to an agent: "Agent" → My shipments → Picked up → Delivered (handed to the seller). The seller → Return detail (stores `returnItemId`) → Confirm receipt (or Dispute; an admin resolves it). The refund follows: Kashier refunds are sent by the worker; COD refunds wait in "Admin: payments" → Refund queue → Refund detail (shows the wallet / InstaPay details) → Record a refund. "Seller: finance" → My balance / My holds shows money held until the return window ends.',
       'Tokens are per account: log in as the admin again (Auth → Login) before the "Admin: …" folders.',
       '',
       'Errors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.',
@@ -166,6 +168,8 @@ const collection = {
     { key: 'assigneeUserId', value: '' },
     { key: 'reviewId', value: '' },
     { key: 'customerId', value: '' },
+    { key: 'returnId', value: '' },
+    { key: 'returnItemId', value: '' },
   ],
   item: [
     {
@@ -1342,7 +1346,7 @@ if (pm.response.code === 201) {
     {
       name: 'Admin: payments',
       description:
-        'spec 10 §4.2. Admin role. R1 refunds are done by hand in the Kashier dashboard, then recorded here; the queue lists the refunds due, oldest first.',
+        'spec 10 §4.2, §8. Admin role. Kashier refunds are sent by the worker (pending_auto → processing → succeeded). Every COD refund, R1 refunds and a Kashier refund the worker could not settle wait as pending_manual: pay it by hand (Kashier dashboard, wallet or InstaPay), then record it here. The queue lists refunds oldest first.',
       item: [
         req({
           name: 'Payment of an order',
@@ -1368,9 +1372,30 @@ if (pm.response.code === 201) {
           query: [
             { key: 'status[eq]', value: 'pending_manual' },
             { key: 'limit', value: '20' },
-            { key: 'reason[in]', value: 'seller_order_cancelled,late_payment_after_expiry', disabled: true },
+            { key: 'reason[in]', value: 'return,seller_order_cancelled', disabled: true },
+            { key: 'createdAt[gte]', value: '2026-01-01', disabled: true },
           ],
+          description:
+            'status: pending_auto, processing, succeeded, pending_manual, recorded. lastError says why a refund waits for an admin. Stores the first in refundId.',
           tests: saveId('refundId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Refund detail',
+          method: 'GET',
+          path: `${API}/admin/payments/refunds/{{refundId}}`,
+          auth: true,
+          description:
+            'The refund plus, for a COD return refund, the decrypted payoutDetails (mobile_wallet walletNumber or instapay instapayAddress) to pay it to. REFUND_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Retry a refund',
+          method: 'POST',
+          path: `${API}/admin/payments/refunds/{{refundId}}/retry`,
+          auth: true,
+          description:
+            'Hands a pending_manual Kashier refund back to the worker (pending_auto) once the cause is fixed. Check the Kashier dashboard first: never retry a refund Kashier may already have applied. REFUND_NOT_FOUND 404, REFUND_NOT_RETRYABLE 409.',
+          tests: expect(200),
         }),
         req({
           name: 'Record a refund',
@@ -1380,7 +1405,7 @@ if (pm.response.code === 201) {
           headers: [idempotencyKey],
           body: { providerRefundRef: 'KASHIER-REFUND-REF' },
           description:
-            'After refunding in the Kashier dashboard. The payment becomes partially_refunded or refunded. REFUND_NOT_FOUND 404, REFUND_ALREADY_RECORDED 409.',
+            'After paying by hand: the Kashier refund reference, or the wallet / InstaPay transfer reference for COD. A Kashier payment becomes partially_refunded or refunded; COD keeps its status. REFUND_NOT_FOUND 404, REFUND_ALREADY_RECORDED 409.',
           tests: expect(200),
         }),
       ],
@@ -1524,7 +1549,7 @@ if (pm.response.code === 201) {
             { key: 'cursor', value: '{{cursor}}', disabled: true },
           ],
           description:
-            'Without a status filter the active ones, oldest first; enable status[in] for the history. Stores the first one in shipmentId.',
+            'Without a status filter the active ones, oldest first; enable status[in] for the history. kind is delivery or return: a return is collected at dropoff (the customer) and handed over at pickup (the seller) with Picked up → Delivered, or Failed attempt; nothing to collect. Stores the first one in shipmentId.',
           tests: saveId('shipmentId', 200, 'data[0] && body.data[0].id'),
         }),
         req({
@@ -1719,7 +1744,8 @@ if (pm.response.code === 201) {
           method: 'GET',
           path: `${API}/seller/finance/balance`,
           auth: true,
-          description: 'What the platform owes you; "0.00" and updatedAt null before your first delivery.',
+          description:
+            'available: what the platform owes you now (may be negative after a seller-fault return fee; no payout while it is). pending: earnings held until their return windows end. "0.00" and updatedAt null before your first delivery.',
           tests: expect(200),
         }),
         req({
@@ -1743,6 +1769,25 @@ if (pm.response.code === 201) {
             { key: 'limit', value: '20' },
             { key: 'cursor', value: '{{cursor}}', disabled: true },
           ],
+          tests: expect(200),
+        }),
+        req({
+          name: 'My holds',
+          method: 'GET',
+          path: `${API}/seller/finance/holds`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            {
+              key: 'sort',
+              value: 'releaseAfter',
+              disabled: true,
+              description: 'releaseAfter (default) | -releaseAfter',
+            },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description:
+            'Earnings still held per seller order, next release first. blockedByReturn: an open return keeps it held past releaseAfter. The worker releases due holds into your available balance.',
           tests: expect(200),
         }),
       ],
@@ -2425,6 +2470,207 @@ if (pm.response.code === 201) {
           path: `${API}/sellers/{{sellerId}}`,
           description:
             'An approved seller: name, rating, member since. SELLER_NOT_FOUND 404 otherwise. No token needed.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Returns',
+      description:
+        'spec 18 §4.1. Customers return delivered items within RETURN_WINDOW_DAYS of delivery; one open return per seller order. The refund is the paid amount of the returned items, less the return fee for changed_mind (the seller pays the fee for the other reasons).',
+      item: [
+        req({
+          name: 'Returnable items',
+          method: 'GET',
+          path: `${API}/orders/{{orderId}}/seller-orders/{{sellerOrderId}}/returnable-items`,
+          auth: true,
+          description:
+            'What can still be returned, the window end and the current return fee. Stores the first line in orderItemId. ORDER_NOT_FOUND / SELLER_ORDER_NOT_FOUND 404, RETURN_NOT_ALLOWED / RETURN_WINDOW_CLOSED / RETURN_PICKUP_UNAVAILABLE 422.',
+          tests: saveId('orderItemId', 200, 'data.items[0] && body.data.items[0].orderItemId'),
+        }),
+        req({
+          name: 'Request a return',
+          method: 'POST',
+          path: `${API}/returns`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: {
+            sellerOrderId: '{{sellerOrderId}}',
+            reason: 'changed_mind',
+            description: 'Wrong size',
+            items: [{ orderItemId: '{{orderItemId}}', quantity: 1 }],
+            photoMediaIds: [],
+            refundPayout: { method: 'mobile_wallet', walletNumber: '+201001234567' },
+          },
+          description:
+            'reason: damaged | wrong_item | not_as_described (a photo is required: upload with purpose return_photo) | changed_mind. refundPayout is required for a COD order (mobile_wallet with walletNumber, or instapay with instapayAddress) and refused for Kashier: remove it then. Stores returnId. Errors: RETURN_QUANTITY_INVALID / RETURN_PHOTOS_REQUIRED / RETURN_AMOUNT_TOO_LOW / MEDIA_NOT_ATTACHABLE 422, RETURN_ALREADY_OPEN 409.',
+          tests: saveId('returnId', 201),
+        }),
+        req({
+          name: 'My returns',
+          method: 'GET',
+          path: `${API}/returns`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'status[in]', value: 'requested,approved', disabled: true },
+            { key: 'createdAt[gte]', value: '2026-01-01', disabled: true },
+            { key: 'sort', value: '-createdAt', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          tests: expect(200),
+        }),
+        req({
+          name: 'Return',
+          method: 'GET',
+          path: `${API}/returns/{{returnId}}`,
+          auth: true,
+          description: 'Items, photos, deadlines, the timeline and the refund status. RETURN_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Cancel',
+          method: 'POST',
+          path: `${API}/returns/{{returnId}}/cancel`,
+          auth: true,
+          description: 'Until the agent picks it up. RETURN_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Escalate',
+          method: 'POST',
+          path: `${API}/returns/{{returnId}}/escalate`,
+          auth: true,
+          body: { note: 'The item arrived broken; see the photo.' },
+          description:
+            'A rejected return, within the escalation window: an admin decides. RETURN_INVALID_STATUS_TRANSITION / RETURN_ESCALATION_WINDOW_CLOSED 409.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Seller: returns',
+      description:
+        'spec 18 §4.2. Log in as the seller. Decide before sellerDecisionDeadlineAt (silence approves); inspect before inspectionDeadlineAt (silence confirms without restock).',
+      item: [
+        req({
+          name: 'My returns',
+          method: 'GET',
+          path: `${API}/seller/returns`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'status[eq]', value: 'requested', disabled: true },
+            {
+              key: 'sort',
+              value: 'sellerDecisionDeadlineAt',
+              disabled: true,
+              description: 'the decision queue, with status=requested',
+            },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description: 'Stores the first in returnId.',
+          tests: saveId('returnId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Return detail',
+          method: 'GET',
+          path: `${API}/seller/returns/{{returnId}}`,
+          auth: true,
+          description:
+            'Stores the first return item in returnItemId (for Confirm receipt). RETURN_NOT_FOUND 404.',
+          tests: saveId('returnItemId', 200, 'data.items[0] && body.data.items[0].id'),
+        }),
+        req({
+          name: 'Approve',
+          method: 'POST',
+          path: `${API}/seller/returns/{{returnId}}/approve`,
+          auth: true,
+          description:
+            'requested → approved; delivery creates the return pickup. RETURN_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Reject',
+          method: 'POST',
+          path: `${API}/seller/returns/{{returnId}}/reject`,
+          auth: true,
+          body: { reason: 'The item shows signs of use.' },
+          description:
+            'requested → rejected; the customer may escalate. RETURN_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Confirm receipt',
+          method: 'POST',
+          path: `${API}/seller/returns/{{returnId}}/confirm-receipt`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { items: [{ returnItemId: '{{returnItemId}}', restock: true }] },
+          description:
+            'received → completed: every item of the return exactly once; restock false for damaged goods. The refund and the ledger follow. RETURN_ITEMS_MISMATCH 422, RETURN_INVALID_STATUS_TRANSITION / RETURN_INSPECTION_WINDOW_CLOSED 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Dispute',
+          method: 'POST',
+          path: `${API}/seller/returns/{{returnId}}/dispute`,
+          auth: true,
+          body: { reason: 'A different item came back.', photoMediaIds: [] },
+          description:
+            'received → disputed; an admin resolves it. Photos: upload with purpose return_photo. MEDIA_NOT_ATTACHABLE 422, RETURN_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: returns',
+      description: 'spec 18 §4.3. Admin role. Decisions and dispute resolutions are audited.',
+      item: [
+        req({
+          name: 'List returns',
+          method: 'GET',
+          path: `${API}/admin/returns`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'status[in]', value: 'escalated,disputed', disabled: true },
+            { key: 'reason[in]', value: 'damaged,wrong_item', disabled: true },
+            { key: 'sellerId[eq]', value: '{{sellerId}}', disabled: true },
+            { key: 'customerId[eq]', value: '{{customerId}}', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description: 'Stores the first in returnId.',
+          tests: saveId('returnId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Return (admin)',
+          method: 'GET',
+          path: `${API}/admin/returns/{{returnId}}`,
+          auth: true,
+          description:
+            'With the parties, the payout method (never the details) and the full history. RETURN_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Decide',
+          method: 'POST',
+          path: `${API}/admin/returns/{{returnId}}/decide`,
+          auth: true,
+          body: { decision: 'approve', note: 'Photo shows the damage.' },
+          description:
+            'requested or escalated → approved | rejected (final). RETURN_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Resolve dispute',
+          method: 'POST',
+          path: `${API}/admin/returns/{{returnId}}/resolve-dispute`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { decision: 'refund', note: 'The seller received the right item.' },
+          description:
+            'disputed → completed (refund) or refused (no_refund). RETURN_INVALID_STATUS_TRANSITION 409.',
           tests: expect(200),
         }),
       ],
