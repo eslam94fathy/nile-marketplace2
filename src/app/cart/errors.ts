@@ -7,6 +7,7 @@ export const CartErrorCode = {
   VARIANT_NOT_PURCHASABLE: 'VARIANT_NOT_PURCHASABLE',
   CART_ITEM_QUANTITY_LIMIT: 'CART_ITEM_QUANTITY_LIMIT',
   CART_LINE_LIMIT_REACHED: 'CART_LINE_LIMIT_REACHED',
+  CART_EMPTY: 'CART_EMPTY',
 } as const;
 
 const C = CartErrorCode;
@@ -27,6 +28,10 @@ export const cartItemQuantityLimit = (max: number) =>
 
 export const cartLineLimitReached = (max: number) =>
   new AppError(C.CART_LINE_LIMIT_REACHED, `A cart can hold at most ${max} lines`, S.UNPROCESSABLE_ENTITY);
+
+/** A coupon preview of a cart with no line free of issues (spec 08 §8). */
+export const cartEmpty = () =>
+  new AppError(C.CART_EMPTY, 'Your cart has no item a coupon could apply to', S.UNPROCESSABLE_ENTITY);
 
 /** Registration creates the user and the profile in one transaction, so this is a bug (CT-8). */
 export const customerProfileMissing = (userId: string) =>

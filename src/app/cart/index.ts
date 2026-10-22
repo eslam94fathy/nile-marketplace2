@@ -1,13 +1,14 @@
 /**
  * cart module (docs/spec/08-cart.md): one cart per customer, with live prices, stock and issues.
  * Owns tables: carts, cart_items. No other module reads or writes them.
- * May call: customers, catalog, inventory, sellers, media. This file is its only public surface.
+ * May call: customers, catalog, inventory, sellers, media, promotions (the coupon preview). This file is its only public surface.
  */
 import { type Router } from 'express';
 import { type DependencyContainer } from 'tsyringe';
 import { type JwtVerifier } from '../../lib/auth';
 import { TOKENS } from '../../lib/di';
 import { type OpenApiRegistry } from '../../lib/http';
+import { type RateLimiters } from '../../lib/middleware';
 import { CartController } from './controller/cart.controller';
 import { CartItemRepository } from './repository/cart-item.repository';
 import { CartRepository } from './repository/cart.repository';
@@ -21,7 +22,7 @@ export type { CheckoutLine } from './model/cart-item.model';
 /** Inject with `TOKENS.CartDirectory`. */
 export type { ICartDirectory } from './service/cart-directory.service';
 
-/** api process. Needs customers, catalog, inventory, sellers and media registered first. */
+/** api process. Needs customers, catalog, inventory, sellers, media and promotions registered first. */
 export function registerCartModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.CartRepository, CartRepository);
   container.registerSingleton(TOKENS.CartItemRepository, CartItemRepository);
@@ -36,6 +37,7 @@ export function createCartRouter(container: DependencyContainer, basePath: strin
   return cartRoutes({
     cart: container.resolve<CartController>(TOKENS.CartController),
     jwtVerifier: container.resolve<JwtVerifier>(TOKENS.JwtVerifier),
+    rateLimiters: container.resolve<RateLimiters>(TOKENS.RateLimiters),
     docs: container.resolve<OpenApiRegistry>(TOKENS.OpenApiRegistry),
     basePath,
   });

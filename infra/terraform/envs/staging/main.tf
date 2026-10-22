@@ -101,6 +101,10 @@ module "environment" {
     RATE_LIMIT_SUPPORT_MESSAGE_WINDOW_SECONDS = "60"
     SUPPORT_MAX_OPEN_TICKETS_PER_USER         = "20"
 
+    # promotions (spec 19 §6, PR-6, PR-16): coupon previews per user, against guessing codes.
+    RATE_LIMIT_COUPON_PREVIEW_POINTS         = "20"
+    RATE_LIMIT_COUPON_PREVIEW_WINDOW_SECONDS = "60"
+
     # reviews (spec 17 §1, R-10): write until delivery + 60 days, edit until creation + 30 days.
     REVIEW_WINDOW_DAYS      = "60"
     REVIEW_EDIT_WINDOW_DAYS = "30"

@@ -11,7 +11,8 @@ const MODULE_GRAPH = {
   sellers: ['identity'],
   delivery: ['identity'],
   catalog: ['sellers', 'inventory', 'media'],
-  cart: ['catalog', 'customers', 'inventory', 'sellers', 'media'],
+  // R2-P7 (spec 08 §8): the coupon preview.
+  cart: ['catalog', 'customers', 'inventory', 'sellers', 'media', 'promotions'],
   // R2-P7 (spec 09 §8.8): coupon quote, redemption and release.
   ordering: [
     'customers',

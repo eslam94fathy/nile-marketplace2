@@ -13,6 +13,8 @@ export interface CartLineView {
   productId: string;
   productName: string;
   productSlug: string;
+  /** The product's category: the coupon scope (spec 19 PR-11). */
+  categoryId: string;
   sku: string;
   attributes: { attribute: string; value: string }[];
   unitPrice: Money;
@@ -103,6 +105,7 @@ export function assembleCartView(
       productId: variant.productId,
       productName: variant.productName,
       productSlug: variant.productSlug,
+      categoryId: variant.categoryId,
       sku: variant.sku,
       attributes: variant.attributes,
       unitPrice,

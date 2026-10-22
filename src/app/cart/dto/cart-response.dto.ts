@@ -4,6 +4,7 @@ import { IsMoney } from '../../../lib/http';
 import { ImageDto, toImageDto } from '../../media';
 import { CartItemIssue } from '../enums';
 import { type CartLineView, type CartView } from '../model/cart-view.model';
+import { type CouponPreview } from '../service/cart-view.service';
 
 /* Response DTOs for spec 08 §4 (decorators describe the OpenAPI shape only). */
 
@@ -133,5 +134,55 @@ export function toCartDto(view: CartView): CartDto {
     itemsTotal: view.itemsTotal.toString(),
     itemCount: view.itemCount,
     hasIssues: view.hasIssues,
+  };
+}
+
+export class CouponSellerShareDto {
+  @IsUUID()
+  sellerId!: string;
+
+  @IsMoney()
+  discount!: string;
+}
+
+export class CouponLineShareDto {
+  @IsUUID()
+  variantId!: string;
+
+  @IsMoney()
+  discount!: string;
+}
+
+/** `CouponQuoteDto` (spec 19 §4): what the code would take off the cart's items, per seller and line. */
+export class CouponQuoteDto {
+  @IsString()
+  code!: string;
+
+  @IsMoney()
+  discountTotal!: string;
+
+  @ValidateNested({ each: true })
+  @Type(() => CouponSellerShareDto)
+  sellerOrders!: CouponSellerShareDto[];
+
+  @ValidateNested({ each: true })
+  @Type(() => CouponLineShareDto)
+  lines!: CouponLineShareDto[];
+
+  /** The cart's items total less the discount; the delivery fee is added at checkout. */
+  @IsMoney()
+  itemsTotalAfterDiscount!: string;
+}
+
+export function toCouponQuoteDto(preview: CouponPreview): CouponQuoteDto {
+  return {
+    code: preview.code,
+    discountTotal: preview.discountTotal.toString(),
+    sellerOrders: preview.sellerOrders.map((s) => ({
+      sellerId: s.sellerId,
+      discount: s.discount.toString(),
+    })),
+    lines: preview.lines.map((l) => ({ variantId: l.variantId, discount: l.discount.toString() })),
+    itemsTotalAfterDiscount: preview.itemsTotalAfterDiscount.toString(),
   };
 }

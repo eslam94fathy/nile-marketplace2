@@ -177,6 +177,8 @@ const rateLimitShape = {
   RATE_LIMIT_UPLOAD_WINDOW_SECONDS: positiveInt(),
   RATE_LIMIT_SUPPORT_MESSAGE_POINTS: positiveInt(),
   RATE_LIMIT_SUPPORT_MESSAGE_WINDOW_SECONDS: positiveInt(),
+  RATE_LIMIT_COUPON_PREVIEW_POINTS: positiveInt(),
+  RATE_LIMIT_COUPON_PREVIEW_WINDOW_SECONDS: positiveInt(),
 };
 
 const idempotencyShape = {

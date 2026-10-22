@@ -17,6 +17,8 @@ export const RateLimitClass = {
   UPLOAD: 'upload',
   /** Ticket opens and message posts, keyed by user (spec 16 §6); fails open like general. */
   SUPPORT_MESSAGE: 'support-message',
+  /** Coupon previews, keyed by user, against guessing codes (spec 19 PR-6); fails open like general. */
+  COUPON_PREVIEW: 'coupon-preview',
 } as const;
 export type RateLimitClass = (typeof RateLimitClass)[keyof typeof RateLimitClass];
 
@@ -41,6 +43,8 @@ type RateEnv = Pick<
   | 'RATE_LIMIT_UPLOAD_WINDOW_SECONDS'
   | 'RATE_LIMIT_SUPPORT_MESSAGE_POINTS'
   | 'RATE_LIMIT_SUPPORT_MESSAGE_WINDOW_SECONDS'
+  | 'RATE_LIMIT_COUPON_PREVIEW_POINTS'
+  | 'RATE_LIMIT_COUPON_PREVIEW_WINDOW_SECONDS'
 >;
 
 /**
@@ -91,6 +95,11 @@ export class RateLimiters {
         RateLimitClass.SUPPORT_MESSAGE,
         env.RATE_LIMIT_SUPPORT_MESSAGE_POINTS,
         env.RATE_LIMIT_SUPPORT_MESSAGE_WINDOW_SECONDS,
+      ),
+      make(
+        RateLimitClass.COUPON_PREVIEW,
+        env.RATE_LIMIT_COUPON_PREVIEW_POINTS,
+        env.RATE_LIMIT_COUPON_PREVIEW_WINDOW_SECONDS,
       ),
     ]);
   }
