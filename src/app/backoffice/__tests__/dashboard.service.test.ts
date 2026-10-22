@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { type ILogger } from '../../../lib/logger';
 import { type ICache } from '../../../pkg/cache';
+import { type IShipmentDirectory } from '../../delivery';
 import { type IOrderingDirectory, type OrderingDashboardStats } from '../../ordering';
 import { type ISellerDirectory } from '../../sellers';
 import { type ISupportDirectory } from '../../support';
@@ -53,7 +54,7 @@ function setup(cache: Partial<ICache> = {}) {
     sellers as unknown as ISellerDirectory,
     support as unknown as ISupportDirectory,
     finance,
-    shipments,
+    shipments as unknown as IShipmentDirectory,
     store as unknown as ICache,
     { now: () => NOW },
     { DASHBOARD_CACHE_TTL_SECONDS: 60 },

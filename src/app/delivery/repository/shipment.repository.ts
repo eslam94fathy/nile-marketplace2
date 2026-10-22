@@ -15,6 +15,8 @@ import {
 const T = DELIVERY_TABLES.SHIPMENTS;
 const COLUMNS = [
   'id',
+  'kind',
+  'return_id',
   'seller_order_id',
   'order_id',
   'agent_id',
@@ -103,6 +105,8 @@ type ShipmentRow = Pick<ShipmentTable, (typeof COLUMNS)[number]>;
 function toModel(row: ShipmentRow): Shipment {
   return {
     id: row.id,
+    kind: row.kind,
+    returnId: row.return_id,
     sellerOrderId: row.seller_order_id,
     orderId: row.order_id,
     agentId: row.agent_id,
@@ -155,6 +159,20 @@ export interface NewShipment {
   paymentMethod: ShipmentPaymentMethod;
   orderDeliveryFee: Money;
   codItemsAmount: Money;
+  pickup: ShipmentPickup;
+  dropoff: ShipmentDropoff;
+}
+
+/**
+ * A return shipment from `return.approved` (spec 11 UC-DE-8): by party (DE-21), `pickup` is the seller and
+ * `dropoff` the customer; nothing to collect (DE-22).
+ */
+export interface NewReturnShipment {
+  returnId: string;
+  sellerOrderId: string;
+  orderId: string;
+  orderNumber: string;
+  paymentMethod: ShipmentPaymentMethod;
   pickup: ShipmentPickup;
   dropoff: ShipmentDropoff;
 }
@@ -236,6 +254,75 @@ export class ShipmentRepository {
     return row ? toModel(row) : null;
   }
 
+  /** UC-DE-8: replay-safe on uq_shipments_return_id. Returns the new shipment, or null when it existed. */
+  async insertReturnIfNew(shipment: NewReturnShipment, trx: DbTransaction): Promise<Shipment | null> {
+    const [row] = await trx<ShipmentTable>(T)
+      .insert({
+        kind: ShipmentKind.RETURN,
+        return_id: shipment.returnId,
+        seller_order_id: shipment.sellerOrderId,
+        order_id: shipment.orderId,
+        agent_id: null,
+        status: ShipmentStatus.UNASSIGNED,
+        order_number: shipment.orderNumber,
+        payment_method: shipment.paymentMethod,
+        order_delivery_fee: Money.zero().toString(),
+        pickup_business_name: shipment.pickup.businessName,
+        pickup_governorate_id: shipment.pickup.governorateId,
+        pickup_phone: shipment.pickup.phone,
+        pickup_city: shipment.pickup.city,
+        pickup_area: shipment.pickup.area,
+        pickup_street: shipment.pickup.street,
+        pickup_building: shipment.pickup.building,
+        pickup_landmark: shipment.pickup.landmark,
+        dropoff_recipient_name: shipment.dropoff.recipientName,
+        dropoff_recipient_phone: shipment.dropoff.recipientPhone,
+        dropoff_governorate_id: shipment.dropoff.governorateId,
+        dropoff_governorate_name: shipment.dropoff.governorateName,
+        dropoff_city: shipment.dropoff.city,
+        dropoff_area: shipment.dropoff.area,
+        dropoff_street: shipment.dropoff.street,
+        dropoff_building: shipment.dropoff.building,
+        dropoff_floor: shipment.dropoff.floor,
+        dropoff_apartment: shipment.dropoff.apartment,
+        dropoff_landmark: shipment.dropoff.landmark,
+        cod_items_amount: Money.zero().toString(),
+        carries_delivery_fee: false,
+        cod_fee_amount: Money.zero().toString(),
+        cod_collected_amount: null,
+        attempt_count: 0,
+        assigned_at: null,
+        picked_up_at: null,
+        delivered_at: null,
+        returned_at: null,
+        seller_order_cancelled_at: null,
+      })
+      .onConflict('return_id')
+      .ignore()
+      .returning<ShipmentRow[]>(COLUMNS);
+    return row ? toModel(row) : null;
+  }
+
+  /** The return's shipment, locked, if it exists yet (uq_shipments_return_id). */
+  async lockByReturnId(returnId: string, trx: DbTransaction): Promise<Shipment | null> {
+    const row = await trx<ShipmentTable>(T)
+      .select(...COLUMNS)
+      .where({ return_id: returnId })
+      .forUpdate()
+      .first<ShipmentRow | undefined>();
+    return row ? toModel(row) : null;
+  }
+
+  /** DE-23: the return's shipment status, unlocked; null when there is none (yet). */
+  async findStatusByReturnId(returnId: string): Promise<ShipmentStatus | null> {
+    const row = await this.db
+      .knex<ShipmentTable>(T)
+      .select('status')
+      .where({ return_id: returnId })
+      .first<{ status: ShipmentStatus } | undefined>();
+    return row?.status ?? null;
+  }
+
   async findById(id: string, trx?: DbTransaction): Promise<Shipment | null> {
     const row = await this.exec(trx)<ShipmentTable>(T)
       .select(...COLUMNS)
@@ -280,11 +367,14 @@ export class ShipmentRepository {
     return row ? toModel(row) : null;
   }
 
-  /** Locks every shipment of a checkout, in id order (the fee carrier, DE-7, DE-8). */
+  /**
+   * Locks every delivery of a checkout, in id order (the fee carrier, DE-7, DE-8). Return shipments never
+   * carry the fee and are locked one by one (DE-25).
+   */
   async lockByOrderId(orderId: string, trx: DbTransaction): Promise<Shipment[]> {
     const rows = await trx<ShipmentTable>(T)
       .select(...COLUMNS)
-      .where({ order_id: orderId })
+      .where({ order_id: orderId, kind: ShipmentKind.DELIVERY })
       .orderBy('id')
       .forUpdate();
     return rows.map(toModel);

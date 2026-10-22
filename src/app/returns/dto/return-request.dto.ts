@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  IsBoolean,
   ArrayMinSize,
   ArrayUnique,
   IsArray,
@@ -19,7 +20,13 @@ import {
   UuidField,
 } from '../../../lib/http';
 import { RETURN_LIMITS } from '../constants';
-import { AdminReturnDecision, RefundPayoutMethod, ReturnReason, ReturnStatus } from '../enums';
+import {
+  AdminReturnDecision,
+  DisputeResolution,
+  RefundPayoutMethod,
+  ReturnReason,
+  ReturnStatus,
+} from '../enums';
 
 const L = RETURN_LIMITS;
 const STATUSES = Object.values(ReturnStatus);
@@ -110,6 +117,47 @@ export class RejectReturnDto {
 export class AdminDecideReturnDto {
   @IsIn(Object.values(AdminReturnDecision))
   decision!: AdminReturnDecision;
+
+  @StrField(L.NOTE_MIN, L.NOTE_MAX)
+  note!: string;
+}
+
+export class ReceiptItemDto {
+  @UuidField()
+  returnItemId!: string;
+
+  /** False for damaged goods: they leave stock for good (spec 07 §8). */
+  @IsBoolean()
+  restock!: boolean;
+}
+
+/** `POST /seller/returns/:id/confirm-receipt`: every item of the return exactly once (UC-RE-7). */
+export class ConfirmReceiptDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(L.MAX_ITEMS)
+  @ArrayUnique((item: ReceiptItemDto) => item.returnItemId)
+  @ValidateNested({ each: true })
+  @Type(() => ReceiptItemDto)
+  items!: ReceiptItemDto[];
+}
+
+/** `POST /seller/returns/:id/dispute` (UC-RE-8): the seller's own `return_photo` uploads (ME-14). */
+export class DisputeReturnDto {
+  @StrField(L.NOTE_MIN, L.NOTE_MAX)
+  reason!: string;
+
+  @Optional()
+  @IsArray()
+  @ArrayMaxSize(L.MAX_PHOTOS)
+  @ArrayUnique()
+  @IsUUID('7', { each: true })
+  photoMediaIds?: string[];
+}
+
+export class ResolveDisputeDto {
+  @IsIn(Object.values(DisputeResolution))
+  decision!: DisputeResolution;
 
   @StrField(L.NOTE_MIN, L.NOTE_MAX)
   note!: string;

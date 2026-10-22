@@ -4,7 +4,7 @@ import { type DbTransaction } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import { type IOutbox, ReturnApproved, ReturnStatusChanged } from '../../../lib/events';
 import { type IOrderingDirectory, type IOrderReturns, type ReturnLogistics } from '../../ordering';
-import { type ReturnStatus } from '../enums';
+import { ReturnStatus } from '../enums';
 import { returnInvalidStatusTransition } from '../errors';
 import {
   type ReturnActor,
@@ -109,6 +109,31 @@ export class ReturnLifecycleService {
     });
   }
 
+  /**
+   * UC-RE-4 on a locked request in `from`: `approved` with its history row and both events. Shared by
+   * the seller, an admin and the decision-timeout job.
+   */
+  async approve(
+    locked: ReturnRequest,
+    from: readonly ReturnStatus[],
+    actor: ReturnActor,
+    note: string | null,
+    logistics: ReturnLogistics,
+    trx: DbTransaction,
+  ): Promise<ReturnRequest> {
+    const approved = await this.transition(
+      locked,
+      from,
+      { status: ReturnStatus.APPROVED, approvedAt: this.clock.now() },
+      actor,
+      note,
+      logistics.orderNumber,
+      trx,
+    );
+    await this.approved(approved, logistics, trx);
+    return approved;
+  }
+
   /** UC-RE-4: `return.approved` for delivery, with both snapshots and the fee snapshot. */
   async approved(request: ReturnRequest, logistics: ReturnLogistics, trx: DbTransaction): Promise<void> {
     const items: ReturnItem[] = await this.items.findByReturnIds([request.id], trx);
@@ -122,6 +147,8 @@ export class ReturnLifecycleService {
         sellerOrderId: request.sellerOrderId,
         orderId: request.orderId,
         sellerId: request.sellerId,
+        orderNumber: logistics.orderNumber,
+        paymentMethod: logistics.paymentMethod,
         pickup: {
           recipientName: pickup.recipientName,
           recipientPhone: pickup.recipientPhone,

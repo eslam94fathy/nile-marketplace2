@@ -111,6 +111,13 @@ function toModel(row: ReturnRequestRow): ReturnRequest {
   };
 }
 
+/** The deadline each job watches (spec 18 UC-RE-9). */
+const DEADLINE_COLUMN = {
+  [ReturnStatus.REQUESTED]: 'seller_decision_deadline_at',
+  [ReturnStatus.REJECTED]: 'escalation_deadline_at',
+  [ReturnStatus.RECEIVED]: 'inspection_deadline_at',
+} as const;
+
 /** Restricts a read or lock to the caller's own requests: another party's request reads as missing. */
 export interface ReturnOwner {
   customerId?: string;
@@ -191,12 +198,21 @@ export class ReturnRequestRepository {
     return row ? toModel(row) : null;
   }
 
-  /** The request `FOR UPDATE`: every transition starts here (lock order: return → order, spec 18 UC-RE-7). */
-  async lockById(id: string, trx: DbTransaction, owner: ReturnOwner = {}): Promise<ReturnRequest | null> {
-    const row = (await this.select(trx)
+  /**
+   * The request `FOR UPDATE`: every transition starts here (lock order: return → order, spec 18 UC-RE-7).
+   * With `skipLocked` (the jobs), a request another transaction holds reads as missing.
+   */
+  async lockById(
+    id: string,
+    trx: DbTransaction,
+    owner: ReturnOwner = {},
+    options: { skipLocked?: boolean } = {},
+  ): Promise<ReturnRequest | null> {
+    const qb = this.select(trx)
       .where({ id, ...ownerWhere(owner) })
-      .forUpdate()
-      .first()) as ReturnRequestRow | undefined;
+      .forUpdate();
+    if (options.skipLocked) void qb.skipLocked();
+    const row = (await qb.first()) as ReturnRequestRow | undefined;
     return row ? toModel(row) : null;
   }
 
@@ -220,6 +236,14 @@ export class ReturnRequestRepository {
           ? { escalation_deadline_at: patch.escalationDeadlineAt }
           : {}),
         ...(patch.approvedAt !== undefined ? { approved_at: patch.approvedAt } : {}),
+        ...(patch.agentId !== undefined ? { agent_id: patch.agentId } : {}),
+        ...(patch.receivedAt !== undefined ? { received_at: patch.receivedAt } : {}),
+        ...(patch.inspectionDeadlineAt !== undefined
+          ? { inspection_deadline_at: patch.inspectionDeadlineAt }
+          : {}),
+        ...(patch.disputeReason !== undefined ? { dispute_reason: patch.disputeReason } : {}),
+        ...(patch.completedAt !== undefined ? { completed_at: patch.completedAt } : {}),
+        ...(patch.refundAmount !== undefined ? { refund_amount: patch.refundAmount.toString() } : {}),
         ...(patch.clearRefundPayout ? { refund_payout_encrypted: null } : {}),
         updated_at: trx.fn.now(),
       })
@@ -227,6 +251,35 @@ export class ReturnRequestRepository {
       .whereIn('status', [...from])
       .returning<ReturnRequestRow[]>([...COLUMNS, trx.raw(HAS_PAYOUT)]);
     return row ? toModel(row) : null;
+  }
+
+  /** The sealed payout details for `return.completed` (COD only, RE-8); read under the caller's lock. */
+  async findRefundPayout(id: string, trx: DbTransaction): Promise<string | null> {
+    const row = await trx<ReturnRequestTable>(T)
+      .select('refund_payout_encrypted')
+      .where({ id })
+      .first<{ refund_payout_encrypted: string | null } | undefined>();
+    return row?.refund_payout_encrypted ?? null;
+  }
+
+  /**
+   * The jobs' candidates (UC-RE-9), oldest deadline first, read without locks: one of
+   * idx_return_requests_seller_decision / _escalation / _inspection.
+   */
+  async findIdsPastDeadline(
+    status: typeof ReturnStatus.REQUESTED | typeof ReturnStatus.REJECTED | typeof ReturnStatus.RECEIVED,
+    now: Date,
+    limit: number,
+  ): Promise<string[]> {
+    const column = DEADLINE_COLUMN[status];
+    const rows = await this.db
+      .knex<ReturnRequestTable>(T)
+      .select('id')
+      .where({ status })
+      .where(column, '<=', now)
+      .orderBy(column)
+      .limit(limit);
+    return rows.map((row) => row.id);
   }
 
   /**

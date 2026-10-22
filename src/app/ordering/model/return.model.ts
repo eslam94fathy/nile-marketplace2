@@ -34,6 +34,8 @@ export interface ReturnableItem {
 export interface OrderItemSnapshot {
   orderItemId: string;
   sellerOrderId: string;
+  /** What a restock puts back (spec 07 §8). */
+  variantId: string;
   productName: string;
   attributes: { attribute: string; value: string }[];
   imageMediaId: string | null;
@@ -68,6 +70,9 @@ export interface ReturnLineAmounts {
 
 /** Where the return shipment goes (spec 09 §8.7 `getReturnLogistics`): from the customer to the seller. */
 export interface ReturnLogistics {
+  /** For the return shipment's snapshot (spec 18 RE-23). */
+  orderNumber: string;
+  paymentMethod: PaymentMethod;
   /** The order's drop-off snapshot: the customer. */
   pickup: ShippingSnapshot;
   /** The seller order's pickup snapshot and the seller's live business name. */

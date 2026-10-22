@@ -88,3 +88,10 @@ export const AdminReturnDecision = {
   REJECT: 'reject',
 } as const;
 export type AdminReturnDecision = (typeof AdminReturnDecision)[keyof typeof AdminReturnDecision];
+
+/** `POST /admin/returns/:id/resolve-dispute` (UC-RE-8). */
+export const DisputeResolution = {
+  REFUND: 'refund',
+  NO_REFUND: 'no_refund',
+} as const;
+export type DisputeResolution = (typeof DisputeResolution)[keyof typeof DisputeResolution];

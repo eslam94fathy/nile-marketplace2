@@ -99,6 +99,7 @@ export class OrderReturnService implements IOrderReturns {
     return (await this.items.findByIds(orderItemIds)).map((item) => ({
       orderItemId: item.id,
       sellerOrderId: item.sellerOrderId,
+      variantId: item.variantId,
       productName: item.productName,
       attributes: item.attributes,
       imageMediaId: item.imageMediaId,
@@ -117,6 +118,8 @@ export class OrderReturnService implements IOrderReturns {
     if (!order) throw new Error(`seller order ${sellerOrderId} has no order`);
     if (!seller) throw new Error(`seller order ${sellerOrderId} has no seller ${sellerOrder.sellerId}`);
     return {
+      orderNumber: order.orderNumber,
+      paymentMethod: order.paymentMethod,
       pickup: { ...order.shipping },
       dropoff: { ...sellerOrder.pickup, businessName: seller.businessName },
     };

@@ -17,6 +17,7 @@ export const ReturnsErrorCode = {
   RETURN_INVALID_STATUS_TRANSITION: 'RETURN_INVALID_STATUS_TRANSITION',
   RETURN_ESCALATION_WINDOW_CLOSED: 'RETURN_ESCALATION_WINDOW_CLOSED',
   RETURN_ITEMS_MISMATCH: 'RETURN_ITEMS_MISMATCH',
+  RETURN_INSPECTION_WINDOW_CLOSED: 'RETURN_INSPECTION_WINDOW_CLOSED',
 } as const;
 
 const C = ReturnsErrorCode;
@@ -66,6 +67,14 @@ export const returnInvalidStatusTransition = (status: string) =>
 
 export const returnEscalationWindowClosed = () =>
   new AppError(C.RETURN_ESCALATION_WINDOW_CLOSED, 'The time to escalate this return has passed', S.CONFLICT);
+
+/** RE-25: the seller disputes after the inspection deadline. */
+export const returnInspectionWindowClosed = () =>
+  new AppError(C.RETURN_INSPECTION_WINDOW_CLOSED, 'The time to dispute this return has passed', S.CONFLICT);
+
+/** Receipt confirmation must name each item of the return exactly once (spec 18 §4.2). */
+export const returnItemsMismatch = () =>
+  new AppError(C.RETURN_ITEMS_MISMATCH, 'List every item of the return exactly once', S.UNPROCESSABLE_ENTITY);
 
 /** A customer- or seller-role account without its profile: a data defect, 500 (as P4-Q9). */
 export const profileMissing = (role: string, userId: string) =>

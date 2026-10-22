@@ -13,7 +13,7 @@ import {
   shipmentNotAssignable,
   shipmentNotFound,
 } from '../errors';
-import { type DeliveryActor, type Shipment } from '../model/shipment.model';
+import { type DeliveryActor, type Shipment, startGovernorateId } from '../model/shipment.model';
 import { type DeliveryAgentRepository } from '../repository/delivery-agent.repository';
 import { type ShipmentHistoryRepository } from '../repository/shipment-history.repository';
 import { type ShipmentRepository } from '../repository/shipment.repository';
@@ -41,16 +41,17 @@ export class ShipmentAssignmentService {
 
   /**
    * UC-DE-1 steps 2–3 on an `unassigned` shipment the caller has locked: the best candidate of the
-   * pickup governorate, or nothing (it stays `unassigned` for the retry job). Returns the result.
+   * governorate the agent starts in (the customer's for a return, DE-25), or nothing (it stays `unassigned` for the retry job). Returns the result.
    */
   async autoAssign(shipment: Shipment, trx: DbTransaction): Promise<Shipment | null> {
     if (shipment.status !== ShipmentStatus.UNASSIGNED) return null;
-    const agent = await this.agents.lockCandidate(shipment.pickup.governorateId, trx);
+    const governorateId = startGovernorateId(shipment);
+    const agent = await this.agents.lockCandidate(governorateId, trx);
     if (!agent) {
       this.logger.info('no agent available; the shipment waits for the retry job', {
         event: 'SHIPMENT_UNASSIGNED',
         shipmentId: shipment.id,
-        governorateId: shipment.pickup.governorateId,
+        governorateId,
       });
       return null;
     }
@@ -132,6 +133,8 @@ export class ShipmentAssignmentService {
         agentId,
         previousAgentId: shipment.agentId,
         assignedBy,
+        kind: shipment.kind,
+        returnId: shipment.returnId,
       },
     });
     this.logger.info('shipment assigned', {

@@ -151,11 +151,15 @@ export const TOKENS = {
   OrderReturns: Symbol.for('OrderReturns'),
 
   // returns module (spec 18)
+  DeliveryReturnUpdateService: Symbol.for('DeliveryReturnUpdateService'),
   ReturnRequestRepository: Symbol.for('ReturnRequestRepository'),
   ReturnItemRepository: Symbol.for('ReturnItemRepository'),
   ReturnPhotoRepository: Symbol.for('ReturnPhotoRepository'),
   ReturnHistoryRepository: Symbol.for('ReturnHistoryRepository'),
   ReturnLifecycleService: Symbol.for('ReturnLifecycleService'),
+  ReturnCompletionService: Symbol.for('ReturnCompletionService'),
+  ReturnShipmentUpdateService: Symbol.for('ReturnShipmentUpdateService'),
+  ReturnJobs: Symbol.for('ReturnJobs'),
   ReturnRequestService: Symbol.for('ReturnRequestService'),
   ReturnDecisionService: Symbol.for('ReturnDecisionService'),
   ReturnViewService: Symbol.for('ReturnViewService'),

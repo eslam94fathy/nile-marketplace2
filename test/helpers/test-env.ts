@@ -91,6 +91,8 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     SUPPORT_AUTO_CLOSE_AFTER_HOURS: '168',
     JOB_SUPPORT_INTERVAL_MS: '60000',
     SUPPORT_JOBS_BATCH_SIZE: '100',
+    JOB_RETURNS_INTERVAL_MS: '60000',
+    RETURN_JOBS_BATCH_SIZE: '100',
     // Web Push (spec 13 §8.6); tests swap the sender for a fake through DI
     VAPID_PUBLIC_KEY: TEST_VAPID_KEYS.publicKey,
     VAPID_PRIVATE_KEY: TEST_VAPID_KEYS.privateKey,

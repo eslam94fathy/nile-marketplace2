@@ -1,5 +1,5 @@
 import { defineEvent } from './define-event';
-import { type DropoffSnapshot, type PickupSnapshot } from './shared-types';
+import { type DropoffSnapshot, type PaymentMethod, type PickupSnapshot } from './shared-types';
 
 /**
  * Publisher: returns (UC-RE-4). Consumer: delivery (`delivery.return-updates`, UC-DE-8), which creates
@@ -12,6 +12,9 @@ export interface ReturnApprovedPayload {
   sellerOrderId: string;
   orderId: string;
   sellerId: string;
+  /** The order's number and payment method, stored on the return shipment (spec 18 RE-23). */
+  orderNumber: string;
+  paymentMethod: PaymentMethod;
   pickup: DropoffSnapshot;
   dropoff: PickupSnapshot;
   /** Units to pick up. */

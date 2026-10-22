@@ -8,7 +8,7 @@ import { Money, Rate } from '../../../lib/money';
 import { type ISecretBox } from '../../../pkg/crypto';
 import { addDuration, TimeUnit } from '../../../pkg/time';
 import { type ICustomerDirectory } from '../../customers';
-import { type IDeliveryReferenceService } from '../../delivery';
+import { type IDeliveryReferenceService, type IShipmentDirectory, ShipmentStatus } from '../../delivery';
 import { MediaPurpose, type MediaService } from '../../media';
 import {
   type IOrderingDirectory,
@@ -86,6 +86,7 @@ export class ReturnRequestService {
     @inject(TOKENS.OrderingDirectory) private readonly ordering: IOrderingDirectory,
     @inject(TOKENS.OrderReturns) private readonly orderReturns: IOrderReturns,
     @inject(TOKENS.DeliveryReferenceService) private readonly delivery: IDeliveryReferenceService,
+    @inject(TOKENS.ShipmentDirectory) private readonly shipments: IShipmentDirectory,
     @inject(TOKENS.MediaService) private readonly media: MediaService,
   ) {}
 
@@ -177,11 +178,20 @@ export class ReturnRequestService {
     });
   }
 
-  /** UC-RE-5: before pickup only; an agent who already picked it up wins the race (409). */
+  /**
+   * UC-RE-5: before pickup only; an agent who already picked it up wins the race (409). Delivery is asked
+   * first, so a pickup not yet consumed by returns still blocks the cancel (RE-24).
+   */
   async cancel(userId: string, returnId: string): Promise<ReturnRequest> {
     const customerId = await this.customerIdOf(userId);
     const found = await this.requests.findById(returnId, { customerId });
     if (!found) throw returnNotFound();
+    if (found.status === ReturnStatus.APPROVED) {
+      const shipment = await this.shipments.getReturnShipmentStatus(found.id);
+      if (shipment === ShipmentStatus.PICKED_UP || shipment === ShipmentStatus.DELIVERED) {
+        throw returnInvalidStatusTransition(ReturnStatus.PICKED_UP);
+      }
+    }
     const orderNumber = await this.lifecycle.orderNumberOf(found.orderId);
     return this.tx.run(async (trx) => {
       const locked = await this.requests.lockById(returnId, trx, { customerId });

@@ -3,7 +3,12 @@ import { inject, injectable } from 'tsyringe';
 import { type Env } from '../../../lib/config';
 import { TOKENS } from '../../../lib/di';
 import { HTTP_STATUS, parseListQuery, sendSuccess, validateDto } from '../../../lib/http';
-import { ADMIN_RETURN_LIST_SPEC, AdminDecideReturnDto, ReturnIdParamsDto } from '../dto/return-request.dto';
+import {
+  ADMIN_RETURN_LIST_SPEC,
+  AdminDecideReturnDto,
+  ResolveDisputeDto,
+  ReturnIdParamsDto,
+} from '../dto/return-request.dto';
 import { toAdminReturnDto } from '../dto/return-response.dto';
 import { type ReturnDecisionService } from '../service/return-decision.service';
 import { type ReturnViewService } from '../service/return-view.service';
@@ -32,6 +37,13 @@ export class AdminReturnController {
   get = async (req: Request, res: Response): Promise<void> => {
     const { returnId } = await validateDto(ReturnIdParamsDto, req.params);
     sendSuccess(res, HTTP_STATUS.OK, toAdminReturnDto(await this.views.get({}, returnId)));
+  };
+
+  resolveDispute = async (req: Request, res: Response): Promise<void> => {
+    const { returnId } = await validateDto(ReturnIdParamsDto, req.params);
+    const { decision, note } = await validateDto(ResolveDisputeDto, req.body);
+    const resolved = await this.decisions.adminResolveDispute(userIdOf(req), returnId, decision, note);
+    sendSuccess(res, HTTP_STATUS.OK, toAdminReturnDto(await this.views.viewOf(resolved)));
   };
 
   decide = async (req: Request, res: Response): Promise<void> => {

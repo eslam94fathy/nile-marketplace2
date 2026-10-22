@@ -40,17 +40,23 @@ export const RETURN_PATHS = {
   ESCALATE: '/returns/:returnId/escalate',
 } as const;
 
-/** Paths under /api/v1 (spec 18 §4.2); receipt and dispute come with the shipment flow (R2-P6 step 5). */
+/** Paths under /api/v1 (spec 18 §4.2). */
 export const SELLER_RETURN_PATHS = {
   RETURNS: '/seller/returns',
   RETURN: '/seller/returns/:returnId',
   APPROVE: '/seller/returns/:returnId/approve',
   REJECT: '/seller/returns/:returnId/reject',
+  CONFIRM_RECEIPT: '/seller/returns/:returnId/confirm-receipt',
+  DISPUTE: '/seller/returns/:returnId/dispute',
 } as const;
 
-/** Paths under /api/v1 (spec 18 §4.3); resolve-dispute comes with the dispute (R2-P6 step 5). */
+/** Paths under /api/v1 (spec 18 §4.3). */
 export const ADMIN_RETURN_PATHS = {
   RETURNS: '/admin/returns',
   RETURN: '/admin/returns/:returnId',
   DECIDE: '/admin/returns/:returnId/decide',
+  RESOLVE_DISPUTE: '/admin/returns/:returnId/resolve-dispute',
 } as const;
+
+/** Queue of the shipment consumer (spec 18 §5, docs/spec/02-events.md). */
+export const SHIPMENT_UPDATES_QUEUE = 'returns.shipment-updates';

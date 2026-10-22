@@ -8,9 +8,12 @@ import { type ReturnController } from './controller/return.controller';
 import { type SellerReturnController } from './controller/seller-return.controller';
 import {
   AdminDecideReturnDto,
+  ConfirmReceiptDto,
+  DisputeReturnDto,
   EscalateReturnDto,
   RejectReturnDto,
   RequestReturnDto,
+  ResolveDisputeDto,
 } from './dto/return-request.dto';
 import { AdminReturnDto, ReturnableItemsDto, ReturnDto, SellerReturnDto } from './dto/return-response.dto';
 import { ReturnReason, ReturnStatus } from './enums';
@@ -20,7 +23,7 @@ export interface ReturnRouteDeps {
   seller: SellerReturnController;
   admin: AdminReturnController;
   jwtVerifier: JwtVerifier;
-  /** `requireIdempotency`, required on the request (spec 18 §4.1, G25). */
+  /** `requireIdempotency`, required on the request, the receipt and the dispute resolution (spec 18 §4, G25). */
   idempotency: RequestHandler;
   docs: OpenApiRegistry;
   /** Where the router is mounted (`/api/v1`), for the documented paths. */
@@ -46,10 +49,13 @@ export function returnRoutes(deps: ReturnRouteDeps): Router {
   router.get(S.RETURN, ...sellers, s.get);
   router.post(S.APPROVE, ...sellers, s.approve);
   router.post(S.REJECT, ...sellers, s.reject);
+  router.post(S.CONFIRM_RECEIPT, ...sellers, deps.idempotency, s.confirmReceipt);
+  router.post(S.DISPUTE, ...sellers, s.dispute);
 
   router.get(A.RETURNS, ...admins, a.list);
   router.get(A.RETURN, ...admins, a.get);
   router.post(A.DECIDE, ...admins, a.decide);
+  router.post(A.RESOLVE_DISPUTE, ...admins, deps.idempotency, a.resolveDispute);
 
   const page = [
     { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1 } },
@@ -171,6 +177,26 @@ export function returnRoutes(deps: ReturnRouteDeps): Router {
     responses: sellerOne,
   });
 
+  docs.add({
+    ...sellerTags,
+    method: 'post',
+    path: `${basePath}${S.CONFIRM_RECEIPT}`,
+    summary:
+      'Confirm the parcel arrived, item by item: restock true puts the units back on sale, false (damaged) does not. Completes the return and refunds the customer (RETURN_NOT_FOUND, RETURN_INVALID_STATUS_TRANSITION 409, RETURN_ITEMS_MISMATCH 422)',
+    idempotent: true,
+    requestBody: ConfirmReceiptDto,
+    responses: sellerOne,
+  });
+  docs.add({
+    ...sellerTags,
+    method: 'post',
+    path: `${basePath}${S.DISPUTE}`,
+    summary:
+      'Dispute a received return before inspectionDeadlineAt, with optional photos you uploaded (return_photo); an admin decides (RETURN_NOT_FOUND, RETURN_INVALID_STATUS_TRANSITION 409, RETURN_INSPECTION_WINDOW_CLOSED 409, MEDIA_NOT_ATTACHABLE 422)',
+    requestBody: DisputeReturnDto,
+    responses: sellerOne,
+  });
+
   const adminTags = { tags: ['admin: returns'], auth: true } as const;
   docs.add({
     ...adminTags,
@@ -205,6 +231,16 @@ export function returnRoutes(deps: ReturnRouteDeps): Router {
     summary:
       'Approve or reject a requested or escalated return, final and audited (RETURN_NOT_FOUND, RETURN_INVALID_STATUS_TRANSITION 409)',
     requestBody: AdminDecideReturnDto,
+    responses: { 200: { description: 'The return', body: AdminReturnDto } },
+  });
+  docs.add({
+    ...adminTags,
+    method: 'post',
+    path: `${basePath}${A.RESOLVE_DISPUTE}`,
+    summary:
+      'Resolve a disputed return, final and audited: refund completes it (nothing restocked), no_refund refuses it (RETURN_NOT_FOUND, RETURN_INVALID_STATUS_TRANSITION 409)',
+    idempotent: true,
+    requestBody: ResolveDisputeDto,
     responses: { 200: { description: 'The return', body: AdminReturnDto } },
   });
   return router;

@@ -40,6 +40,8 @@ export * from './review-rating-changed.event';
 export * from './product-blocked.event';
 export * from './return-status-changed.event';
 export * from './return-approved.event';
+export * from './return-completed.event';
+export * from './return-shipment.events';
 
 import { CodRemittanceConfirmed } from './cod-remittance-confirmed.event';
 import { InventoryStockStatusChanged } from './inventory-stock-status-changed.event';
@@ -57,6 +59,12 @@ import { PaymentRefundRecorded } from './payment-refund-recorded.event';
 import { PayoutRecorded } from './payout-recorded.event';
 import { ProductBlocked, ProductUnblocked } from './product-blocked.event';
 import { ReturnApproved } from './return-approved.event';
+import { ReturnCompleted } from './return-completed.event';
+import {
+  ReturnShipmentDelivered,
+  ReturnShipmentFailed,
+  ReturnShipmentPickedUp,
+} from './return-shipment.events';
 import { ReturnStatusChanged } from './return-status-changed.event';
 import { ReviewCreated } from './review-created.event';
 import { ReviewRatingChanged } from './review-rating-changed.event';
@@ -122,4 +130,8 @@ export const ALL_EVENT_CONTRACTS = [
   ProductUnblocked,
   ReturnStatusChanged,
   ReturnApproved,
+  ReturnCompleted,
+  ReturnShipmentPickedUp,
+  ReturnShipmentDelivered,
+  ReturnShipmentFailed,
 ] as const;

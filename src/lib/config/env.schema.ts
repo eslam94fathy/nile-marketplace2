@@ -361,6 +361,12 @@ const supportJobsShape = {
   SUPPORT_JOBS_BATCH_SIZE: positiveInt(10_000),
 };
 
+/** returns jobs (spec 18 UC-RE-9), worker only; the worker also reads the returns limits (returnsApiShape). */
+const returnsJobsShape = {
+  JOB_RETURNS_INTERVAL_MS: positiveInt(86_400_000),
+  RETURN_JOBS_BATCH_SIZE: positiveInt(10_000),
+};
+
 /** media cleanup job (spec 14 UC-ME-4), worker only. */
 const mediaJobsShape = {
   MEDIA_PENDING_RETENTION_HOURS: positiveInt(24 * 30),
@@ -585,6 +591,9 @@ export const workerEnvSchema = z
     ...mediaJobsShape,
     ...notificationJobsShape,
     ...supportJobsShape,
+    // The returns consumer sets the inspection deadline; the jobs complete and refuse (spec 18).
+    ...returnsApiShape,
+    ...returnsJobsShape,
     ...pushWorkerShape,
     ...storageShape,
     // The payment consumer sets the acceptance deadline when a Kashier order is placed (OR-8).

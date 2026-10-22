@@ -4,7 +4,8 @@
  * Owns tables: governorates, delivery_settings, delivery_agents, shipments, shipment_attempts,
  * shipment_status_history. No other module reads or writes them; customers, sellers and ordering
  * reference `governorates` through FKs only (D12).
- * May call: identity (agent logins). Reacts to ordering's events and never calls ordering.
+ * May call: identity (agent logins). Reacts to ordering's and returns' events and calls neither; returns
+ * reads the return shipment status (DE-23).
  * This file is its only public surface.
  */
 import { type Router } from 'express';
@@ -22,10 +23,12 @@ import {
   SellerOrderCancelled,
   SellerOrderItemsCancelled,
   SellerOrderReadyForPickup,
+  ReturnApproved,
+  ReturnStatusChanged,
   SellerOrderReturned,
 } from '../../lib/events';
 import { type JobDefinition } from '../../lib/jobs';
-import { SELLER_ORDER_UPDATES_QUEUE } from './constants';
+import { RETURN_UPDATES_QUEUE, SELLER_ORDER_UPDATES_QUEUE } from './constants';
 import { AgentAdminController, AgentSelfController } from './controller/delivery-agent.controller';
 import { DeliverySettingsController } from './controller/delivery-settings.controller';
 import { registerDeliveryConstraintErrors } from './errors';
@@ -36,6 +39,7 @@ import { DeliveryAgentRepository } from './repository/delivery-agent.repository'
 import { ShipmentHistoryRepository } from './repository/shipment-history.repository';
 import { ShipmentRepository } from './repository/shipment.repository';
 import { AssignmentRetryJob } from './service/assignment-retry.job';
+import { ReturnUpdateService } from './service/return-update.service';
 import { SellerOrderUpdateService } from './service/seller-order-update.service';
 import { ShipmentAssignmentService } from './service/shipment-assignment.service';
 import { ShipmentDirectory } from './service/shipment-directory.service';
@@ -56,7 +60,7 @@ export type { IDeliveryReferenceService, GovernorateFee } from './service/delive
 export type { IDeliveryAgentDirectory } from './service/delivery-agent-directory.service';
 /** Inject with `TOKENS.ShipmentDirectory` (backoffice). */
 export type { DeliveryDashboardStats, IShipmentDirectory } from './service/shipment-directory.service';
-export { AgentStatus, ShipmentStatus } from './enums';
+export { AgentStatus, ShipmentKind, ShipmentStatus } from './enums';
 export { DeliveryErrorCode } from './errors';
 
 /** What both processes need: the agent and shipment repositories and the assignment service. */
@@ -71,12 +75,14 @@ function registerDeliveryCore(container: DependencyContainer): void {
 export function registerDeliveryWorker(container: DependencyContainer): void {
   registerDeliveryCore(container);
   container.registerSingleton(TOKENS.SellerOrderUpdateService, SellerOrderUpdateService);
+  container.registerSingleton(TOKENS.DeliveryReturnUpdateService, ReturnUpdateService);
   container.registerSingleton(TOKENS.AssignmentRetryJob, AssignmentRetryJob);
 }
 
-/** Consumer `delivery.seller-order-updates` (spec 11 UC-DE-1, UC-DE-5, spec 02 §2). */
+/** Consumers `delivery.seller-order-updates` (spec 11 UC-DE-1, UC-DE-5) and `delivery.return-updates` (UC-DE-8, UC-DE-10). */
 export function createDeliveryHandlers(container: DependencyContainer): EventHandlerDefinition[] {
   const updates = container.resolve<SellerOrderUpdateService>(TOKENS.SellerOrderUpdateService);
+  const returns = container.resolve<ReturnUpdateService>(TOKENS.DeliveryReturnUpdateService);
   return [
     {
       name: SELLER_ORDER_UPDATES_QUEUE,
@@ -87,6 +93,11 @@ export function createDeliveryHandlers(container: DependencyContainer): EventHan
         SellerOrderReturned,
       ],
       handle: (envelope, trx) => updates.handle(envelope, trx),
+    },
+    {
+      name: RETURN_UPDATES_QUEUE,
+      events: [ReturnApproved, ReturnStatusChanged],
+      handle: (envelope, trx) => returns.handle(envelope, trx),
     },
   ];
 }

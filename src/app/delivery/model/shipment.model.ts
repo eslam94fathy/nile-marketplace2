@@ -1,5 +1,5 @@
 import { Money } from '../../../lib/money';
-import { AttemptFailureReason, type DeliveryActorRole, ShipmentStatus } from '../enums';
+import { AttemptFailureReason, type DeliveryActorRole, ShipmentKind, ShipmentStatus } from '../enums';
 import { codAmountMismatch, codAmountNotAllowed, codAmountRequired } from '../errors';
 
 /** What payments' COD amounts and the agent's screen need, as the event snapshotted it (D-2). */
@@ -30,9 +30,15 @@ export interface ShipmentDropoff {
   landmark: string | null;
 }
 
-/** One shipment per seller order (spec 11 §1). */
+/**
+ * One delivery per seller order (spec 11 §1), plus a return shipment per approved return (§8.1). The
+ * snapshots keep their party for both kinds: `pickup` is the seller, `dropoff` the customer (DE-21).
+ */
 export interface Shipment {
   id: string;
+  kind: ShipmentKind;
+  /** Set for a return shipment. */
+  returnId: string | null;
   sellerOrderId: string;
   orderId: string;
   agentId: string | null;
@@ -54,6 +60,15 @@ export interface Shipment {
   sellerOrderCancelledAt: Date | null;
   createdAt: Date;
 }
+
+export const isReturnShipment = (shipment: Shipment): boolean => shipment.kind === ShipmentKind.RETURN;
+
+/**
+ * Where the agent starts, the key of auto-assignment (UC-DE-1): the seller for a delivery, the customer
+ * for a return (DE-17, DE-25).
+ */
+export const startGovernorateId = (shipment: Shipment): string =>
+  isReturnShipment(shipment) ? shipment.dropoff.governorateId : shipment.pickup.governorateId;
 
 /** COD: the items plus the fee if this shipment carries it. Kashier: nothing (spec 11 §4.2, DE-8). */
 export const amountToCollect = (shipment: Shipment): Money =>

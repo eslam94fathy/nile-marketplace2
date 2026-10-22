@@ -184,6 +184,8 @@ module "environment" {
     SUPPORT_AUTO_CLOSE_AFTER_HOURS            = "168"
     JOB_SUPPORT_INTERVAL_MS                   = "60000"
     SUPPORT_JOBS_BATCH_SIZE                   = "100"
+    JOB_RETURNS_INTERVAL_MS                   = "60000"
+    RETURN_JOBS_BATCH_SIZE                    = "100"
 
     EMAIL_HTTP_TIMEOUT_MS = "10000"
     MAILJET_FROM_EMAIL    = var.mailjet_from_email

@@ -19,7 +19,7 @@ import {
   UuidField,
 } from '../../../lib/http';
 import { ATTEMPT_NOTE_MAX_LENGTH } from '../constants';
-import { AttemptFailureReason, DeliveryActorRole, ShipmentStatus } from '../enums';
+import { AttemptFailureReason, DeliveryActorRole, ShipmentKind, ShipmentStatus } from '../enums';
 import { amountToCollect } from '../model/shipment.model';
 import { type ShipmentView } from '../service/shipment-view.service';
 
@@ -44,6 +44,12 @@ export const AGENT_SHIPMENT_LIST_SPEC: ListSpec = {
       type: FieldType.ENUM,
       ops: [FilterOp.EQ, FilterOp.IN],
       enumValues: Object.values(ShipmentStatus),
+    },
+    kind: {
+      column: 'kind',
+      type: FieldType.ENUM,
+      ops: [FilterOp.EQ],
+      enumValues: Object.values(ShipmentKind),
     },
     createdAt: {
       column: 'created_at',
@@ -81,6 +87,12 @@ export const ADMIN_SHIPMENT_LIST_SPEC: ListSpec = {
       type: FieldType.ENUM,
       ops: [FilterOp.EQ, FilterOp.IN],
       enumValues: Object.values(ShipmentStatus),
+    },
+    kind: {
+      column: 'kind',
+      type: FieldType.ENUM,
+      ops: [FilterOp.EQ],
+      enumValues: Object.values(ShipmentKind),
     },
     agentId: { column: 'agent_id', type: FieldType.UUID, ops: [FilterOp.EQ] },
     orderId: { column: 'order_id', type: FieldType.UUID, ops: [FilterOp.EQ] },
@@ -176,6 +188,17 @@ export class ShipmentAttemptDto {
 
 /** The agent's view of a shipment (spec 11 §4.2). */
 export class AgentShipmentDto {
+  /**
+   * `return`: the agent collects at `dropoff` (the customer) and hands over at `pickup` (the seller);
+   * `pickup` / `dropoff` always name the seller / the customer (spec 11 DE-21, DE-26).
+   */
+  @IsIn(Object.values(ShipmentKind))
+  kind!: ShipmentKind;
+
+  @IsOptional()
+  @IsUUID()
+  returnId!: string | null;
+
   @IsUUID()
   id!: string;
 
@@ -286,6 +309,8 @@ const iso = (date: Date | null): string | null => date?.toISOString() ?? null;
 
 export function toAgentShipmentDto({ shipment, attempts }: ShipmentView): AgentShipmentDto {
   return {
+    kind: shipment.kind,
+    returnId: shipment.returnId,
     id: shipment.id,
     sellerOrderId: shipment.sellerOrderId,
     orderNumber: shipment.orderNumber,

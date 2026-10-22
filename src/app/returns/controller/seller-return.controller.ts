@@ -3,7 +3,13 @@ import { inject, injectable } from 'tsyringe';
 import { type Env } from '../../../lib/config';
 import { TOKENS } from '../../../lib/di';
 import { HTTP_STATUS, parseListQuery, sendSuccess, validateDto } from '../../../lib/http';
-import { RejectReturnDto, ReturnIdParamsDto, SELLER_RETURN_LIST_SPEC } from '../dto/return-request.dto';
+import {
+  ConfirmReceiptDto,
+  DisputeReturnDto,
+  RejectReturnDto,
+  ReturnIdParamsDto,
+  SELLER_RETURN_LIST_SPEC,
+} from '../dto/return-request.dto';
 import { toSellerReturnDto } from '../dto/return-response.dto';
 import { type ReturnDecisionService } from '../service/return-decision.service';
 import { type ReturnViewService } from '../service/return-view.service';
@@ -40,6 +46,20 @@ export class SellerReturnController {
     const { returnId } = await validateDto(ReturnIdParamsDto, req.params);
     const approved = await this.decisions.sellerApprove(userIdOf(req), returnId);
     sendSuccess(res, HTTP_STATUS.OK, toSellerReturnDto(await this.views.viewOf(approved)));
+  };
+
+  confirmReceipt = async (req: Request, res: Response): Promise<void> => {
+    const { returnId } = await validateDto(ReturnIdParamsDto, req.params);
+    const { items } = await validateDto(ConfirmReceiptDto, req.body);
+    const completed = await this.decisions.confirmReceipt(userIdOf(req), returnId, items);
+    sendSuccess(res, HTTP_STATUS.OK, toSellerReturnDto(await this.views.viewOf(completed)));
+  };
+
+  dispute = async (req: Request, res: Response): Promise<void> => {
+    const { returnId } = await validateDto(ReturnIdParamsDto, req.params);
+    const { reason, photoMediaIds } = await validateDto(DisputeReturnDto, req.body);
+    const disputed = await this.decisions.sellerDispute(userIdOf(req), returnId, reason, photoMediaIds ?? []);
+    sendSuccess(res, HTTP_STATUS.OK, toSellerReturnDto(await this.views.viewOf(disputed)));
   };
 
   reject = async (req: Request, res: Response): Promise<void> => {

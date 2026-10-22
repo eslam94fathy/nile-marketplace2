@@ -64,6 +64,13 @@ export interface ReturnPatch {
   escalationNote?: string;
   escalationDeadlineAt?: Date;
   approvedAt?: Date;
+  agentId?: string;
+  receivedAt?: Date;
+  inspectionDeadlineAt?: Date;
+  disputeReason?: string;
+  completedAt?: Date;
+  /** Final at completion (UC-RE-7 step 4). */
+  refundAmount?: Money;
   /** The request ends: the payout ciphertext goes (RE-8); the method stays for the admin view. */
   clearRefundPayout?: true;
 }

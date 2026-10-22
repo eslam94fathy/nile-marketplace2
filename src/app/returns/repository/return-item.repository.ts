@@ -49,6 +49,26 @@ export class ReturnItemRepository {
     return rows.map(toModel);
   }
 
+  /** The seller's restock choice per item at completion (UC-RE-7); one statement for the whole return. */
+  async setRestock(
+    returnId: string,
+    restock: ReadonlyMap<string, boolean>,
+    trx: DbTransaction,
+  ): Promise<void> {
+    if (restock.size === 0) return;
+    const ids = [...restock.keys()];
+    await trx<ReturnItemTable>(T)
+      .update({
+        restock: trx.raw(
+          `CASE id ${ids.map(() => 'WHEN ?::uuid THEN ?::boolean').join(' ')} END`,
+          ids.flatMap((id) => [id, restock.get(id) ?? false]),
+        ),
+        updated_at: trx.fn.now(),
+      })
+      .where({ return_id: returnId })
+      .whereIn('id', ids);
+  }
+
   /** Items of a page of requests: WHERE return_id = ANY(?) over uq_return_items_return_id_order_item_id (G20). */
   async findByReturnIds(returnIds: readonly string[], trx?: DbTransaction): Promise<ReturnItem[]> {
     if (returnIds.length === 0) return [];

@@ -1,6 +1,6 @@
 # Spec 18 — returns
 
-Status: **v1.3 APPROVED (2026-10-22).** v1.3: RE-22 the caller's profiles and the item snapshots of the views (§7.1). v1.2: RE-21 the return number format (§7.1). v1.1: R2-P6 plan clarifications RE-11…RE-20 (§7.1, every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (returns and refunds, holding period), R-13…R-16, `14-media.md` (return photos), spec 09 v2.0 §8.7, spec 10 v2.0 §8, spec 11 v2.0 §8, spec 12 v2.0 §8, spec 07 v2.0 §8. §7 RE-1…RE-10 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.4 APPROVED (2026-10-22).** v1.4: RE-23…RE-25 the approval payload, the cancel / pickup race, the late dispute (§7.1). v1.3: RE-22 the caller's profiles and the item snapshots of the views (§7.1). v1.2: RE-21 the return number format (§7.1). v1.1: R2-P6 plan clarifications RE-11…RE-20 (§7.1, every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (returns and refunds, holding period), R-13…R-16, `14-media.md` (return photos), spec 09 v2.0 §8.7, spec 10 v2.0 §8, spec 11 v2.0 §8, spec 12 v2.0 §8, spec 07 v2.0 §8. §7 RE-1…RE-10 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -198,6 +198,7 @@ Consumed (queue `returns.shipment-updates`): `return_shipment.picked_up`, `retur
 | `RETURN_ALREADY_OPEN` | 409 | Another open return for the seller order |
 | `RETURN_INVALID_STATUS_TRANSITION` | 409 | |
 | `RETURN_ESCALATION_WINDOW_CLOSED` | 409 | Escalation after `escalation_deadline_at` |
+| `RETURN_INSPECTION_WINDOW_CLOSED` | 409 | A dispute after `inspection_deadline_at` (RE-25) |
 | `RETURN_ITEMS_MISMATCH` | 422 | Receipt confirmation doesn't list each item exactly once |
 
 Config: api `RETURN_WINDOW_DAYS`, `RETURN_SELLER_DECISION_HOURS`, `RETURN_ESCALATION_WINDOW_DAYS`, `RETURN_INSPECTION_HOURS`; worker the same four + `JOB_RETURNS_INTERVAL_MS`, `RETURN_JOBS_BATCH_SIZE`, and the S-1 encryption key (already there). No defaults.
@@ -235,3 +236,6 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | RE-20 | Order of work: plan §9.1 | plan |
 | RE-21 | `return_number` = `R-` + 9 digits from `return_number_seq` (`chk_return_requests_return_number` `^R-[0-9]{9,}$`), like tickets (SU-16) | §1 |
 | RE-22 | Returns resolves the caller's customer id (`customers.getCustomerIdByUserId`) and seller id (`sellers.getSellerByUserId`, any seller status) through those modules: edges `returns → customers, sellers` (architecture v2.5 A-11). The views read the order-item snapshots with `ordering.getOrderItems` (spec 09 OR-30); `paidAmount` = unit price × quantity until coupons (OR-27) | §1, §4 |
+| RE-23 | `return.approved` also carries `orderNumber` and `paymentMethod` (the order's): delivery stores them on the return shipment and can't call ordering. Version 1 (nothing is live) | §5, spec 02 |
+| RE-24 | Cancelling an `approved` return first reads delivery's `getReturnShipmentStatus(returnId)` (spec 11 DE-23): already `picked_up` or `delivered` → `409 RETURN_INVALID_STATUS_TRANSITION`. If a pickup still lands after the cancel (the window of one request), the returns consumer finds the return `cancelled` and logs `error RETURN_PICKED_UP_AFTER_CANCEL` for an admin (like DE-19) | UC-RE-5, UC-RE-6 |
+| RE-25 | A dispute after `inspection_deadline_at` answers `409 RETURN_INSPECTION_WINDOW_CLOSED`; confirming receipt stays allowed while the return is still `received` (the job completes it otherwise). The dispute photos are the seller's own `return_photo` uploads (ME-14), slots 0–3 | UC-RE-8 |

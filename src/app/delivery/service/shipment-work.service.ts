@@ -4,6 +4,10 @@ import { type DbTransaction, type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import {
   type IOutbox,
+  type OutboxEvent,
+  ReturnShipmentDelivered,
+  ReturnShipmentFailed,
+  ReturnShipmentPickedUp,
   ShipmentAttemptFailed,
   ShipmentDelivered,
   ShipmentOutForDelivery,
@@ -12,12 +16,13 @@ import {
 import { type ILogger } from '../../../lib/logger';
 import { Money } from '../../../lib/money';
 import { type AttemptFailureReason, DeliveryActorRole, ShipmentStatus } from '../enums';
-import { shipmentInvalidStatusTransition, shipmentNotFound } from '../errors';
+import { codAmountNotAllowed, shipmentInvalidStatusTransition, shipmentNotFound } from '../errors';
 import { type DeliveryAgent } from '../model/delivery-agent.model';
 import {
   afterFailedAttempt,
   collectedAmountFor,
   deliveryFeeLeftUncollected,
+  isReturnShipment,
   type Shipment,
   takesDeliveryFee,
   toAttemptNumber,
@@ -34,9 +39,10 @@ interface LockedCheckout {
 }
 
 /**
- * The agent works its shipments (spec 11 UC-DE-3, DE-6). Ownership: another agent's shipment is
- * `404`. Out for delivery, delivered and failed attempts lock the whole checkout, because they
- * take, keep or release the COD fee (DE-8); picked up and the confirmed return lock one shipment.
+ * The agent works its shipments (spec 11 UC-DE-3, DE-6, UC-DE-9). Ownership: another agent's shipment
+ * is `404`. A delivery's out for delivery, delivered and failed attempts lock the whole checkout,
+ * because they take, keep or release the COD fee (DE-8); picked up, the confirmed return and every step
+ * of a return shipment lock one shipment (DE-25).
  */
 @injectable()
 export class ShipmentWorkService {
@@ -52,6 +58,7 @@ export class ShipmentWorkService {
   async pickedUp(agent: DeliveryAgent, shipmentId: string): Promise<Shipment> {
     return this.tx.run(async (trx) => {
       const shipment = await this.lockOwn(agent, shipmentId, trx);
+      if (isReturnShipment(shipment)) return this.returnPickedUp(agent, shipment, trx);
       const now = this.clock.now();
       const next = await this.move(
         agent,
@@ -89,6 +96,8 @@ export class ShipmentWorkService {
 
   async delivered(agent: DeliveryAgent, shipmentId: string, given: Money | undefined): Promise<Shipment> {
     return this.tx.run(async (trx) => {
+      const peek = await this.peekOwn(agent, shipmentId, trx);
+      if (isReturnShipment(peek)) return this.returnDelivered(agent, shipmentId, given, trx);
       const { shipment, checkout } = await this.lockOwnCheckout(agent, shipmentId, trx);
       this.requireStatus(shipment, [S.OUT_FOR_DELIVERY]);
       const collected = collectedAmountFor(shipment, given);
@@ -124,6 +133,8 @@ export class ShipmentWorkService {
     note: string | null,
   ): Promise<Shipment> {
     return this.tx.run(async (trx) => {
+      const peek = await this.peekOwn(agent, shipmentId, trx);
+      if (isReturnShipment(peek)) return this.returnFailedAttempt(agent, shipmentId, reason, note, trx);
       const { shipment, checkout } = await this.lockOwnCheckout(agent, shipmentId, trx);
       this.requireStatus(shipment, [S.OUT_FOR_DELIVERY]);
       const { attemptNumber, returning } = afterFailedAttempt(shipment.attemptCount, reason);
@@ -164,6 +175,86 @@ export class ShipmentWorkService {
     });
   }
 
+  /** UC-DE-9: the agent took the parcel from the customer (also after a failed attempt). */
+  private async returnPickedUp(
+    agent: DeliveryAgent,
+    shipment: Shipment,
+    trx: DbTransaction,
+  ): Promise<Shipment> {
+    const now = this.clock.now();
+    const next = await this.move(
+      agent,
+      shipment,
+      [S.ASSIGNED, S.PICKUP_FAILED],
+      { status: S.PICKED_UP, pickedUpAt: now },
+      null,
+      trx,
+    );
+    await this.outbox.add(trx, returnEvent(ReturnShipmentPickedUp, next, agent, now));
+    return next;
+  }
+
+  /** UC-DE-9: handed to the seller. Nothing is collected on a return (DE-22). */
+  private async returnDelivered(
+    agent: DeliveryAgent,
+    shipmentId: string,
+    given: Money | undefined,
+    trx: DbTransaction,
+  ): Promise<Shipment> {
+    const shipment = await this.lockOwn(agent, shipmentId, trx);
+    this.requireStatus(shipment, [S.PICKED_UP]);
+    if (given !== undefined) throw codAmountNotAllowed();
+    const now = this.clock.now();
+    const next = await this.move(
+      agent,
+      shipment,
+      [S.PICKED_UP],
+      { status: S.DELIVERED, deliveredAt: now },
+      null,
+      trx,
+    );
+    await this.outbox.add(trx, returnEvent(ReturnShipmentDelivered, next, agent, now));
+    return next;
+  }
+
+  /**
+   * UC-DE-9 failed pickup (DE-18): `pickup_failed` while attempts are left; the 3rd one, or a refusal,
+   * cancels the shipment and ends the return (`return_shipment.failed`).
+   */
+  private async returnFailedAttempt(
+    agent: DeliveryAgent,
+    shipmentId: string,
+    reason: AttemptFailureReason,
+    note: string | null,
+    trx: DbTransaction,
+  ): Promise<Shipment> {
+    const shipment = await this.lockOwn(agent, shipmentId, trx);
+    const from = [S.ASSIGNED, S.PICKUP_FAILED];
+    this.requireStatus(shipment, from);
+    const { attemptNumber, returning: ended } = afterFailedAttempt(shipment.attemptCount, reason);
+    const next = await this.move(
+      agent,
+      shipment,
+      from,
+      { status: ended ? S.CANCELLED : S.PICKUP_FAILED, attemptCount: attemptNumber },
+      reason,
+      trx,
+    );
+    await this.history.addAttempt(
+      { shipmentId: next.id, attemptNumber, reason, note, agentId: agent.id },
+      trx,
+    );
+    if (ended) await this.outbox.add(trx, returnEvent(ReturnShipmentFailed, next, agent, this.clock.now()));
+    return next;
+  }
+
+  /** An unlocked read for routing; ownership is checked again under the lock. */
+  private async peekOwn(agent: DeliveryAgent, shipmentId: string, trx: DbTransaction): Promise<Shipment> {
+    const peek = await this.shipments.findById(shipmentId, trx);
+    if (!peek || peek.agentId !== agent.id) throw shipmentNotFound();
+    return peek;
+  }
+
   private async lockOwn(agent: DeliveryAgent, shipmentId: string, trx: DbTransaction): Promise<Shipment> {
     const shipment = await this.shipments.lockById(shipmentId, trx);
     if (!shipment || shipment.agentId !== agent.id) throw shipmentNotFound();
@@ -176,8 +267,9 @@ export class ShipmentWorkService {
     shipmentId: string,
     trx: DbTransaction,
   ): Promise<LockedCheckout> {
-    const peek = await this.shipments.findById(shipmentId, trx);
-    if (!peek || peek.agentId !== agent.id) throw shipmentNotFound();
+    const peek = await this.peekOwn(agent, shipmentId, trx);
+    // A return shipment never goes out for delivery (spec 11 UC-DE-9).
+    if (isReturnShipment(peek)) throw shipmentInvalidStatusTransition(peek.status);
     const checkout = await this.shipments.lockByOrderId(peek.orderId, trx);
     const shipment = checkout.find((s) => s.id === shipmentId);
     if (!shipment || shipment.agentId !== agent.id) throw shipmentNotFound();
@@ -241,4 +333,24 @@ export class ShipmentWorkService {
       deliveryFee: changed.orderDeliveryFee.toString(),
     });
   }
+}
+
+/** The payload of the `return_shipment.*` events (spec 11 UC-DE-9). */
+function returnEvent(
+  contract: typeof ReturnShipmentPickedUp,
+  shipment: Shipment,
+  agent: DeliveryAgent,
+  at: Date,
+): OutboxEvent<object> {
+  if (shipment.returnId === null) throw new Error(`return shipment ${shipment.id} has no return`);
+  return {
+    contract,
+    aggregateId: shipment.id,
+    payload: {
+      shipmentId: shipment.id,
+      returnId: shipment.returnId,
+      agentId: agent.id,
+      at: at.toISOString(),
+    },
+  };
 }

@@ -43,6 +43,8 @@ export const ATTEMPT_NOTE_MAX_LENGTH = 500;
 
 /** Queue of the seller-order consumer (docs/spec/02-events.md §2). */
 export const SELLER_ORDER_UPDATES_QUEUE = 'delivery.seller-order-updates';
+/** Queue of the return consumer (spec 11 §8.5, docs/spec/02-events.md). */
+export const RETURN_UPDATES_QUEUE = 'delivery.return-updates';
 
 /** The whole governorate list, cache-aside (architecture §8, spec 11 DE-3). */
 export const GOVERNORATES_CACHE_KEY = 'v1:delivery:governorates';

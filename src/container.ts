@@ -5,7 +5,7 @@ import { registerCatalogModule, registerCatalogProjections } from './app/catalog
 import { registerCustomersLookups, registerCustomersModule } from './app/customers';
 import { registerDeliveryAgentLookups, registerDeliveryModule, registerDeliveryWorker } from './app/delivery';
 import { registerFinanceModule, registerFinanceWorker } from './app/finance';
-import { registerReturnsModule } from './app/returns';
+import { registerReturnsModule, registerReturnsWorker } from './app/returns';
 import { registerReviewsModule } from './app/reviews';
 import { registerBackofficeModule } from './app/backoffice';
 import { registerSellersLookups, registerSellersModule, registerSellersWorker } from './app/sellers';
@@ -133,6 +133,8 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   registerRealtimeWorker(container);
   // support-jobs (spec 16 UC-SU-5).
   registerSupportWorker(container);
+  // returns.shipment-updates and returns-jobs (spec 18 UC-RE-6, UC-RE-9); after ordering and inventory.
+  registerReturnsWorker(container);
   return container;
 }
 

@@ -337,7 +337,7 @@ New queues:
 | `return_shipment.failed` | delivery | shipment | returns, realtime |
 | `payment.refunded` | payments | payment | finance, notifications, realtime |
 
-Payloads are in spec 18 §5, spec 11 §8.2 and spec 10 §8.6. `return.completed.refundPayoutEncrypted` is encrypted with the S-1 key like the secret email variables (§3.1).
+Payloads are in spec 18 §5 (with RE-23: `return.approved` carries `orderNumber` and `paymentMethod`), spec 11 §8.2 and spec 10 §8.6. `return.completed.refundPayoutEncrypted` is encrypted with the S-1 key like the secret email variables (§3.1).
 
 Changed payloads (additive, still version 1; consumers deployed before the publisher, spec 09 OR-22):
 - `shipment.assigned` += `kind`, `returnId`.

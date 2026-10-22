@@ -52,5 +52,9 @@ export const PURPOSE_RULES: Readonly<Record<MediaPurpose, PurposeRule>> = {
     roles: [UserRole.CUSTOMER, UserRole.SELLER, UserRole.ADMIN],
     visibility: MediaVisibility.PRIVATE,
   },
-  [MediaPurpose.RETURN_PHOTO]: { roles: [UserRole.CUSTOMER], visibility: MediaVisibility.PRIVATE },
+  // The seller's own uploads back a dispute (spec 14 ME-14, spec 18 UC-RE-8).
+  [MediaPurpose.RETURN_PHOTO]: {
+    roles: [UserRole.CUSTOMER, UserRole.SELLER],
+    visibility: MediaVisibility.PRIVATE,
+  },
 };
