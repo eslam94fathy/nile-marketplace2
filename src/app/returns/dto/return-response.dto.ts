@@ -57,7 +57,7 @@ export class ReturnItemDto {
   @IsInt()
   quantity!: number;
 
-  /** What the customer paid for these units (unit price × quantity until coupons, OR-27). */
+  /** What the customer paid for these units: their price less their coupon share (indicative per line). */
   @IsMoney()
   paidAmount!: string;
 
@@ -260,7 +260,10 @@ export function toSellerReturnDto(view: ReturnView): SellerReturnDto {
       attributes: snapshot.attributes.map(({ attribute, value }) => ({ attribute, value })),
       image: image ? toImageDto(image) : null,
       quantity: item.quantity,
-      paidAmount: snapshot.unitPrice.timesQuantity(item.quantity).toString(),
+      paidAmount: snapshot.unitPrice
+        .timesQuantity(item.quantity)
+        .minus(snapshot.discountOriginal.timesRatio(item.quantity, snapshot.quantity))
+        .toString(),
       restock: item.restock,
     })),
     photos: view.photos.map(toImageDto),

@@ -282,6 +282,54 @@ describe('ordering returns API and inventory restock', () => {
       ]).toEqual([166.66, 166.66, 25, 0]);
     });
 
+    it('with a seller coupon: paid shares and commission on the paid base add up to the delivery (PR-19)', async () => {
+      const d = await delivered();
+      // A kept 6.66 of its 9.99 share (1 of 3 cancelled), B 20.00: discount 26.66, paid 140.00,
+      // commission 15 % of 140.00 = 21.00, net 140.00 − 21.00 = 119.00.
+      await knex()('order_items')
+        .where({ id: d.itemA })
+        .update({ discount_original: '9.99', discount_amount: '6.66' });
+      await knex()('order_items')
+        .where({ id: d.itemB })
+        .update({ discount_original: '20.00', discount_amount: '20.00' });
+      await knex()('seller_orders').where({ id: d.sellerOrderId }).update({
+        discount_amount: '26.66',
+        discount_funding: 'seller',
+        commission: '21.00',
+        seller_net: '119.00',
+      });
+      const first = await record(d, [
+        { orderItemId: d.itemA, quantity: 1 },
+        { orderItemId: d.itemB, quantity: 1 },
+      ]);
+      const second = await record(d, [
+        { orderItemId: d.itemA, quantity: 1 },
+        { orderItemId: d.itemB, quantity: 1 },
+      ]);
+      const sum = (key: keyof ReturnAmounts) => first[key].plus(second[key]).toString();
+      expect(
+        [
+          'itemsSubtotal',
+          'itemsPaid',
+          'commissionReversed',
+          'sellerNetReversed',
+          'platformDiscountReversed',
+        ].map((k) => sum(k as keyof ReturnAmounts)),
+      ).toEqual(['166.66', '140.00', '21.00', '119.00', '0.00']);
+      const rows = await knex()('order_item_returns')
+        .join('order_items', 'order_items.id', 'order_item_returns.order_item_id')
+        .where({ 'order_items.seller_order_id': d.sellerOrderId })
+        .sum<{ discount: string }[]>({ discount: 'order_item_returns.discount_amount' });
+      expect(rows[0]?.discount).toBe('26.66');
+      const so = await knex()('seller_orders')
+        .where({ id: d.sellerOrderId })
+        .first<{ returned_paid: string; returned_seller_net: string }>(
+          'returned_paid',
+          'returned_seller_net',
+        );
+      expect(so).toEqual({ returned_paid: '140.00', returned_seller_net: '119.00' });
+    });
+
     it('re-checks the quantities under the order lock: of two parallel returns of the last units, one wins', async () => {
       const d = await delivered();
       const results = await Promise.allSettled([

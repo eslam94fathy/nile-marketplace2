@@ -7,11 +7,13 @@ import { returnQuantityInvalid, sellerOrderNotFound } from '../errors';
 import { keptQuantity, type OrderItem, type SellerOrder } from '../model/order.model';
 import {
   computeReturnAmounts,
+  keptDiscountOf,
   type OrderItemSnapshot,
   type ReturnableSellerOrder,
   type ReturnAmounts,
   type ReturnLine,
   type ReturnLogistics,
+  returnBaseOf,
   returnLineProblems,
 } from '../model/return.model';
 import { type OrderItemReturnRepository } from '../repository/order-item-return.repository';
@@ -83,7 +85,8 @@ export class OrderReturnService implements IOrderReturns {
           attributes: item.attributes,
           imageMediaId: item.imageMediaId,
           returnable: keptQuantity(item),
-          paidUnitAmount: item.unitPrice,
+          // Indicative (the exact share of k units comes from the amount rule): the price less one unit's share.
+          paidUnitAmount: item.unitPrice.minus(keptDiscountOf(item, 1)),
         })),
     };
   }
@@ -104,6 +107,8 @@ export class OrderReturnService implements IOrderReturns {
       attributes: item.attributes,
       imageMediaId: item.imageMediaId,
       unitPrice: item.unitPrice,
+      quantity: item.quantity,
+      discountOriginal: item.discountOriginal,
     }));
   }
 
@@ -155,12 +160,5 @@ export class OrderReturnService implements IOrderReturns {
 function amountsOf(sellerOrder: SellerOrder, items: readonly OrderItem[], lines: readonly ReturnLine[]) {
   const problems = returnLineProblems(items, lines);
   if (lines.length === 0 || problems.length > 0) throw returnQuantityInvalid(problems);
-  return computeReturnAmounts(
-    {
-      keptSubtotal: sellerOrder.subtotal.minus(sellerOrder.returnedSubtotal),
-      commissionRate: sellerOrder.commissionRate,
-    },
-    items,
-    lines,
-  );
+  return computeReturnAmounts(returnBaseOf(sellerOrder), items, lines);
 }

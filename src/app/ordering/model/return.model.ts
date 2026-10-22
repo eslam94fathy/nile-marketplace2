@@ -1,8 +1,16 @@
 import { type ErrorDetail } from '../../../lib/error';
 import { Money, type Rate } from '../../../lib/money';
 import { type PaymentMethod } from '../../payments';
+import { CouponFunding } from '../../promotions';
 import { type SellerOrderStatus } from '../enums';
-import { keptQuantity, type OrderItem, type PickupSnapshot, type ShippingSnapshot } from './order.model';
+import {
+  keptQuantity,
+  type OrderItem,
+  paidSubtotal,
+  type PickupSnapshot,
+  type SellerOrder,
+  type ShippingSnapshot,
+} from './order.model';
 
 /** A customer's seller order as returns sees it before a request (spec 09 §8.7 `getReturnableItems`). */
 export interface ReturnableSellerOrder {
@@ -40,6 +48,9 @@ export interface OrderItemSnapshot {
   attributes: { attribute: string; value: string }[];
   imageMediaId: string | null;
   unitPrice: Money;
+  /** With `discountOriginal`, the coupon share of returned units (spec 09 §8.7). */
+  quantity: number;
+  discountOriginal: Money;
 }
 
 /** One order line of a return. */
@@ -54,7 +65,7 @@ export interface ReturnAmounts {
   itemsPaid: Money;
   commissionReversed: Money;
   sellerNetReversed: Money;
-  /** Always zero until coupons (OR-27). */
+  /** The discount share of a platform-funded coupon, given back to the platform (spec 12 row 11). */
   platformDiscountReversed: Money;
 }
 
@@ -114,15 +125,45 @@ export function returnLineProblems(items: readonly OrderItem[], lines: readonly 
   return problems;
 }
 
+/** A line's coupon share on `kept` of its units (spec 09 §8.7): round(discountOriginal × kept / quantity). */
+export const keptDiscountOf = (item: OrderItem, kept: number): Money =>
+  item.discountOriginal.timesRatio(kept, item.quantity);
+
+/** What a seller order still holds before a return: the base its commission is taken on (§8.7). */
+export interface ReturnBase {
+  /** subtotal − returned subtotal (undiscounted). */
+  keptSubtotal: Money;
+  /** (subtotal − discount) − returned paid. */
+  keptPaid: Money;
+  discountFunding: CouponFunding | null;
+  commissionRate: Rate;
+}
+
+/** The base of a seller order: its delivered amounts less what its returns already took. */
+export function returnBaseOf(sellerOrder: SellerOrder): ReturnBase {
+  return {
+    keptSubtotal: sellerOrder.subtotal.minus(sellerOrder.returnedSubtotal),
+    keptPaid: paidSubtotal(sellerOrder).minus(sellerOrder.returnedPaid),
+    discountFunding: sellerOrder.discountFunding,
+    commissionRate: sellerOrder.commissionRate,
+  };
+}
+
 /**
- * The amount rule of spec 09 §8.7 with every discount at zero (OR-27). Every amount is taken over the
- * units still kept, as the difference before and after the return, so several returns of one seller
- * order add up exactly to what was booked at delivery: commission kept = round(kept subtotal × rate).
- * The lines are removed from the kept base one at a time in order-item id order, so each line's
- * commission telescopes to the total (OR-29). The lines must be valid (`returnLineProblems`).
+ * The amount rule of spec 09 §8.7 (OR-29, spec 19 PR-19). Every amount is taken over the units still
+ * kept, as the difference before and after the return, so several returns of one seller order add up
+ * exactly to what was booked at delivery:
+ * - a line's discount share = kept share before − after (`keptDiscountOf`); its paid share = subtotal
+ *   share − discount share;
+ * - commission kept = round(base × rate), the base being the kept subtotal (platform coupon or none) or the
+ *   kept paid subtotal (seller coupon, R-17). The lines are removed from the base one at a time in
+ *   order-item id order, so each line's commission telescopes to the total (OR-29);
+ * - the seller's net reversed is what left its base less the commission reversed; a platform coupon's
+ *   discount share is reversed to the platform.
+ * The lines must be valid (`returnLineProblems`).
  */
 export function computeReturnAmounts(
-  sellerOrder: { keptSubtotal: Money; commissionRate: Rate },
+  base: ReturnBase,
   items: readonly OrderItem[],
   lines: readonly ReturnLine[],
 ): { amounts: ReturnAmounts; lines: ReturnLineAmounts[] } {
@@ -130,37 +171,35 @@ export function computeReturnAmounts(
   const ordered = [...lines].sort((a, b) =>
     a.orderItemId < b.orderItemId ? -1 : a.orderItemId > b.orderItemId ? 1 : 0,
   );
-  let base = sellerOrder.keptSubtotal;
+  const onPaid = base.discountFunding === CouponFunding.SELLER;
+  let kept = onPaid ? base.keptPaid : base.keptSubtotal;
   const lineAmounts = ordered.map((line): ReturnLineAmounts => {
     const item = byId.get(line.orderItemId);
     if (!item) throw new Error(`order item ${line.orderItemId} is not part of the seller order`);
+    const keptUnits = keptQuantity(item);
     const subtotal = item.unitPrice.timesQuantity(line.quantity);
-    const after = base.minus(subtotal);
-    if (after.isNegative()) throw new Error('a return takes more than the kept subtotal');
-    const commission = base
-      .timesRate(sellerOrder.commissionRate)
-      .minus(after.timesRate(sellerOrder.commissionRate));
-    base = after;
-    return {
-      orderItemId: line.orderItemId,
-      quantity: line.quantity,
-      subtotal,
-      discount: Money.zero(),
-      paid: subtotal,
-      commission,
-    };
+    const discount = keptDiscountOf(item, keptUnits).minus(keptDiscountOf(item, keptUnits - line.quantity));
+    const paid = subtotal.minus(discount);
+    const after = kept.minus(onPaid ? paid : subtotal);
+    if (after.isNegative()) throw new Error('a return takes more than the seller order keeps');
+    const commission = kept.timesRate(base.commissionRate).minus(after.timesRate(base.commissionRate));
+    kept = after;
+    return { orderItemId: line.orderItemId, quantity: line.quantity, subtotal, discount, paid, commission };
   });
 
   const itemsSubtotal = Money.sum(lineAmounts.map((l) => l.subtotal));
+  const itemsPaid = Money.sum(lineAmounts.map((l) => l.paid));
   const commissionReversed = Money.sum(lineAmounts.map((l) => l.commission));
+  const discountReversed = itemsSubtotal.minus(itemsPaid);
   return {
     lines: lineAmounts,
     amounts: {
       itemsSubtotal,
-      itemsPaid: Money.sum(lineAmounts.map((l) => l.paid)),
+      itemsPaid,
       commissionReversed,
-      sellerNetReversed: itemsSubtotal.minus(commissionReversed),
-      platformDiscountReversed: Money.zero(),
+      sellerNetReversed: (onPaid ? itemsPaid : itemsSubtotal).minus(commissionReversed),
+      platformDiscountReversed:
+        base.discountFunding === CouponFunding.PLATFORM ? discountReversed : Money.zero(),
     },
   };
 }
