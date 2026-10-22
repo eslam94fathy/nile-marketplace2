@@ -283,6 +283,14 @@ const reviewsApiShape = {
   REVIEW_EDIT_WINDOW_DAYS: positiveInt(3_650),
 };
 
+/** returns (spec 18 §1 limits, R-13, R-14, RE-3, RE-6), api; the worker gets them with its jobs. */
+const returnsApiShape = {
+  RETURN_WINDOW_DAYS: positiveInt(365),
+  RETURN_SELLER_DECISION_HOURS: positiveInt(24 * 30),
+  RETURN_ESCALATION_WINDOW_DAYS: positiveInt(365),
+  RETURN_INSPECTION_HOURS: positiveInt(24 * 30),
+};
+
 /** backoffice (spec 20 §3.2), api only: how old the dashboard may be. */
 const backofficeApiShape = {
   DASHBOARD_CACHE_TTL_SECONDS: positiveInt(3_600),
@@ -538,6 +546,7 @@ export const apiEnvSchema = z
     ...pushApiShape,
     ...supportApiShape,
     ...reviewsApiShape,
+    ...returnsApiShape,
     ...backofficeApiShape,
   })
   .superRefine((env, ctx) => {

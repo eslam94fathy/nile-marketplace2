@@ -129,6 +129,16 @@ export class OrderItemRepository {
     return updated === 1;
   }
 
+  /** One batched query on the primary key (G20); unknown ids are left out. */
+  async findByIds(ids: readonly string[]): Promise<OrderItem[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .knex<OrderItemTable>(T)
+      .select(...COLUMNS)
+      .whereIn('id', [...new Set(ids)]);
+    return rows.map(toModel);
+  }
+
   /** The lines of seller orders: WHERE seller_order_id = ANY(?) over idx_order_items_seller_order_id (G20). */
   async findBySellerOrderIds(sellerOrderIds: readonly string[], trx?: DbTransaction): Promise<OrderItem[]> {
     if (sellerOrderIds.length === 0) return [];

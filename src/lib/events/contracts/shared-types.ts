@@ -68,6 +68,22 @@ export type TicketCategoryValue =
 
 export type TicketStatusValue = 'open' | 'awaiting_admin' | 'awaiting_user' | 'resolved' | 'closed';
 
+/** Spec 18 §1 (returns). */
+export type ReturnStatusValue =
+  | 'requested'
+  | 'rejected'
+  | 'escalated'
+  | 'approved'
+  | 'picked_up'
+  | 'received'
+  | 'disputed'
+  | 'completed'
+  | 'refused'
+  | 'cancelled'
+  | 'pickup_failed';
+
+export type ReturnActorValue = 'customer' | 'seller' | 'admin' | 'delivery_agent' | 'system';
+
 export type TicketMessageKindValue = 'message' | 'internal_note' | 'system';
 
 export type TicketSenderRoleValue = 'customer' | 'seller' | 'admin' | 'system';

@@ -9,6 +9,7 @@ export interface ReturnableSellerOrder {
   sellerOrderId: string;
   orderId: string;
   orderNumber: string;
+  sellerId: string;
   status: SellerOrderStatus;
   deliveredAt: Date | null;
   paymentMethod: PaymentMethod;
@@ -27,6 +28,16 @@ export interface ReturnableItem {
   returnable: number;
   /** Indicative: the exact share of `k` units comes from the amount rule (spec 09 §8.7). */
   paidUnitAmount: Money;
+}
+
+/** An order line as the return views show it (spec 09 OR-30), whatever its units' state. */
+export interface OrderItemSnapshot {
+  orderItemId: string;
+  sellerOrderId: string;
+  productName: string;
+  attributes: { attribute: string; value: string }[];
+  imageMediaId: string | null;
+  unitPrice: Money;
 }
 
 /** One order line of a return. */

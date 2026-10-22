@@ -7,6 +7,7 @@ import { returnQuantityInvalid, sellerOrderNotFound } from '../errors';
 import { keptQuantity, type OrderItem, type SellerOrder } from '../model/order.model';
 import {
   computeReturnAmounts,
+  type OrderItemSnapshot,
   type ReturnableSellerOrder,
   type ReturnAmounts,
   type ReturnLine,
@@ -33,6 +34,8 @@ export interface IOrderReturns {
    * (details per line) and `SELLER_ORDER_NOT_FOUND`.
    */
   quoteReturn(sellerOrderId: string, lines: readonly ReturnLine[]): Promise<ReturnAmounts>;
+  /** Batched line snapshots for the return views (OR-30); unknown ids are left out. */
+  getOrderItems(orderItemIds: readonly string[]): Promise<OrderItemSnapshot[]>;
   /** Pickup = the customer, drop-off = the seller (spec 09 §8.7). Null when the seller order is missing. */
   getReturnLogistics(sellerOrderId: string): Promise<ReturnLogistics | null>;
   /**
@@ -67,6 +70,7 @@ export class OrderReturnService implements IOrderReturns {
       sellerOrderId,
       orderId: order.id,
       orderNumber: order.orderNumber,
+      sellerId: sellerOrder.sellerId,
       status: sellerOrder.status,
       deliveredAt: sellerOrder.deliveredAt,
       paymentMethod: order.paymentMethod,
@@ -89,6 +93,17 @@ export class OrderReturnService implements IOrderReturns {
     if (!sellerOrder) throw sellerOrderNotFound();
     const items = await this.items.findBySellerOrderIds([sellerOrderId]);
     return amountsOf(sellerOrder, items, lines).amounts;
+  }
+
+  async getOrderItems(orderItemIds: readonly string[]): Promise<OrderItemSnapshot[]> {
+    return (await this.items.findByIds(orderItemIds)).map((item) => ({
+      orderItemId: item.id,
+      sellerOrderId: item.sellerOrderId,
+      productName: item.productName,
+      attributes: item.attributes,
+      imageMediaId: item.imageMediaId,
+      unitPrice: item.unitPrice,
+    }));
   }
 
   async getReturnLogistics(sellerOrderId: string): Promise<ReturnLogistics | null> {

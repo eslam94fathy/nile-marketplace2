@@ -106,6 +106,12 @@ module "environment" {
     REVIEW_WINDOW_DAYS      = "60"
     REVIEW_EDIT_WINDOW_DAYS = "30"
 
+    # returns (spec 18 §1, R-13, R-14, RE-3, RE-6): window after delivery, seller decision, escalation, inspection.
+    RETURN_WINDOW_DAYS            = "14"
+    RETURN_SELLER_DECISION_HOURS  = "48"
+    RETURN_ESCALATION_WINDOW_DAYS = "7"
+    RETURN_INSPECTION_HOURS       = "48"
+
     # backoffice (spec 20 §3.2): the dashboard may be a minute old.
     DASHBOARD_CACHE_TTL_SECONDS = "60"
 

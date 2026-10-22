@@ -14,6 +14,7 @@ import { createIdentityRouter } from './app/identity';
 import { createNotificationsRouter } from './app/notifications';
 import { createOrderingRouter } from './app/ordering';
 import { createPaymentsRouter, createPaymentsWebhookRouter, PAYMENTS_PATHS } from './app/payments';
+import { createReturnsRouter } from './app/returns';
 import { createReviewsRouter } from './app/reviews';
 import { createBackofficeRouter } from './app/backoffice';
 import { createSellersRouter } from './app/sellers';
@@ -102,6 +103,7 @@ export function createApp(
   app.use(API_BASE_PATH, recordMountPath(), createMediaRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createSupportRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createReviewsRouter(container, API_BASE_PATH));
+  app.use(API_BASE_PATH, recordMountPath(), createReturnsRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createBackofficeRouter(container, API_BASE_PATH));
   for (const { path, router } of options.extraRouters ?? []) app.use(path, recordMountPath(), router);
 

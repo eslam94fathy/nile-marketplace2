@@ -58,6 +58,7 @@ export type { DeliveredItem, DeliveredItemsQuery, ReviewableItem } from './model
 export type { DashboardStatsQuery, OrderingDashboardStats } from './model/dashboard-stats.model';
 export { OPEN_SELLER_ORDER_STATUSES, type OpenSellerOrderStatus } from './enums';
 export type {
+  OrderItemSnapshot,
   ReturnableItem,
   ReturnableSellerOrder,
   ReturnAmounts,
