@@ -386,6 +386,12 @@ const returnsJobsShape = {
   RETURN_JOBS_BATCH_SIZE: positiveInt(10_000),
 };
 
+/** finance holding period (spec 12 §8.3, R-16), worker only. RETURN_WINDOW_DAYS comes with returnsApiShape. */
+const holdReleaseShape = {
+  JOB_SELLER_HOLD_RELEASE_INTERVAL_MS: positiveInt(86_400_000),
+  SELLER_HOLD_BATCH_SIZE: positiveInt(10_000),
+};
+
 /** media cleanup job (spec 14 UC-ME-4), worker only. */
 const mediaJobsShape = {
   MEDIA_PENDING_RETENTION_HOURS: positiveInt(24 * 30),
@@ -627,6 +633,7 @@ export const workerEnvSchema = z
     // The returns consumer sets the inspection deadline; the jobs complete and refuse (spec 18).
     ...returnsApiShape,
     ...returnsJobsShape,
+    ...holdReleaseShape,
     ...pushWorkerShape,
     ...storageShape,
     // The payment consumer sets the acceptance deadline when a Kashier order is placed (OR-8).

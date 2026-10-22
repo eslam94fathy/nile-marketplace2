@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
 import { IsMoney } from '../../../lib/http';
 import { AccountType, EntryDirection, EntryType, PayeeType, ReferenceType } from '../enums';
 import { type LedgerEntry } from '../model/ledger.model';
@@ -168,14 +168,39 @@ export function toPayoutDto(payout: Payout): PayoutDto {
 
 /** `GET /seller/finance/balance` (spec 12 §4.2). */
 export class SellerBalanceDto {
-  /** What the platform owes me; "0.00" before my first delivery. */
-  @IsMoney()
-  balance!: string;
+  /** What the platform owes me now; may be negative after a seller-fault return fee (FI-12). */
+  @IsString()
+  available!: string;
 
-  /** null before my first delivery. */
+  /** My earnings still held while their return windows run (spec 12 §8.1, R-16). */
+  @IsMoney()
+  pending!: string;
+
+  /** The later change of the two; null before my first delivery. */
   @IsOptional()
   @IsDateString()
   updatedAt!: string | null;
+}
+
+/** `GET /seller/finance/holds` (spec 12 §8.6). */
+export class SellerHoldDto {
+  @IsUUID()
+  sellerOrderId!: string;
+
+  @IsString()
+  orderNumber!: string;
+
+  /** What is still held for this seller order. */
+  @IsMoney()
+  heldAmount!: string;
+
+  /** When it becomes available, unless a return is open then. */
+  @IsDateString()
+  releaseAfter!: string;
+
+  /** An open return keeps it held past releaseAfter. */
+  @IsBoolean()
+  blockedByReturn!: boolean;
 }
 
 /** `GET /agent/finance/balances` (spec 12 §4.3). */

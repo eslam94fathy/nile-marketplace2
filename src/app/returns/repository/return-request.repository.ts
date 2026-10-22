@@ -9,6 +9,7 @@ import {
   type ReturnFeePayer,
   type ReturnReason,
   type ReturnRefusalReason,
+  OPEN_RETURN_STATUSES,
   ReturnStatus,
 } from '../enums';
 import { type NewReturnRequest, type ReturnPatch, type ReturnRequest } from '../model/return-request.model';
@@ -260,6 +261,23 @@ export class ReturnRequestRepository {
       .where({ id })
       .first<{ refund_payout_encrypted: string | null } | undefined>();
     return row?.refund_payout_encrypted ?? null;
+  }
+
+  /**
+   * The seller orders among `sellerOrderIds` with an open return (spec 18 §2): any open status, a
+   * `rejected` one only while its escalation window runs. Over uq_return_requests_seller_order_id_open.
+   */
+  async findOpenSellerOrderIds(sellerOrderIds: readonly string[], now: Date): Promise<string[]> {
+    if (sellerOrderIds.length === 0) return [];
+    const rows = await this.db
+      .knex<ReturnRequestTable>(T)
+      .distinct('seller_order_id')
+      .whereIn('seller_order_id', [...new Set(sellerOrderIds)])
+      .whereIn('status', [...OPEN_RETURN_STATUSES])
+      .where((qb) => {
+        void qb.whereNot({ status: ReturnStatus.REJECTED }).orWhere('escalation_deadline_at', '>', now);
+      });
+    return rows.map((row) => row.seller_order_id);
   }
 
   /**

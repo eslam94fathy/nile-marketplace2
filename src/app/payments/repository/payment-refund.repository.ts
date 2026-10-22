@@ -216,18 +216,37 @@ export class PaymentRefundRepository {
   }
 
   /**
-   * K-11: another refund of the payment was sent, done or recorded since `since`; a same-amount refund
-   * sent now could be replayed by Kashier instead of run. Over idx_payment_refunds_payment_id.
+   * K-11, K-13: the payment is not free for another automated refund. Either another refund of it was
+   * sent, done, recorded or handed to an admin since `since` (a same-amount refund sent now could be
+   * replayed by Kashier instead of run), or one of its refunds waits for an admin with an unknown or
+   * replayed outcome (it may have run, so Kashier's totals can't be trusted until it is resolved). Over
+   * idx_payment_refunds_payment_id.
    */
   async hasRecentAttempt(
     paymentId: string,
     exceptId: string,
     since: Date,
+    unresolvedPrefixes: readonly string[],
     trx: DbTransaction,
   ): Promise<boolean> {
     const { rows } = await trx.raw<{ rows: { found: boolean }[] }>(
-      `SELECT EXISTS (SELECT 1 FROM ${T} WHERE payment_id = ? AND id <> ? AND status IN (?, ?, ?) AND updated_at > ?) AS found`,
-      [paymentId, exceptId, RefundStatus.PROCESSING, RefundStatus.SUCCEEDED, RefundStatus.RECORDED, since],
+      `SELECT EXISTS (
+         SELECT 1 FROM ${T}
+          WHERE payment_id = ? AND id <> ?
+            AND ((status IN (?, ?, ?, ?) AND updated_at > ?)
+                 OR (status = ? AND (${unresolvedPrefixes.map(() => 'last_error LIKE ?').join(' OR ') || 'FALSE'})))
+       ) AS found`,
+      [
+        paymentId,
+        exceptId,
+        RefundStatus.PROCESSING,
+        RefundStatus.SUCCEEDED,
+        RefundStatus.RECORDED,
+        RefundStatus.PENDING_MANUAL,
+        since,
+        RefundStatus.PENDING_MANUAL,
+        ...unresolvedPrefixes.map((prefix) => `${prefix}%`),
+      ],
     );
     return rows[0]?.found === true;
   }

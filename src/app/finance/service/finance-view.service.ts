@@ -9,6 +9,10 @@ import { accountNotFound } from '../errors';
 import { type AccountKey, type FinanceAccount, type LedgerEntry } from '../model/ledger.model';
 import { type FinanceAccountRepository } from '../repository/finance-account.repository';
 import { type LedgerEntryRepository } from '../repository/ledger-entry.repository';
+import { type IOrderingDirectory } from '../../ordering';
+import { type IReturnsDirectory } from '../../returns';
+import { type SellerOrderHold } from '../model/hold.model';
+import { type SellerOrderHoldRepository } from '../repository/seller-order-hold.repository';
 
 /** An account with its owner's display name (spec 12 §4, FI-11). */
 export interface AccountView {
@@ -21,19 +25,61 @@ export interface Page<T> {
   meta: PageMeta;
 }
 
-const SELLER_ACCOUNTS: readonly AccountType[] = [AccountType.SELLER_PAYABLE];
+const SELLER_ACCOUNTS: readonly AccountType[] = [AccountType.SELLER_PAYABLE, AccountType.SELLER_PENDING];
 const AGENT_ACCOUNTS: readonly AccountType[] = [AccountType.AGENT_FEE_PAYABLE, AccountType.AGENT_COD_CASH];
 
 /** Balance and statement reads (spec 12 §4.1). No locks: the ledger is append-only. */
+/** One row of the seller's holds view. */
+export interface SellerHoldView {
+  hold: SellerOrderHold;
+  orderNumber: string;
+  blockedByReturn: boolean;
+}
+
 @injectable()
 export class FinanceViewService {
   constructor(
+    @inject(TOKENS.SellerOrderHoldRepository) private readonly holds: SellerOrderHoldRepository,
+    @inject(TOKENS.OrderingDirectory) private readonly ordering: IOrderingDirectory,
+    @inject(TOKENS.ReturnsDirectory) private readonly returns: IReturnsDirectory,
     @inject(TOKENS.FinanceAccountRepository) private readonly accounts: FinanceAccountRepository,
     @inject(TOKENS.LedgerEntryRepository) private readonly entries: LedgerEntryRepository,
     @inject(TOKENS.SellerDirectory) private readonly sellers: ISellerDirectory,
     @inject(TOKENS.DeliveryAgentDirectory) private readonly agents: IDeliveryAgentDirectory,
     @inject(TOKENS.Logger) private readonly logger: ILogger,
   ) {}
+
+  /**
+   * `GET /seller/finance/holds` (spec 12 §8.6, FI-17): the order numbers from ordering and whether an open
+   * return keeps each hold, in two batched reads.
+   */
+  async sellerHolds(sellerId: string, query: ParsedListQuery): Promise<Page<SellerHoldView>> {
+    const page = toPage(
+      (await this.holds.listForSeller(sellerId, query)).map((hold) => ({ ...hold, id: hold.sellerOrderId })),
+      query,
+      (hold) => hold.releaseAfter,
+    );
+    const ids = page.items.map((hold) => hold.sellerOrderId);
+    if (ids.length === 0) return { items: [], meta: page.meta };
+    const [parties, blocked] = await Promise.all([
+      this.ordering.getNotificationParties({ sellerOrderIds: ids }),
+      this.returns.getOpenReturnSellerOrderIds(ids),
+    ]);
+    const numbers = new Map(
+      parties.flatMap((party) =>
+        party.sellerOrders.map((s) => [s.sellerOrderId, party.orderNumber] as const),
+      ),
+    );
+    return {
+      meta: page.meta,
+      items: page.items.map((hold) => {
+        const orderNumber = numbers.get(hold.sellerOrderId);
+        // seller_order_holds.seller_order_id is a RESTRICT FK: the seller order exists.
+        if (orderNumber === undefined) throw new Error(`hold ${hold.sellerOrderId} has no order`);
+        return { hold, orderNumber, blockedByReturn: blocked.has(hold.sellerOrderId) };
+      }),
+    };
+  }
 
   async listAccounts(query: ParsedListQuery): Promise<Page<AccountView>> {
     const page = toPage(await this.accounts.list(query), query, (account) =>

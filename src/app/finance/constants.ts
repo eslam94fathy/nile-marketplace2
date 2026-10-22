@@ -5,13 +5,20 @@ export const FINANCE_TABLES = {
   LEDGER_ENTRIES: 'ledger_entries',
   COD_REMITTANCES: 'cod_remittances',
   PAYOUTS: 'payouts',
+  SELLER_ORDER_HOLDS: 'seller_order_holds',
 } as const;
 
 /** Queue of the ledger consumer (docs/spec/02-events.md §2). */
 export const LEDGER_QUEUE = 'finance.ledger';
 
-/** The only account allowed below 0 (spec 12 §1.1, FI-1); `chk_finance_accounts_balance_non_negative`. */
-export const MAY_GO_NEGATIVE: readonly AccountType[] = [AccountType.PLATFORM_DELIVERY_REVENUE];
+/**
+ * Accounts allowed below 0 (spec 12 §1.1, FI-1, FI-12); `chk_finance_accounts_balance_non_negative`. A
+ * payout never takes a seller below 0 (strict bookings, §8.1).
+ */
+export const MAY_GO_NEGATIVE: readonly AccountType[] = [
+  AccountType.PLATFORM_DELIVERY_REVENUE,
+  AccountType.SELLER_PAYABLE,
+];
 
 /** Platform accounts have no owner (owner_id null). */
 export const PLATFORM_ACCOUNT_TYPES: readonly AccountType[] = [
@@ -34,6 +41,7 @@ export const SELLER_FINANCE_PATHS = {
   BALANCE: '/seller/finance/balance',
   ENTRIES: '/seller/finance/entries',
   PAYOUTS: '/seller/finance/payouts',
+  HOLDS: '/seller/finance/holds',
 } as const;
 
 /** The agent's own paths (spec 12 §4.3). */

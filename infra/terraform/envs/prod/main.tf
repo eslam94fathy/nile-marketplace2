@@ -192,6 +192,8 @@ module "environment" {
     SUPPORT_JOBS_BATCH_SIZE                   = "100"
     JOB_RETURNS_INTERVAL_MS                   = "60000"
     RETURN_JOBS_BATCH_SIZE                    = "100"
+    JOB_SELLER_HOLD_RELEASE_INTERVAL_MS       = "3600000"
+    SELLER_HOLD_BATCH_SIZE                    = "500"
 
     EMAIL_HTTP_TIMEOUT_MS = "10000"
     MAILJET_FROM_EMAIL    = var.mailjet_from_email

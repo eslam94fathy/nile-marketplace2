@@ -8,7 +8,7 @@ import {
   type RemittanceDto,
   type SellerBalanceDto,
 } from '../../src/app/finance/dto/finance-response.dto';
-import { deliveryBooking } from '../../src/app/finance/model/booking-rules';
+import { deliveryBooking, holdReleaseBooking } from '../../src/app/finance/model/booking-rules';
 import { type LedgerService } from '../../src/app/finance/service/ledger.service';
 import { TOKENS } from '../../src/lib/di';
 import { Money } from '../../src/lib/money';
@@ -39,13 +39,18 @@ describe('finance: seller and agent self-service', () => {
   const refused = (res: request.Response, status: number, code: string) =>
     expect([res.status, errorBody(res).error.code], JSON.stringify(res.body)).toEqual([status, code]);
 
-  /** A COD delivery booked through the ledger: seller net 90, agent share 14, cash 160. */
-  const delivered = (sellerId: string, agentId: string) =>
-    t.infra.db.run((trx) =>
-      t.container.resolve<LedgerService>(TOKENS.LedgerService).post(
+  /**
+   * A COD delivery booked through the ledger: seller net 90 (held, spec 12 §8.2), agent share 14, cash 160;
+   * with `released`, its hold released as the job does (§8.3).
+   */
+  const delivered = async (sellerId: string, agentId: string, released = false) => {
+    const sellerOrderId = randomUUID();
+    const ledger = t.container.resolve<LedgerService>(TOKENS.LedgerService);
+    await t.infra.db.run((trx) =>
+      ledger.post(
         deliveryBooking(
           {
-            sellerOrderId: randomUUID(),
+            sellerOrderId,
             sellerId,
             agentId,
             paymentMethod: 'cod',
@@ -61,6 +66,12 @@ describe('finance: seller and agent self-service', () => {
         trx,
       ),
     );
+    if (released) {
+      await t.infra.db.run((trx) =>
+        ledger.post(holdReleaseBooking({ sellerOrderId, sellerId, heldAmount: m('90.00') }), trx),
+      );
+    }
+  };
   async function seller(status = 'approved') {
     const { sellerId, userId } = await fx().insertSeller(status);
     return { sellerId, token: await signTestAccessToken({ sub: userId, role: 'seller' }) };
@@ -82,22 +93,27 @@ describe('finance: seller and agent self-service', () => {
     it('balance is 0.00 with no updatedAt before the first delivery, then what is owed', async () => {
       const me = await seller();
       expect(successBody<SellerBalanceDto>(await get(me.token, '/seller/finance/balance')).data).toEqual({
-        balance: '0.00',
+        available: '0.00',
+        pending: '0.00',
         updatedAt: null,
       });
       expect(successBody<LedgerEntryDto[]>(await get(me.token, '/seller/finance/entries')).data).toEqual([]);
 
       await delivered(me.sellerId, randomUUID());
+      const held = successBody<SellerBalanceDto>(await get(me.token, '/seller/finance/balance')).data;
+      expect([held.available, held.pending]).toEqual(['0.00', '90.00']);
+      expect(typeof held.updatedAt).toBe('string');
+
+      await delivered(me.sellerId, randomUUID(), true);
       const balance = successBody<SellerBalanceDto>(await get(me.token, '/seller/finance/balance')).data;
-      expect(balance.balance).toBe('90.00');
-      expect(typeof balance.updatedAt).toBe('string');
+      expect([balance.available, balance.pending]).toEqual(['90.00', '90.00']);
     });
 
     it('statement and payouts show only my own rows', async () => {
       const me = await seller();
       const other = await seller();
-      await delivered(me.sellerId, randomUUID());
-      await delivered(other.sellerId, randomUUID());
+      await delivered(me.sellerId, randomUUID(), true);
+      await delivered(other.sellerId, randomUUID(), true);
       for (const [payee, ref] of [
         [me.sellerId, 'MINE'],
         [other.sellerId, 'THEIRS'],
@@ -115,7 +131,7 @@ describe('finance: seller and agent self-service', () => {
       const entries = successBody<LedgerEntryDto[]>(await get(me.token, '/seller/finance/entries')).data;
       expect(entries.map((e) => [e.entryType, e.amount, e.balanceAfter])).toEqual([
         ['seller_payout', '40.00', '50.00'],
-        ['seller_net_earned', '90.00', '90.00'],
+        ['seller_net_released', '90.00', '90.00'],
       ]);
       const filtered = successBody<LedgerEntryDto[]>(
         await get(me.token, '/seller/finance/entries?entryType=seller_payout'),
@@ -130,7 +146,7 @@ describe('finance: seller and agent self-service', () => {
     it('a suspended seller still reads its money (FI-8)', async () => {
       const me = await seller('suspended');
       await delivered(me.sellerId, randomUUID());
-      expect(successBody<SellerBalanceDto>(await get(me.token, '/seller/finance/balance')).data.balance).toBe(
+      expect(successBody<SellerBalanceDto>(await get(me.token, '/seller/finance/balance')).data.pending).toBe(
         '90.00',
       );
     });

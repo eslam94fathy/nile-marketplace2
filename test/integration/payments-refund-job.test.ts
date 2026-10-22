@@ -214,6 +214,38 @@ describe('payments: the refund job', () => {
     expect(fake.refundCalls.length).toBe(calls);
   });
 
+  it('holds the other refunds of a payment while one waits for an admin with an unknown outcome (K-13)', async () => {
+    const p = await paidKashier();
+    const unknown = await due(p.paymentId, '30.00');
+    fake.scriptRefund('unknown_outcome');
+    await run();
+    expect((await refund(unknown)).status).toBe('pending_manual');
+    await age(unknown, 10);
+    const next = await due(p.paymentId, '30.00');
+    const calls = fake.refundCalls.length;
+    await run();
+    expect(fake.refundCalls.length).toBe(calls);
+    expect(await refund(next)).toMatchObject({ status: 'pending_auto', attempt_count: 0 });
+
+    // The admin checked the dashboard and recorded it; once out of the spacing window the next one runs.
+    await knex()('payment_refunds')
+      .where({ id: unknown })
+      .update({
+        status: 'recorded',
+        recorded_by_user_id: await fx.insertUser('admin'),
+        recorded_at: new Date(),
+        provider_refund_ref: 'TX-DASHBOARD',
+      });
+    await age(unknown, 10);
+    await knex()('payment_refunds')
+      .where({ id: next })
+      .update({ next_attempt_at: new Date(Date.now() - 1000) });
+    const before = fake.refundCalls.length;
+    await run();
+    expect(fake.refundCalls.length).toBe(before + 1);
+    expect((await refund(next)).status).not.toBe('pending_auto');
+  });
+
   it('a refund left processing is handed to the admin without a call (K-10)', async () => {
     const p = await paidKashier();
     const id = await due(p.paymentId, '10.00', { status: 'processing', attempt_count: 1 });

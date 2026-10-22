@@ -8,10 +8,18 @@
 import { type Router } from 'express';
 import { type DependencyContainer } from 'tsyringe';
 import { type JwtVerifier } from '../../lib/auth';
-import { type ApiEnv } from '../../lib/config';
+import { type ApiEnv, type Env } from '../../lib/config';
 import { TOKENS } from '../../lib/di';
+import { type JobDefinition } from '../../lib/jobs';
 import { type PgErrorMapper } from '../../lib/error';
-import { type EventHandlerDefinition, OrderClosed, SellerOrderDelivered } from '../../lib/events';
+import {
+  type EventHandlerDefinition,
+  OrderClosed,
+  PaymentRefunded,
+  PaymentRefundRecorded,
+  ReturnCompleted,
+  SellerOrderDelivered,
+} from '../../lib/events';
 import { type OpenApiRegistry } from '../../lib/http';
 import { type ILogger } from '../../lib/logger';
 import { requireIdempotency } from '../../lib/middleware';
@@ -23,6 +31,7 @@ import { registerFinanceConstraintErrors } from './errors';
 import { CodRemittanceRepository } from './repository/cod-remittance.repository';
 import { FinanceAccountRepository } from './repository/finance-account.repository';
 import { LedgerEntryRepository } from './repository/ledger-entry.repository';
+import { SellerOrderHoldRepository } from './repository/seller-order-hold.repository';
 import { PayoutRepository } from './repository/payout.repository';
 import { financeRoutes } from './routes';
 import { CodRemittanceService } from './service/cod-remittance.service';
@@ -30,6 +39,7 @@ import { FinanceViewService } from './service/finance-view.service';
 import { FinanceDirectory } from './service/finance-directory.service';
 import { LedgerBookingService } from './service/ledger-booking.service';
 import { LedgerService } from './service/ledger.service';
+import { HoldReleaseJob } from './service/hold-release.job';
 import { PayoutService } from './service/payout.service';
 
 export { FinanceErrorCode } from './errors';
@@ -41,6 +51,7 @@ function registerFinanceCore(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.FinanceAccountRepository, FinanceAccountRepository);
   container.registerSingleton(TOKENS.LedgerEntryRepository, LedgerEntryRepository);
   container.registerSingleton(TOKENS.LedgerService, LedgerService);
+  container.registerSingleton(TOKENS.SellerOrderHoldRepository, SellerOrderHoldRepository);
 }
 
 /** worker process: the `finance.ledger` consumer only; it resolves no names (spec 12 FI-10). */
@@ -49,13 +60,29 @@ export function registerFinanceWorker(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.LedgerBookingService, LedgerBookingService);
 }
 
-/** Consumer `finance.ledger` (spec 12 §1.2, spec 02 §2). */
+/** `seller-hold-release` (spec 12 §8.3): the worker's holding-period job. Needs returns registered. */
+export function createFinanceJobs(
+  container: DependencyContainer,
+  env: Pick<Env, 'JOB_SELLER_HOLD_RELEASE_INTERVAL_MS'>,
+): JobDefinition[] {
+  container.registerSingleton(TOKENS.HoldReleaseJob, HoldReleaseJob);
+  const job = container.resolve<HoldReleaseJob>(TOKENS.HoldReleaseJob);
+  return [
+    {
+      name: 'seller-hold-release',
+      intervalMs: env.JOB_SELLER_HOLD_RELEASE_INTERVAL_MS,
+      run: () => job.run(),
+    },
+  ];
+}
+
+/** Consumer `finance.ledger` (spec 12 §1.2, §8, spec 02 §2). */
 export function createFinanceHandlers(container: DependencyContainer): EventHandlerDefinition[] {
   const bookings = container.resolve<LedgerBookingService>(TOKENS.LedgerBookingService);
   return [
     {
       name: LEDGER_QUEUE,
-      events: [SellerOrderDelivered, OrderClosed],
+      events: [SellerOrderDelivered, OrderClosed, ReturnCompleted, PaymentRefunded, PaymentRefundRecorded],
       handle: (envelope, trx) => bookings.handle(envelope, trx),
     },
   ];

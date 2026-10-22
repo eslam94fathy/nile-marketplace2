@@ -111,6 +111,8 @@ const values = {
   SUPPORT_JOBS_BATCH_SIZE: '100',
   JOB_RETURNS_INTERVAL_MS: '60000',
   RETURN_JOBS_BATCH_SIZE: '100',
+  JOB_SELLER_HOLD_RELEASE_INTERVAL_MS: '60000',
+  SELLER_HOLD_BATCH_SIZE: '100',
   // Web Push (spec 13 §8.6): the push services browsers use (NO-22)
   PUSH_ENDPOINT_HOST_ALLOWLIST:
     'fcm.googleapis.com,updates.push.services.mozilla.com,*.notify.windows.com,web.push.apple.com',

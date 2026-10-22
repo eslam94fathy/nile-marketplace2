@@ -40,10 +40,13 @@ import { ReturnJobs } from './service/return-jobs.job';
 import { ReturnLifecycleService } from './service/return-lifecycle.service';
 import { ReturnRequestService } from './service/return-request.service';
 import { ReturnShipmentUpdateService } from './service/return-shipment-update.service';
+import { ReturnsDirectory } from './service/returns-directory.service';
 import { ReturnViewService } from './service/return-view.service';
 
 export { ReturnsErrorCode } from './errors';
 export { ReturnStatus, ReturnReason, OPEN_RETURN_STATUSES, type OpenReturnStatus } from './enums';
+/** Inject with `TOKENS.ReturnsDirectory` (finance, backoffice). */
+export type { IReturnsDirectory } from './service/returns-directory.service';
 
 /** What both processes need: the repositories, the transition path and the completion (UC-RE-7). */
 function registerReturnsCore(container: DependencyContainer): void {
@@ -53,6 +56,7 @@ function registerReturnsCore(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.ReturnHistoryRepository, ReturnHistoryRepository);
   container.registerSingleton(TOKENS.ReturnLifecycleService, ReturnLifecycleService);
   container.registerSingleton(TOKENS.ReturnCompletionService, ReturnCompletionService);
+  container.registerSingleton(TOKENS.ReturnsDirectory, ReturnsDirectory);
 }
 
 /**

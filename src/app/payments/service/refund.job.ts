@@ -95,7 +95,10 @@ export class RefundJob {
     return true;
   }
 
-  /** UC-PA-6 step 1, with the K-11 spacing: a payment with a refund attempt in the last minutes waits. */
+  /**
+   * UC-PA-6 step 1, with the K-11 spacing: a payment with a refund attempt in the last minutes waits, and so
+   * does a payment with a refund of unknown or replayed outcome until an admin resolves it (K-13).
+   */
   private claim(id: string): Promise<PaymentRefund | null> {
     const now = this.clock.now();
     return this.tx.run(async (trx) => {
@@ -108,7 +111,8 @@ export class RefundJob {
         return null;
       }
       const since = addDuration(now, -REFUND_SPACING_MINUTES, TimeUnit.MINUTE);
-      if (await this.refunds.hasRecentAttempt(refund.paymentId, refund.id, since, trx)) {
+      const unresolved = [RefundLogEvent.OUTCOME_UNKNOWN, RefundLogEvent.REPLAYED];
+      if (await this.refunds.hasRecentAttempt(refund.paymentId, refund.id, since, unresolved, trx)) {
         await this.refunds.defer(id, addDuration(now, REFUND_SPACING_MINUTES, TimeUnit.MINUTE), trx);
         return null;
       }

@@ -40,7 +40,15 @@ export class LedgerService {
     @inject(TOKENS.LedgerEntryRepository) private readonly entries: LedgerEntryRepository,
   ) {}
 
-  async post(booking: Booking, trx: DbTransaction): Promise<LedgerEntry[]> {
+  /**
+   * `strict` (admin money out: payouts, remittances): no account may end below 0, not even one that is
+   * allowed to (a seller with a negative balance gets no payout, spec 12 §8.1).
+   */
+  async post(
+    booking: Booking,
+    trx: DbTransaction,
+    options: { strict?: boolean } = {},
+  ): Promise<LedgerEntry[]> {
     if (booking.postings.length === 0) return [];
     for (const posting of booking.postings) {
       if (!posting.amount.greaterThan(Money.zero())) {
@@ -58,7 +66,7 @@ export class LedgerService {
       const account = byKey.get(key);
       if (!account) throw new Error(`finance account ${key} was not locked`);
       const balanceAfter = applyPosting(balances.get(key) ?? account.balance, posting);
-      if (balanceAfter.isNegative() && !mayGoNegative(account.accountType)) {
+      if (balanceAfter.isNegative() && (options.strict === true || !mayGoNegative(account.accountType))) {
         throw new InsufficientBalanceError(posting.account, balances.get(key) ?? account.balance);
       }
       balances.set(key, balanceAfter);

@@ -10,6 +10,7 @@ import { signKashierWebhook } from '../../src/pkg/payments';
 import { type DeliveryFlow, startDeliveryFlow } from '../helpers/delivery-flow';
 import { successBody } from '../helpers/http';
 import { API } from '../helpers/identity';
+import { orderFixtures } from '../helpers/order-fixtures';
 import { CAIRO_FEE } from '../helpers/ordering-api';
 import { TEST_KASHIER_API_KEY } from '../helpers/test-env';
 
@@ -81,12 +82,23 @@ describe('finance: ledger bookings', () => {
     flow.worker.db.run((trx) =>
       flow.workerContainer.resolve<LedgerBookingService>(TOKENS.LedgerBookingService).handle(event, trx),
     );
-  const delivered = (overrides: Record<string, unknown> = {}) => {
-    const sellerOrderId = randomUUID();
+  /** A fixture seller order (the hold references it, spec 12 §8.1), of `sellerId` when given. */
+  const sellerOrderOf = async (sellerId?: string) => {
+    const chain = await orderFixtures(knex()).insertOrderChain();
+    if (sellerId === undefined) return { sellerId: chain.sellerId, sellerOrderId: chain.sellerOrderId };
+    return {
+      sellerId,
+      sellerOrderId: await orderFixtures(knex()).insertSellerOrder(chain.orderId, sellerId),
+    };
+  };
+  const delivered = async (overrides: Record<string, unknown> = {}) => {
+    const { sellerId, sellerOrderId } = await sellerOrderOf(
+      typeof overrides.sellerId === 'string' ? overrides.sellerId : undefined,
+    );
     return envelope('seller_order.delivered', sellerOrderId, {
       sellerOrderId,
       orderId: randomUUID(),
-      sellerId: randomUUID(),
+      sellerId,
       paymentMethod: 'cod',
       subtotal: '100.00',
       commissionRate: '0.1000',
@@ -133,11 +145,11 @@ describe('finance: ledger bookings', () => {
       .first<{ commission: string; seller_net: string }>('commission', 'seller_net');
     expect(await entriesOf('seller_order', entry.sellerOrderId)).toEqual([
       expect.objectContaining({
-        account_type: 'seller_payable',
+        account_type: 'seller_pending',
         owner_id: entry.sellerId,
         direction: 'credit',
         amount: sellerOrder?.seller_net,
-        entry_type: 'seller_net_earned',
+        entry_type: 'seller_net_held',
       }),
       expect.objectContaining({
         account_type: 'platform_commission_revenue',
@@ -170,7 +182,7 @@ describe('finance: ledger bookings', () => {
         entry_type: 'platform_fee_earned',
       }),
     ]);
-    expect(await balance('seller_payable', entry.sellerId)).toBe(sellerOrder?.seller_net);
+    expect(await balance('seller_pending', entry.sellerId)).toBe(sellerOrder?.seller_net);
     expect(await balance('agent_fee_payable', agent.agentId)).toBe(share);
     expect(await balance('agent_cod_cash', agent.agentId)).toBe('150.00');
     expect(await balance('platform_commission_revenue')).toBe(
@@ -227,7 +239,7 @@ describe('finance: ledger bookings', () => {
 
     const share = String((await deliveredPayload(sellerOrderId)).agentFeeShare);
     expect((await entriesOf('seller_order', sellerOrderId)).map((e) => e.account_type)).toEqual([
-      'seller_payable',
+      'seller_pending',
       'platform_commission_revenue',
       'agent_fee_payable',
       'platform_delivery_revenue',
@@ -287,7 +299,7 @@ describe('finance: ledger bookings', () => {
       envelope('order.closed', orderId, { orderId, paymentMethod: 'kashier', deliveryFee: '60.00' }),
     );
     expect(await balance('platform_delivery_revenue')).toBe(plus(before, '60.00'));
-    for (const sellerOrder of [delivered(), delivered()]) {
+    for (const sellerOrder of [await delivered(), await delivered()]) {
       sellerOrder.payload = {
         ...sellerOrder.payload,
         orderId,
@@ -302,18 +314,19 @@ describe('finance: ledger bookings', () => {
   it('a COD fee never collected (S-3) leaves delivery revenue down by the shares (FI-1)', async () => {
     const before = await balance('platform_delivery_revenue');
     const orderId = randomUUID();
-    await consume(delivered({ orderId }));
-    await consume(delivered({ orderId }));
+    await consume(await delivered({ orderId }));
+    await consume(await delivered({ orderId }));
     await consume(envelope('order.closed', orderId, { orderId, paymentMethod: 'cod', deliveryFee: '60.00' }));
     expect(await balance('platform_delivery_revenue')).toBe(plus(before, '-28.00'));
   });
 
   it('parallel bookings on the same new accounts never deadlock and add up exactly (FI-3)', async () => {
-    const sellerId = randomUUID();
+    const { sellerId } = await sellerOrderOf();
     const agentId = randomUUID();
-    const events = Array.from({ length: 8 }, () => delivered({ sellerId, agentId }));
+    const events: EventEnvelope[] = [];
+    for (let i = 0; i < 8; i += 1) events.push(await delivered({ sellerId, agentId }));
     await Promise.all(events.map(consume));
-    expect(await balance('seller_payable', sellerId)).toBe('720.00');
+    expect(await balance('seller_pending', sellerId)).toBe('720.00');
     expect(await balance('agent_fee_payable', agentId)).toBe('112.00');
     expect(await balance('agent_cod_cash', agentId)).toBe('800.00');
 
@@ -327,7 +340,7 @@ describe('finance: ledger bookings', () => {
   });
 
   it('an unusable payload is permanent and writes nothing (FI-4)', async () => {
-    const event = delivered({ sellerNet: 'ninety' });
+    const event = await delivered({ sellerNet: 'ninety' });
     await expect(consume(event)).rejects.toBeInstanceOf(PermanentEventError);
     expect(await entriesOf('seller_order', event.aggregateId)).toEqual([]);
   });

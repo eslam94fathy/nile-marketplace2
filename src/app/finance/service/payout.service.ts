@@ -72,6 +72,8 @@ export class PayoutService {
             ],
           },
           trx,
+          // Payouts need amount <= balance, also when the balance may go negative (FI-12).
+          { strict: true },
         );
         await this.audit.record(
           {
