@@ -15,6 +15,7 @@ put() { aws secretsmanager put-secret-value --secret-id "nile/$ENV/$1" --secret-
 | `SECRETS_ENCRYPTION_KEYS` | JSON `{"<id>": "<base64 of 32 random bytes>"}`: `jq -n --arg id "$ID" --arg key "$(openssl rand -base64 32)" '{($id): $key}'`; id = `secrets_encryption_active_key_id` |
 | `KASHIER_API_KEY`, `KASHIER_SECRET_KEY`, `KASHIER_MERCHANT_ID` | From the Kashier dashboard: **test** keys for staging, live for prod (`KASHIER_MODE` follows). No quoting needed here (PA-16 is about `.env` files) |
 | `MAILJET_API_KEY`, `MAILJET_SECRET_KEY` | From Mailjet, with the verified sender in `mailjet_from_email` (P1-Q8) |
+| `VAPID_PRIVATE_KEY` | Web Push (spec 13 §8.6, R2-Q7), one pair per environment, on a trusted machine: `npx web-push generate-vapid-keys --json`. The `privateKey` goes here; the `publicKey` goes into `vapid_public_key` in tfvars (it is public: browsers receive it from `GET /push/config`) |
 
 Delete the local `jwt.pem` and anything else written to disk once stored.
 
@@ -30,6 +31,8 @@ Delete the local `jwt.pem` and anything else written to disk once stored.
 **Database password:** `tf envs/<env> apply -replace=module.environment.module.rds.random_password.master` changes the RDS password and the `DATABASE_URL` secret together; force a new deployment right after (running tasks keep their open connections until they restart, new connections fail in between: do it in a quiet hour).
 
 **Redis AUTH token** and **RabbitMQ password**: same pattern with `module.environment.module.redis.random_password.auth` / `module.environment.module.mq.random_password.app`; ElastiCache and Amazon MQ apply the change in place. Expect a short reconnect.
+
+**VAPID key pair** (Web Push): there is no overlap period. A push service only accepts the key a browser subscribed with, so a new pair invalidates **every** subscription: each browser resubscribes when the user next opens the web app (it calls `GET /push/config` and `pushManager.subscribe` again), and gets no push until then. Rotate only after a leak, or when announced: `put VAPID_PRIVATE_KEY`, set `vapid_public_key`, `terraform apply`, force a new deployment of `api` and `worker` together. Pushes to old subscriptions then come back `403`, logged as `PUSH_SEND_FAILED`; the browser's next registration replaces them.
 
 **Kashier / Mailjet keys:** create the new key at the provider, `put` it, force a new deployment, then revoke the old one at the provider.
 

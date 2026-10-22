@@ -7,6 +7,7 @@ import {
   migrateEnvSchema,
   seedAdminEnvSchema,
   workerEnvSchema,
+  realtimeEnvSchema,
 } from '..';
 
 function invalidKeys(fn: () => unknown): string[] {
@@ -51,10 +52,23 @@ describe('lib/config per-process env schemas (P1-Q1)', () => {
     const worker: object = loadEnv(workerEnvSchema, input);
     const api: object = loadEnv(apiEnvSchema, input);
     const migrate: object = loadEnv(migrateEnvSchema, input);
+    const realtime: object = loadEnv(realtimeEnvSchema, input);
     expect(worker).not.toHaveProperty('JWT_PRIVATE_KEY');
-    expect(worker).not.toHaveProperty('REDIS_URL');
+    // The realtime emitter (spec 15 §6) reverses CA-8: the worker has Redis now.
+    expect(worker).toHaveProperty('REDIS_URL');
     expect(api).not.toHaveProperty('MAILJET_SECRET_KEY');
     expect(api).not.toHaveProperty('MAILJET_API_KEY');
+    // The gateway verifies tokens but never signs them, and holds no broker or storage keys.
+    for (const key of [
+      'JWT_PRIVATE_KEY',
+      'RABBITMQ_URL',
+      'SECRETS_ENCRYPTION_KEYS',
+      'STORAGE_BUCKET',
+      'KASHIER_API_KEY',
+    ]) {
+      expect(realtime).not.toHaveProperty(key);
+    }
+    expect(realtime).toHaveProperty('JWT_PUBLIC_KEYS');
     expect(Object.keys(migrate).sort()).toEqual(
       [
         'DATABASE_URL',
@@ -171,19 +185,34 @@ describe('lib/config per-process env schemas (P1-Q1)', () => {
     expect(invalidKeys(() => loadEnv(workerEnvSchema, noMailpitUrl))).toEqual(['MAILPIT_URL']);
     expect(
       invalidKeys(() =>
-        loadEnv(workerEnvSchema, testEnvInput({ NODE_ENV: 'production', DB_SSL: 'true', ...KASHIER_TEST })),
+        loadEnv(
+          workerEnvSchema,
+          testEnvInput({ NODE_ENV: 'production', DB_SSL: 'true', ...KASHIER_TEST, ...S3_STORAGE }),
+        ),
       ),
     ).toEqual(['EMAIL_PROVIDER']);
   });
 
   it('payments: fake only outside staging/production; kashier needs its keys and a host matching its mode', () => {
     expect(
-      invalidKeys(() => loadEnv(apiEnvSchema, testEnvInput({ NODE_ENV: 'staging', DB_SSL: 'true' }))),
+      invalidKeys(() =>
+        loadEnv(apiEnvSchema, testEnvInput({ NODE_ENV: 'staging', DB_SSL: 'true', ...S3_STORAGE })),
+      ),
     ).toEqual(['PAYMENT_GATEWAY']);
-    // The worker only reads session statuses: no secret key, merchant id or URLs needed (PA-13).
+    // The worker reads session statuses and refunds (K-8): the secret key and the FEP host, no merchant id
+    // or URLs.
     expect(invalidKeys(() => loadEnv(workerEnvSchema, testEnvInput({ PAYMENT_GATEWAY: 'kashier' })))).toEqual(
-      ['KASHIER_BASE_URL', 'KASHIER_MODE'],
+      ['KASHIER_BASE_URL', 'KASHIER_FEP_BASE_URL', 'KASHIER_MODE', 'KASHIER_SECRET_KEY'],
     );
+    expect(() => loadEnv(workerEnvSchema, testEnvInput(KASHIER_TEST))).not.toThrow();
+    expect(
+      invalidKeys(() =>
+        loadEnv(
+          workerEnvSchema,
+          testEnvInput({ ...KASHIER_TEST, KASHIER_FEP_BASE_URL: 'https://fep.kashier.io' }),
+        ),
+      ),
+    ).toEqual(['KASHIER_FEP_BASE_URL']);
     expect(invalidKeys(() => loadEnv(apiEnvSchema, testEnvInput({ PAYMENT_GATEWAY: 'kashier' })))).toEqual([
       'KASHIER_BASE_URL',
       'KASHIER_MERCHANT_ID',
@@ -217,6 +246,7 @@ describe('lib/config deployed-environment guards (P8 security review F-3)', () =
       DB_SSL: 'true',
       API_DOCS_ENABLED: 'false',
       ...KASHIER_TEST,
+      ...S3_STORAGE,
       ...overrides,
     });
 
@@ -248,7 +278,54 @@ describe('lib/config deployed-environment guards (P8 security review F-3)', () =
     ]);
     expect(() => loadEnv(apiEnvSchema, testEnvInput(httpInvite))).not.toThrow();
   });
+
+  it('storage: minio only outside staging/production, with its endpoint and keys; https media URLs once deployed', () => {
+    const minio = { STORAGE_PROVIDER: 'minio' };
+    expect(invalidKeys(() => loadEnv(apiEnvSchema, deployed('production', minio)))).toEqual([
+      'STORAGE_PROVIDER',
+    ]);
+    expect(invalidKeys(() => loadEnv(workerEnvSchema, deployed('staging', minio)))).toEqual([
+      'EMAIL_PROVIDER',
+      'STORAGE_PROVIDER',
+    ]);
+    const bare = testEnvInput();
+    for (const key of [
+      'STORAGE_ENDPOINT',
+      'STORAGE_PUBLIC_ENDPOINT',
+      'STORAGE_ACCESS_KEY_ID',
+      'STORAGE_SECRET_ACCESS_KEY',
+    ]) {
+      delete bare[key];
+    }
+    expect(invalidKeys(() => loadEnv(apiEnvSchema, bare))).toEqual([
+      'STORAGE_ACCESS_KEY_ID',
+      'STORAGE_ENDPOINT',
+      'STORAGE_PUBLIC_ENDPOINT',
+      'STORAGE_SECRET_ACCESS_KEY',
+    ]);
+    // The worker signs nothing for browsers.
+    expect(invalidKeys(() => loadEnv(workerEnvSchema, bare))).toEqual([
+      'STORAGE_ACCESS_KEY_ID',
+      'STORAGE_ENDPOINT',
+      'STORAGE_SECRET_ACCESS_KEY',
+    ]);
+    // S3 signs through the task role: no endpoint or keys.
+    expect(() => loadEnv(apiEnvSchema, { ...bare, STORAGE_PROVIDER: 's3' })).not.toThrow();
+    expect(
+      invalidKeys(() =>
+        loadEnv(apiEnvSchema, deployed('staging', { MEDIA_PUBLIC_BASE_URL: 'http://media.nile.test' })),
+      ),
+    ).toEqual(['MEDIA_PUBLIC_BASE_URL']);
+    expect(
+      invalidKeys(() =>
+        loadEnv(apiEnvSchema, testEnvInput({ MEDIA_PUBLIC_BASE_URL: 'https://media.nile.test/' })),
+      ),
+    ).toEqual(['MEDIA_PUBLIC_BASE_URL']);
+  });
 });
+
+/** Storage as deployed: S3 through the task role, images through the CDN. */
+const S3_STORAGE = { STORAGE_PROVIDER: 's3', MEDIA_PUBLIC_BASE_URL: 'https://media.nile.test' };
 
 /** A complete Kashier test-environment configuration (placeholder values). */
 const KASHIER_TEST = {
@@ -259,4 +336,5 @@ const KASHIER_TEST = {
   KASHIER_SECRET_KEY: 'secret$key',
   KASHIER_REDIRECT_URL: 'https://app.nile.test/payment-return',
   KASHIER_WEBHOOK_URL: 'https://api.nile.test/api/v1/webhooks/kashier',
+  KASHIER_FEP_BASE_URL: 'https://test-fep.kashier.io',
 };

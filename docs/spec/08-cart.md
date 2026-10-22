@@ -1,6 +1,7 @@
 # Spec 08 — cart
 
 Status: **v1.0 APPROVED (2026-10-11).** Approved by the user with the Phase 4 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
+**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 line images (spec 06 §8.3) and the coupon preview (spec 19). Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -100,3 +101,11 @@ None.
 | CT-7 | "Seller not visible" comes from `purchasable` alone (the `seller_active` projection, updated by `catalog.listing-projections` within about a second). Cart calls `sellers.getSummaries` only for display names; checkout re-checks the live seller status (spec 09 step 4) (P4-Q8) | UC-CT-1 |
 | CT-8 | A customer-role token with no customer profile is an invariant violation → non-operational `500`. A line whose variant `getVariantsForPurchase` doesn't return (impossible: variants are soft-deleted, FK `RESTRICT`) is left out of the view and logged at `error`. An empty or missing cart returns `id: null`, `sellers: []`, `itemsTotal` `"0.00"`, `itemCount` 0, `hasIssues` false, and `GET` never creates a row (P4-Q9) | UC-CT-1 |
 | CT-9 | `CART_MAX_LINES` (50) is in the api env schema only, with no default. The 99 per line is a constant, because it mirrors the DB `CHECK` (P4-Q10) | §1 |
+
+---
+
+## 8. Release 2: images and coupon preview [v2.0, approved 2026-10-20]
+
+- Cart lines gain `image: ImageDto | null` (the variant's image, `getVariantsForPurchase.imageMediaId`, spec 06 §8.3), one `media.getImages` call per response.
+- `POST /cart/coupon-preview` (auth: customer · rate: `coupon-preview`): body `code str(4..32)`. Cart reads its lines as for `GET /cart` (no lock: a preview changes nothing), leaves out issue lines (P4-Q7), and calls `promotions.quote` (spec 19 UC-PR-1). → `200 CouponQuoteDto`. An empty cart (or only issue lines) → `422 CART_EMPTY`. Coupon errors as in spec 19 §6.
+- New dependency `cart → promotions` (promotions calls nothing back).

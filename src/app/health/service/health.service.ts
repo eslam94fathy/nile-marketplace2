@@ -1,11 +1,8 @@
 import { inject, injectable } from 'tsyringe';
 import { type IClock } from '../../../lib/clock';
 import { type Env } from '../../../lib/config';
-import { type IDatabase } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
-import { type ICache } from '../../../pkg/cache';
-import { type IMessageBroker } from '../../../pkg/messaging';
-import { Dependency, DependencyStatus } from '../enums';
+import { type Dependency, DependencyStatus } from '../enums';
 
 export interface DependencyCheck {
   status: DependencyStatus;
@@ -14,7 +11,17 @@ export interface DependencyCheck {
 
 export interface ReadinessReport {
   status: DependencyStatus;
-  checks: Record<Dependency, DependencyCheck>;
+  checks: Partial<Record<Dependency, DependencyCheck>>;
+}
+
+/**
+ * One dependency the process needs. Each process registers its own list (`TOKENS.HealthChecks`): the
+ * api checks Postgres, Redis, RabbitMQ and storage; the realtime gateway Postgres and Redis (spec 15).
+ */
+export interface HealthCheck {
+  dependency: Dependency;
+  /** Resolves when the dependency answers; rejects otherwise. */
+  check(): Promise<void>;
 }
 
 class CheckTimeoutError extends Error {
@@ -25,27 +32,17 @@ class CheckTimeoutError extends Error {
 @injectable()
 export class HealthService {
   constructor(
-    @inject(TOKENS.Database) private readonly db: IDatabase,
-    @inject(TOKENS.Cache) private readonly cache: ICache,
-    @inject(TOKENS.MessageBroker) private readonly broker: IMessageBroker,
+    @inject(TOKENS.HealthChecks) private readonly dependencies: readonly HealthCheck[],
     @inject(TOKENS.Env) private readonly env: Pick<Env, 'HEALTH_CHECK_TIMEOUT_MS'>,
     @inject(TOKENS.Clock) private readonly clock: IClock,
   ) {}
 
   async readiness(): Promise<ReadinessReport> {
-    const [postgres, redis, rabbitmq] = await Promise.all([
-      this.timed(() => this.db.ping()),
-      this.timed(() => this.cache.ping()),
-      this.timed(() =>
-        this.broker.isConnected() ? Promise.resolve() : Promise.reject(new Error('broker not connected')),
-      ),
-    ]);
-    const checks = {
-      [Dependency.POSTGRES]: postgres,
-      [Dependency.REDIS]: redis,
-      [Dependency.RABBITMQ]: rabbitmq,
-    };
-    const allUp = Object.values(checks).every((check) => check.status === DependencyStatus.UP);
+    const results = await Promise.all(
+      this.dependencies.map(async (item) => [item.dependency, await this.timed(() => item.check())] as const),
+    );
+    const checks = Object.fromEntries(results) as Partial<Record<Dependency, DependencyCheck>>;
+    const allUp = results.every(([, result]) => result.status === DependencyStatus.UP);
     return { status: allUp ? DependencyStatus.UP : DependencyStatus.DOWN, checks };
   }
 

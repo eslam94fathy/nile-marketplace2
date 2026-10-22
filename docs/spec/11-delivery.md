@@ -1,6 +1,7 @@
 # Spec 11 — delivery
 
 Status: **v1.2 APPROVED (2026-10-12).** v1.0 (2026-10-09): the reference-data part, with the clarifications in §7.1. v1.1: the whole spec (agents, shipments, assignment) approved with the Phase 6 clarifications in §7.2. v1.2: how the consumer orders item cancellations and returns (DE-15, DE-16). Changes from now on need explicit approval and a version bump.
+**v2.4 APPROVED (2026-10-22):** §8.7 DE-27 return shipment events carry the seller order and order ids (R2-P6). **v2.3 APPROVED (2026-10-22):** §8.7 DE-23…DE-26 the return shipment lookup, consumer ordering and checkout locks (R2-P6). **v2.2 APPROVED (2026-10-22):** §8.7 DE-21, DE-22 how a return shipment fills the snapshot and payment columns (R2-P6). **v2.1 APPROVED (2026-10-20):** §8.4 `getUserIds` (DE-20). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 return shipments (spec 18), a dashboard method, and the paid-amount payload change (spec 09 §8.8). Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.6 DE-17…DE-19 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -206,3 +207,55 @@ Consumed: `seller_order.ready_for_pickup`, `seller_order.items_cancelled`, `sell
 | DE-14 | Shipments snapshot from `seller_order.ready_for_pickup` everything the agent's screen and the fee rules need: `order_number`, `payment_method`, `order_delivery_fee` (`0.00` for Kashier), `pickup_business_name`, the full pickup and drop-off snapshots, `cod_items_amount`; no `agent_fee_share` (ordering computes it) (D-2, P6-Q2). Indexes D-3, D-10 (P6-Q3) | §1, UC-DE-1 |
 | DE-15 | `seller_order.items_cancelled` (with `previousStatus`, spec 02 E-8): shipment `unassigned`/`assigned` and COD → `cod_items_amount = newSubtotal` only when lower (subtotals only go down, so an older event overtaken by a newer one is a `warn` no-op); Kashier → nothing to change; picked up or later → `warn`; no shipment and `previousStatus = ready_for_pickup` → retried, otherwise acked (Phase 6 step 6, v1.2) | UC-DE-5 |
 | DE-16 | `seller_order.returned` for a shipment that doesn't exist is retried (it always exists before any shipment event); one not `returning_to_seller` is a `warn` no-op. `seller_order.cancelled` on a shipment already finished, returning or cancelled is a `warn` no-op. The after-pickup branch locks the checkout's shipments (DE-7) because it releases the fee (Phase 6 step 6, v1.2) | UC-DE-5 |
+
+---
+
+## 8. Release 2: return shipments [v2.0, approved 2026-10-20]
+
+### 8.1 Model
+- `shipments.kind` `VARCHAR(10)`: `ShipmentKind` `delivery, return` (CHECK; existing rows filled with `delivery`). A return shipment has `return_id` (unique, nullable for `delivery`; `CHECK (kind = 'return') = (return_id IS NOT NULL)`), and `seller_order_id` is no longer unique on its own: `uq_shipments_seller_order_id` becomes partial `WHERE kind = 'delivery'` (database v2.0).
+- Snapshots: **pickup = the customer** (the order's drop-off address), **drop-off = the seller** (pickup address + business name), from `return.approved`. Payment method fields are `kashier`-like: nothing to collect (`cod_items_amount = 0`, never a fee carrier).
+- `ShipmentStatus` gains `pickup_failed`. A return shipment uses: `unassigned → assigned → picked_up → delivered`, `assigned | pickup_failed → picked_up`, `assigned | pickup_failed → pickup_failed` (attempt < 3), third failed attempt → `cancelled`, and `unassigned | assigned | pickup_failed → cancelled` (the customer cancelled the return).
+- Auto-assignment (UC-DE-1) as for deliveries, keyed on the **pickup** governorate, which is now the customer's (DE-17). Active-load counting includes return shipments.
+- Attempt reasons for a failed pickup: `customer_unreachable, customer_refused, wrong_address, customer_rescheduled`; `customer_refused` ends it at once (`cancelled`), like a refused delivery.
+
+### 8.2 Use cases
+- **UC-DE-8 Create** (consumer `delivery.return-updates` ← `return.approved`): insert `ON CONFLICT (return_id) DO NOTHING`, then auto-assign. Outbox `shipment.assigned` (payload gains `kind`).
+- **UC-DE-9 Agent works a return:** `POST /agent/shipments/:id/picked-up` (from `assigned | pickup_failed`), `/failed-attempt` (pickup attempt), `/delivered` (handed to the seller; no amount). Outbox `return_shipment.picked_up`, `return_shipment.delivered` (`{ shipmentId, returnId, sellerOrderId, orderId, agentId, at }`, DE-27), and `return_shipment.failed` when the attempts end. `/out-for-delivery` and `/returned` answer `409 SHIPMENT_INVALID_STATUS_TRANSITION` for return shipments.
+- **UC-DE-10 Cancel** (← `return.status_changed` with `to = cancelled`): `unassigned | assigned | pickup_failed → cancelled`. Already `picked_up` → `warn` no-op (returns refuses the cancel in that case, spec 18 UC-RE-5).
+- Admin assignment (UC-DE-4) works the same for return shipments (until `picked_up`).
+- The agent's fee share for a return is booked by finance from `return.completed` (spec 12 §8); delivery only reports the agent.
+
+### 8.3 Reads
+`AgentShipmentDto` and `AdminShipmentDto` gain `kind` and `returnId`; for returns the agent sees the customer as pickup and the seller as drop-off, and `amountToCollect = "0.00"`. `GET /agent/shipments` and `/admin/shipments` gain the filter `kind` (`eq`).
+
+### 8.4 Other changes
+- `seller_order.items_cancelled` consumer uses `newPaidSubtotal` for `cod_items_amount` (spec 09 §8.8); `codItemsAmount` of `ready_for_pickup` is already the paid amount.
+- New public method `getDashboardStats() → { awaitingAssignment, outForDelivery, returnsInProgress }` (spec 20 §3.2), one aggregate.
+- **DE-20 (v2.1, approved 2026-10-20):** new public method `getUserIds(agentIds) → Map<agentId, userId>` on `IDeliveryAgentDirectory`, batched, unknown ids left out. Spec 02 §6.3 and spec 13 §8 resolve agent recipients "through the owning module" (and plan R2-P2 step 3 lists it), but this section had not named the method. Realtime does not need it (it joins `agent:<agentId>` rooms); notifications does (push to an agent's user, NO-10).
+
+### 8.5 Events
+Published (new): `return_shipment.picked_up`, `return_shipment.delivered`, `return_shipment.failed` → returns (`returns.shipment-updates`), realtime. `shipment.assigned` gains `kind` and `returnId`. Ordering's `ordering.shipment-updates` never receives return events (different names), so R1 consumers are untouched.
+Consumed (new queue `delivery.return-updates`): `return.approved`, `return.status_changed`.
+
+### 8.6 Decisions (answered 2026-10-20)
+
+The user accepted every recommendation (2026-10-20). The table is kept for the reasoning; the answers are logged in `00-overview.md` §10.11.
+
+| # | Topic | Options / recommendation |
+|---|---|---|
+| DE-17 | Which agent picks up a return | **Rec:** auto-assignment by the customer's governorate (the pickup), same algorithm as deliveries · or always manual admin assignment |
+| DE-18 | Pickup attempts | **Rec:** up to 3, `customer_refused` ends at once; then the return is `pickup_failed` and no fee is charged · or a single attempt |
+| DE-19 | Seller absent at hand-over | **Rec:** not modelled in R2: the agent keeps the parcel and an admin sorts it out (support ticket) · or a failed drop-off status with retries |
+
+### 8.7 Clarifications (R2-P6 schema, approved 2026-10-22)
+
+| # | Clarification | Where |
+|---|---|---|
+| DE-21 | The snapshot columns keep their **party** for both kinds: `pickup_*` is always the seller (business name, pickup address), `dropoff_*` always the customer (recipient, governorate name, floor / apartment). A return shipment runs from the `dropoff_*` address to the `pickup_*` one; the agent and admin DTOs swap them for `kind = return` (§8.3), and auto-assignment keys on `dropoff_governorate_id` for returns (DE-17). No new columns (database D-24) | §8.1, §8.3 |
+| DE-22 | A return shipment stores the order's real `payment_method`; `chk_shipments_return_no_cash` makes it collect nothing (`cod_items_amount = 0`, `order_delivery_fee = 0`, never a fee carrier, no cash collected). `chk_shipments_kind_status` keeps `pickup_failed` for returns and the delivery-only statuses for deliveries (database D-24) | §8.1 |
+| DE-23 | New public method `getReturnShipmentStatus(returnId) → ShipmentStatus | null` on `IShipmentDirectory`, one read without a lock: returns refuses a cancel once the parcel is picked up (spec 18 RE-24) | §8.4 |
+| DE-24 | `delivery.return-updates`: `return.approved` creates the shipment from the payload (`orderNumber`, `paymentMethod` included, spec 18 RE-23); `return.status_changed` with `to = cancelled` cancels it, and when the shipment doesn't exist yet a cancel `from = approved` is early and retried (OR-14 rule) while any other `from` is a no-op (never approved). Other statuses are ignored | §8.2 |
+| DE-25 | The checkout lock and the COD fee rules (DE-7, DE-8, S-3) cover deliveries only: `lockByOrderId` locks the checkout's deliveries, and return shipments are locked one by one. Auto-assignment of a return keys on `dropoff_governorate_id` (the customer, DE-17, DE-21) | §8.1 |
+| DE-26 | Amends DE-21 and §8.3: the agent and admin DTOs keep `pickup` (the seller) and `dropoff` (the customer) by party for both kinds, plus `kind` and `returnId`; for `kind = return` the agent collects at `dropoff` and hands over at `pickup` (the two objects have different shapes, so a swap would lose data). `amountToCollect` is `"0.00"` for returns | §8.3 |
+| DE-27 | `return_shipment.*` payloads also carry `sellerOrderId` and `orderId` (from the shipment row), so realtime sends `shipment.updated` without reading returns (spec 15 RT-22). The contract is new in R2-P6 and not yet deployed, so this is not a payload change under R2-Q4 | UC-DE-9 |

@@ -22,6 +22,14 @@ function parseEnv(text) {
   return keys;
 }
 
+// The realtime gateway runs next to the api on the same .env, so it overrides the per-process keys
+// from this second file (`npm run dev:realtime` passes it after .env; the later file wins).
+const realtimeEnvFile = path.join(root, '.env.realtime');
+if (!fs.existsSync(realtimeEnvFile)) {
+  fs.writeFileSync(realtimeEnvFile, 'PORT=3001\nSERVICE_NAME=nile-realtime\n', { mode: 0o600 });
+  console.log('Created .env.realtime (PORT=3001, SERVICE_NAME=nile-realtime)');
+}
+
 const existingText = fs.existsSync(envFile) ? fs.readFileSync(envFile, 'utf8') : '';
 const existing = parseEnv(existingText);
 
@@ -84,6 +92,34 @@ const values = {
   RATE_LIMIT_REFRESH_WINDOW_SECONDS: '300',
   RATE_LIMIT_CHECKOUT_POINTS: '10',
   RATE_LIMIT_CHECKOUT_WINDOW_SECONDS: '60',
+  // Upload rate limit, per user (spec 14 ME-6)
+  RATE_LIMIT_UPLOAD_POINTS: '30',
+  RATE_LIMIT_UPLOAD_WINDOW_SECONDS: '600',
+  RATE_LIMIT_SUPPORT_MESSAGE_POINTS: '30',
+  RATE_LIMIT_SUPPORT_MESSAGE_WINDOW_SECONDS: '60',
+  RATE_LIMIT_COUPON_PREVIEW_POINTS: '20',
+  RATE_LIMIT_COUPON_PREVIEW_WINDOW_SECONDS: '60',
+  // realtime gateway (spec 15 §6, RT-5)
+  RATE_LIMIT_REALTIME_CONNECT_POINTS: '60',
+  RATE_LIMIT_REALTIME_CONNECT_WINDOW_SECONDS: '60',
+  REALTIME_SIGNAL_RATE_PER_SECOND: '5',
+  // notification centre retention (spec 13 UC-NO-5, NO-7)
+  NOTIFICATION_RETENTION_DAYS: '90',
+  JOB_NOTIFICATION_RETENTION_INTERVAL_MS: '86400000',
+  NOTIFICATION_RETENTION_BATCH_SIZE: '1000',
+  SUPPORT_SLA_HOURS: '24',
+  SUPPORT_AUTO_CLOSE_AFTER_HOURS: '168',
+  JOB_SUPPORT_INTERVAL_MS: '60000',
+  SUPPORT_JOBS_BATCH_SIZE: '100',
+  JOB_RETURNS_INTERVAL_MS: '60000',
+  RETURN_JOBS_BATCH_SIZE: '100',
+  JOB_SELLER_HOLD_RELEASE_INTERVAL_MS: '60000',
+  SELLER_HOLD_BATCH_SIZE: '100',
+  // Web Push (spec 13 §8.6): the push services browsers use (NO-22)
+  PUSH_ENDPOINT_HOST_ALLOWLIST:
+    'fcm.googleapis.com,updates.push.services.mozilla.com,*.notify.windows.com,web.push.apple.com',
+  VAPID_SUBJECT: 'mailto:dev@nile.local',
+  PUSH_HTTP_TIMEOUT_MS: '10000',
   IDEMPOTENCY_TTL_HOURS: '24',
   IDEMPOTENCY_LOCK_TTL_SECONDS: '60',
   // identity / invites (P1-Q4)
@@ -95,6 +131,7 @@ const values = {
   INVITE_URL_BASE: 'http://localhost:3000/invite',
   // customers (spec 04)
   CUSTOMER_MAX_ADDRESSES: '20',
+  WISHLIST_MAX_ITEMS: '200',
   // delivery reference data (P2-Q5)
   GOVERNORATES_CACHE_TTL_SECONDS: '3600',
   // catalog (P3-Q9)
@@ -112,11 +149,50 @@ const values = {
   // delivery jobs (P6-Q9)
   JOB_SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_MS: '60000',
   SHIPMENT_JOBS_BATCH_SIZE: '100',
+  // audit retention (worker, spec 20 §2.4)
+  AUDIT_RETENTION_DAYS: '730',
+  JOB_AUDIT_RETENTION_INTERVAL_MS: '86400000',
+  AUDIT_RETENTION_BATCH_SIZE: '1000',
+  // Object storage (spec 14 §6; STORAGE_PROVIDER, _BUCKET, _REGION are derived in AWS)
+  STORAGE_HTTP_TIMEOUT_MS: '5000',
+  // docker-compose MinIO; inside compose the api and worker reach it as http://minio:9000.
+  STORAGE_PROVIDER: 'minio',
+  STORAGE_BUCKET: 'nile-media',
+  STORAGE_REGION: 'us-east-1',
+  STORAGE_ENDPOINT: 'http://localhost:9100',
+  STORAGE_PUBLIC_ENDPOINT: 'http://localhost:9100',
+  STORAGE_ACCESS_KEY_ID: 'nile',
+  STORAGE_SECRET_ACCESS_KEY: 'nile-minio',
+  // Media uploads (spec 14 §1, §6)
+  MEDIA_PUBLIC_BASE_URL: 'http://localhost:9100/nile-media',
+  MEDIA_MAX_UPLOAD_BYTES: '5242880',
+  MEDIA_UPLOAD_URL_TTL_SECONDS: '300',
+  MEDIA_PRIVATE_URL_TTL_SECONDS: '600',
+  MEDIA_MAX_OPEN_UPLOADS_PER_USER: '20',
+  SUPPORT_MAX_OPEN_TICKETS_PER_USER: '20',
+  REVIEW_WINDOW_DAYS: '60',
+  REVIEW_EDIT_WINDOW_DAYS: '30',
+  // returns (spec 18 §1)
+  RETURN_WINDOW_DAYS: '14',
+  RETURN_SELLER_DECISION_HOURS: '48',
+  RETURN_ESCALATION_WINDOW_DAYS: '7',
+  RETURN_INSPECTION_HOURS: '48',
+  // backoffice (spec 20 §3.2)
+  DASHBOARD_CACHE_TTL_SECONDS: '60',
+  // Media cleanup job (spec 14 UC-ME-4)
+  MEDIA_PENDING_RETENTION_HOURS: '24',
+  JOB_MEDIA_CLEANUP_INTERVAL_MS: '3600000',
+  MEDIA_CLEANUP_BATCH_SIZE: '100',
   // payments (P5-Q9): the fake gateway locally; set PAYMENT_GATEWAY=kashier plus the Kashier keys
   // (test environment) to talk to Kashier. The fake signs webhooks with this key.
   PAYMENT_GATEWAY: 'fake',
   KASHIER_API_KEY: randomBytes(16).toString('hex'),
   KASHIER_HTTP_TIMEOUT_MS: '10000',
+  // Kashier refund job (spec 10 UC-PA-6): the fake refunds locally; with kashier set KASHIER_FEP_BASE_URL
+  JOB_PAYMENT_REFUND_INTERVAL_MS: '60000',
+  PAYMENT_REFUND_BATCH_SIZE: '50',
+  PAYMENT_REFUND_MAX_ATTEMPTS: '5',
+  PAYMENT_REFUND_STUCK_MINUTES: '10',
   // email: local inbox by default (P1-Q2); switch EMAIL_PROVIDER to mailjet to send real mail
   EMAIL_PROVIDER: 'mailpit',
   EMAIL_HTTP_TIMEOUT_MS: '10000',
@@ -133,6 +209,12 @@ if (!existing.has('JWT_PRIVATE_KEY') || !existing.has('JWT_PUBLIC_KEYS')) {
     [JWT_KID]: publicKey.export({ type: 'spki', format: 'pem' }).toString(),
   });
   values.JWT_ACTIVE_KID = JWT_KID;
+}
+// A local VAPID key pair, once (rotating it drops every browser subscription, R2-Q7).
+if (!existing.has('VAPID_PUBLIC_KEY') || !existing.has('VAPID_PRIVATE_KEY')) {
+  const vapid = require('web-push').generateVAPIDKeys();
+  values.VAPID_PUBLIC_KEY = vapid.publicKey;
+  values.VAPID_PRIVATE_KEY = vapid.privateKey;
 }
 if (!existing.has('SECRETS_ENCRYPTION_KEYS')) {
   values.SECRETS_ENCRYPTION_KEYS = JSON.stringify({ [SECRETS_KID]: randomBytes(32).toString('base64') });

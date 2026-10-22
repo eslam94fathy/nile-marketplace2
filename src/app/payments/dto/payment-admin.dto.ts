@@ -1,9 +1,18 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDateString, IsIn, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
+import {
+  IsBoolean,
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  ValidateNested,
+} from 'class-validator';
 import { FieldType, FilterOp, IsMoney, type ListSpec, StrField, UuidField } from '../../../lib/http';
-import { PaymentMethod, PaymentStatus, RefundReason, RefundStatus } from '../enums';
+import { PaymentMethod, PaymentStatus, RefundMethod, RefundReason, RefundStatus } from '../enums';
 import { type PaymentRefund } from '../model/refund.model';
-import { type AdminPaymentView } from '../service/payment-admin.service';
+import { type AdminPaymentView, type AdminRefundView } from '../service/payment-admin.service';
 
 /* Spec 10 §4.2. Request DTOs validate; response DTOs describe the OpenAPI shape. */
 
@@ -26,7 +35,7 @@ export class OrderPaymentParamsDto {
 
 /** `POST /admin/payments/refunds/:refundId/record` (UC-PA-4). */
 export class RecordRefundDto {
-  /** Kashier's refund reference from its dashboard. */
+  /** Kashier's refund reference from its dashboard, or the wallet / InstaPay transfer reference (COD). */
   @StrField(1, PROVIDER_REFUND_REF_MAX_LENGTH)
   providerRefundRef!: string;
 }
@@ -70,6 +79,11 @@ export class RefundDto {
   @IsUUID()
   sellerOrderId!: string | null;
 
+  /** Set for a return refund (reason `return`). */
+  @IsOptional()
+  @IsUUID()
+  returnId!: string | null;
+
   @IsMoney()
   amount!: string;
 
@@ -78,6 +92,26 @@ export class RefundDto {
 
   @IsIn(Object.values(RefundStatus))
   status!: RefundStatus;
+
+  /** How it is done: by the Kashier job, or by hand and recorded (spec 10 §8.1). */
+  @IsIn(Object.values(RefundMethod))
+  method!: RefundMethod;
+
+  @IsInt()
+  attemptCount!: number;
+
+  @IsOptional()
+  @IsDateString()
+  nextAttemptAt!: string | null;
+
+  /** The provider's last refusal, secrets redacted (N-2). */
+  @IsOptional()
+  @IsString()
+  lastError!: string | null;
+
+  /** COD return refunds: the detail shows where to pay. */
+  @IsBoolean()
+  hasPayoutDetails!: boolean;
 
   @IsOptional()
   @IsString()
@@ -91,8 +125,33 @@ export class RefundDto {
   @IsDateString()
   recordedAt!: string | null;
 
+  @IsOptional()
+  @IsDateString()
+  succeededAt!: string | null;
+
   @IsDateString()
   createdAt!: string;
+}
+
+export class RefundPayoutDetailsDto {
+  @IsIn(['mobile_wallet', 'instapay'])
+  method!: 'mobile_wallet' | 'instapay';
+
+  @IsOptional()
+  @IsString()
+  walletNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  instapayAddress?: string;
+}
+
+/** `GET /admin/payments/refunds/:refundId` (spec 10 §8.4): COD payout details opened, never listed. */
+export class RefundDetailDto extends RefundDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => RefundPayoutDetailsDto)
+  payoutDetails!: RefundPayoutDetailsDto | null;
 }
 
 /** A webhook in the inbox, without its payload. */
@@ -178,14 +237,25 @@ export function toRefundDto(refund: PaymentRefund): RefundDto {
     paymentId: refund.paymentId,
     orderId: refund.orderId,
     sellerOrderId: refund.sellerOrderId,
+    returnId: refund.returnId,
     amount: refund.amount.toString(),
     reason: refund.reason,
     status: refund.status,
+    method: refund.method,
+    attemptCount: refund.attemptCount,
+    nextAttemptAt: iso(refund.nextAttemptAt),
+    lastError: refund.lastError,
+    hasPayoutDetails: refund.hasPayoutDetails,
     providerRefundRef: refund.providerRefundRef,
     recordedByUserId: refund.recordedByUserId,
     recordedAt: iso(refund.recordedAt),
+    succeededAt: iso(refund.succeededAt),
     createdAt: refund.createdAt.toISOString(),
   };
+}
+
+export function toRefundDetailDto({ refund, payoutDetails }: AdminRefundView): RefundDetailDto {
+  return { ...toRefundDto(refund), payoutDetails: payoutDetails ? { ...payoutDetails } : null };
 }
 
 export function toAdminPaymentDto({ payment, refunds, events }: AdminPaymentView): AdminPaymentDto {

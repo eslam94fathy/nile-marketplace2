@@ -5,6 +5,9 @@ export const HEADER = {
   IDEMPOTENT_REPLAYED: 'Idempotent-Replayed',
   RETRY_AFTER: 'Retry-After',
   AUTHORIZATION: 'Authorization',
+  CONTENT_TYPE: 'Content-Type',
+  /** `web` selects the refresh-token cookie (spec 03 §8.1). */
+  NILE_CLIENT: 'X-Nile-Client',
 } as const;
 
 export const UUID_ANY_VERSION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -1,11 +1,17 @@
 import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '../../../lib/di';
 import { categoryNotFound } from '../errors';
-import { type AttributeWithOptions, type Category, type CategoryTree } from '../model/category-tree.model';
+import {
+  type AttributeWithOptions,
+  type Category,
+  type CategoryImage,
+  type CategoryTree,
+} from '../model/category-tree.model';
 import { type CategoryTreeService } from './category-tree.service';
 
 export interface ActiveCategoryNode {
   category: Category;
+  image: CategoryImage | null;
   children: ActiveCategoryNode[];
 }
 
@@ -26,7 +32,11 @@ export class CategoryService {
       tree
         .children(parentId)
         .filter((category) => category.isActive)
-        .map((category) => ({ category, children: build(category.id) }));
+        .map((category) => ({
+          category,
+          image: tree.imageOf(category.id) ?? null,
+          children: build(category.id),
+        }));
     return build(null);
   }
 

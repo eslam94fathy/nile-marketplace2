@@ -1,6 +1,7 @@
 # Spec 05 — sellers
 
 Status: **v1.1 APPROVED (2026-10-10).** v1.0 (2026-10-09): approved with the Phase 2 clarifications in §7.1. v1.1: lock option on `getSellerByUserId` for catalog write guards (SE-4, P3-Q4). Changes from now on need explicit approval and a version bump.
+**v2.1 APPROVED (2026-10-21):** §8.3 summaries by user id for support (spec 16 SU-8). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 seller rating projection (spec 17, R-11), a public seller page and the user-id lookup for notifications. Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -153,3 +154,21 @@ Consumed: none.
 | SE-2 | `GOVERNORATE_NOT_FOUND` is the common code from `lib/error` (P2-Q7) | §6 |
 | SE-3 | The whole public API (§2) is built in Phase 2, including the methods only later phases call (P2-Q8) | §2 |
 | SE-4 | Catalog write guards call `getSellerByUserId(userId, { trx, lockShared: true })`. A suspension then waits for an in-flight product write, and the `seller.suspended` consumer sees the new row (P3-Q4, v1.1) | §2 |
+
+---
+
+## 8. Release 2: seller rating and lookups [v2.0, approved 2026-10-20]
+
+### 8.1 Rating projection (R-11)
+- New columns on `sellers`: `rating_count INT NOT NULL` (`CHECK >= 0`), `rating_avg NUMERIC(3,2) NULL` (`CHECK` between 1 and 5; `null` = no reviews yet, the stated reason for a nullable column), `rating_version BIGINT NOT NULL`. The migration fills existing rows with `0`, `null`, `0` explicitly; there are no DB defaults (G13), and seller creation passes the three values.
+- Consumer `sellers.rating-projection` ← `review.rating_changed` (spec 17 §5): `UPDATE sellers SET rating_count = ?, rating_avg = ?, rating_version = ?, updated_at = now() WHERE id = ? AND rating_version < ?`. 0 rows = an older or duplicate event, ack without a change. `rating_avg` is computed from `ratingSum / ratingCount` with the spec 17 §1.2 rule. Dedupe through `processed_events` as in every consumer.
+- The rating is the average over all published reviews of the seller's products, weighted by review (not an average of product averages).
+
+### 8.2 Read changes
+- `getSummaries(sellerIds)` gains `ratingAvg: string | null, ratingCount: number`, so catalog's product views show the seller rating without a new call.
+- `SellerProfileDto` and `AdminSellerListItemDto` gain `ratingAvg`, `ratingCount`.
+- New public method `getUserIds(sellerIds) → Map<sellerId, userId>` (realtime and notifications recipient resolution, spec 02 §6.3), batched.
+- New public endpoint `GET /sellers/:sellerId` (auth: public · rate: general): `200 { id, businessName, ratingAvg, ratingCount, memberSince }` (`memberSince` = `approved_at`) for an `approved` seller, else `404 SELLER_NOT_FOUND`. It backs the seller page of the web app; the seller's products come from `GET /products?sellerId[eq]=`.
+
+### 8.3 Addition from spec 16 (R2-P3, approved 2026-10-21)
+- New public method `getSummariesByUserIds(userIds) → Map<userId, { sellerId, businessName }>` (support admin views, spec 16 SU-8), batched, any seller status; unknown ids are left out.

@@ -11,6 +11,7 @@ const TRX = {} as DbTransaction;
 const payment = (overrides: Partial<Payment> = {}): Payment => ({
   id: 'payment-1',
   orderId: 'order-1',
+  customerId: 'customer-1',
   method: 'kashier',
   status: 'initiated',
   amount: Money.of('150.00'),
@@ -44,6 +45,7 @@ function setup() {
   container.register(TOKENS.PaymentRefundRepository, { useValue: refunds });
   container.register(TOKENS.Outbox, { useValue: outbox });
   container.register(TOKENS.Logger, { useValue: logger });
+  container.register(TOKENS.Clock, { useValue: { now: () => new Date('2026-10-22T10:00:00.000Z') } });
   return { payments, refunds, outbox, logger, service: container.resolve(PaymentSettlementService) };
 }
 
@@ -66,7 +68,7 @@ describe('PaymentSettlementService (spec 10 UC-PA-2)', () => {
     for (const [current, outcome] of [
       [payment({ method: 'cod', status: 'pending' }), 'not_kashier'],
       [payment({ status: 'paid' }), 'already_settled'],
-      [payment({ status: 'refunded_manually' }), 'already_settled'],
+      [payment({ status: 'refunded' }), 'already_settled'],
       [payment({ status: 'failed' }), 'already_settled'],
     ] as const) {
       const { service, payments, outbox } = setup();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Money } from '../../../lib/money';
-import { AttemptFailureReason, ShipmentStatus } from '../enums';
+import { AttemptFailureReason, ShipmentKind, ShipmentStatus } from '../enums';
 import { DeliveryErrorCode } from '../errors';
 import {
   afterFailedAttempt,
@@ -17,6 +17,8 @@ const S = ShipmentStatus;
 function shipment(overrides: Partial<Shipment> = {}): Shipment {
   return {
     id: 's1',
+    kind: ShipmentKind.DELIVERY,
+    returnId: null,
     sellerOrderId: 'so1',
     orderId: 'o1',
     agentId: 'a1',

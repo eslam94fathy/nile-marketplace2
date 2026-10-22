@@ -8,7 +8,7 @@ import {
 } from '../../src/app/delivery/dto/delivery-response.dto';
 import { TOKENS } from '../../src/lib/di';
 import { errorBody, successBody } from '../helpers/http';
-import { API } from '../helpers/identity';
+import { API, identityFixtures } from '../helpers/identity';
 import { signTestAccessToken } from '../helpers/jwt';
 import { startTestApp, type TestApp } from '../helpers/test-app';
 
@@ -34,7 +34,8 @@ describe('delivery reference data endpoints', () => {
 
   beforeAll(async () => {
     t = await startTestApp();
-    adminToken = await signTestAccessToken({ role: 'admin' });
+    // A real admin: every admin write is audited, and the audit row references the user (spec 20 §2.1).
+    adminToken = (await identityFixtures(t).createActiveAdmin()).session.accessToken;
     customerToken = await signTestAccessToken({ role: 'customer' });
     const found = (await publicList()).find((g) => g.code === 'EG-C');
     if (!found) throw new Error('Cairo is not seeded');

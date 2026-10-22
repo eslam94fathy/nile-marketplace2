@@ -8,7 +8,10 @@ import {
   type RateLimiters,
   requireRole,
 } from '../../lib/middleware';
-import { CUSTOMERS_PATHS as P } from './constants';
+import { type WishlistController } from './controller/wishlist.controller';
+import { WishlistItemDto, WishlistProductIdsDto } from './dto/wishlist.dto';
+import { CUSTOMERS_ADMIN_PATHS as A, CUSTOMERS_PATHS as P } from './constants';
+import { type CustomerAdminController } from './controller/customer-admin.controller';
 import { type CustomerAddressController } from './controller/customer-address.controller';
 import { type CustomerController } from './controller/customer.controller';
 import {
@@ -17,7 +20,13 @@ import {
   UpdateAddressDto,
   UpdateCustomerProfileDto,
 } from './dto/customer-request.dto';
-import { AddressDto, CustomerProfileDto, RegisteredCustomerDto } from './dto/customer-response.dto';
+import {
+  AddressDto,
+  AdminCustomerDetailDto,
+  AdminCustomerDto,
+  CustomerProfileDto,
+  RegisteredCustomerDto,
+} from './dto/customer-response.dto';
 
 const AUTH_TAGS = ['auth'] as const;
 const TAGS = ['customer'] as const;
@@ -25,6 +34,8 @@ const TAGS = ['customer'] as const;
 export interface CustomersRouteDeps {
   customers: CustomerController;
   addresses: CustomerAddressController;
+  wishlist: WishlistController;
+  customerAdmin: CustomerAdminController;
   jwtVerifier: JwtVerifier;
   rateLimiters: RateLimiters;
   docs: OpenApiRegistry;
@@ -50,6 +61,78 @@ export function customersRoutes(deps: CustomersRouteDeps): Router {
   router.get(P.ADDRESS, ...customerOnly, addresses.get);
   router.patch(P.ADDRESS, ...customerOnly, addresses.update);
   router.delete(P.ADDRESS, ...customerOnly, addresses.delete);
+  // `product-ids` before `:productId`.
+  router.get(P.WISHLIST_PRODUCT_IDS, ...customerOnly, deps.wishlist.productIds);
+  router.get(P.WISHLIST, ...customerOnly, deps.wishlist.list);
+  router.put(P.WISHLIST_ITEM, ...customerOnly, deps.wishlist.add);
+  router.delete(P.WISHLIST_ITEM, ...customerOnly, deps.wishlist.remove);
+  const adminOnly = [authenticate(deps.jwtVerifier), requireRole(UserRole.ADMIN)];
+  router.get(A.CUSTOMERS, ...adminOnly, deps.customerAdmin.list);
+  router.get(A.CUSTOMER, ...adminOnly, deps.customerAdmin.get);
+
+  const adminDocs = { tags: ['admin: customers'], auth: true } as const;
+  docs.add({
+    ...adminDocs,
+    method: 'get',
+    path: `${basePath}${A.CUSTOMERS}`,
+    summary:
+      'List customers (spec 20 §3.3). Filters: name[like] (first or last name, contains), phone[eq] (E.164). Sort: createdAt (default -createdAt)',
+    query: [
+      { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1 } },
+      { name: 'cursor', in: 'query', schema: { type: 'string' } },
+      { name: 'sort', in: 'query', schema: { enum: ['createdAt', '-createdAt'] } },
+      { name: 'name[like]', in: 'query', schema: { type: 'string' } },
+      { name: 'phone[eq]', in: 'query', schema: { type: 'string' } },
+    ],
+    responses: {
+      200: { description: 'One page of customers', body: AdminCustomerDto, isArray: true, paginated: true },
+    },
+  });
+  docs.add({
+    ...adminDocs,
+    method: 'get',
+    path: `${basePath}${A.CUSTOMER}`,
+    summary:
+      'One customer with the address count; their orders come from GET /admin/orders?customerId[eq]= (CUSTOMER_NOT_FOUND)',
+    responses: { 200: { description: 'The customer', body: AdminCustomerDetailDto } },
+  });
+
+  const wishlistDocs = { tags: ['customer: wishlist'], auth: true } as const;
+  docs.add({
+    ...wishlistDocs,
+    method: 'get',
+    path: `${basePath}${P.WISHLIST}`,
+    summary: 'My wishlist, newest first; products no longer visible stay, with available: false',
+    query: [
+      { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1 } },
+      { name: 'cursor', in: 'query', schema: { type: 'string' } },
+    ],
+    responses: {
+      200: { description: 'One page of products', body: WishlistItemDto, isArray: true, paginated: true },
+    },
+  });
+  docs.add({
+    ...wishlistDocs,
+    method: 'get',
+    path: `${basePath}${P.WISHLIST_PRODUCT_IDS}`,
+    summary: 'Every wishlisted product id, to mark product lists (load once per session)',
+    responses: { 200: { description: 'The ids', body: WishlistProductIdsDto } },
+  });
+  docs.add({
+    ...wishlistDocs,
+    method: 'put',
+    path: `${basePath}${P.WISHLIST_ITEM}`,
+    summary:
+      'Add a visible product; adding it again changes nothing (PRODUCT_NOT_FOUND 422, WISHLIST_LIMIT_REACHED 422)',
+    responses: { 204: { description: 'In the wishlist' } },
+  });
+  docs.add({
+    ...wishlistDocs,
+    method: 'delete',
+    path: `${basePath}${P.WISHLIST_ITEM}`,
+    summary: 'Remove a product; removing one that is not there is fine',
+    responses: { 204: { description: 'Not in the wishlist' } },
+  });
 
   docs.add({
     method: 'post',

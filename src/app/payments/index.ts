@@ -7,8 +7,9 @@
 import { type Router } from 'express';
 import { type DependencyContainer } from 'tsyringe';
 import { type JwtVerifier } from '../../lib/auth';
-import { type ApiEnv } from '../../lib/config';
+import { type ApiEnv, type Env } from '../../lib/config';
 import { TOKENS } from '../../lib/di';
+import { type JobDefinition } from '../../lib/jobs';
 import {
   type EventHandlerDefinition,
   OrderClosed,
@@ -16,6 +17,7 @@ import {
   SellerOrderDelivered,
   SellerOrderItemsCancelled,
   SellerOrderReturned,
+  ReturnCompleted,
 } from '../../lib/events';
 import { type OpenApiRegistry } from '../../lib/http';
 import { type ILogger } from '../../lib/logger';
@@ -32,11 +34,13 @@ import { KashierWebhookService } from './service/kashier-webhook.service';
 import { PaymentAdminService } from './service/payment-admin.service';
 import { PaymentDirectory } from './service/payment-directory.service';
 import { PaymentSettlementService } from './service/payment-settlement.service';
+import { RefundJob } from './service/refund.job';
 
 export { PaymentMethod, PaymentStatus } from './enums';
 export { PAYMENTS_PATHS } from './constants';
 export { PaymentsErrorCode } from './errors';
 export type { PaymentSummary } from './model/payment.model';
+export type { ReturnRefundStatus, ReturnRefundView } from './model/refund.model';
 /** Inject with `TOKENS.PaymentDirectory`. */
 export type {
   IPaymentDirectory,
@@ -90,6 +94,16 @@ export function createPaymentsRouter(container: DependencyContainer, basePath: s
   });
 }
 
+/** `payment-refunds` (spec 10 UC-PA-6): the worker's Kashier refund job, advisory-locked. */
+export function createPaymentsJobs(
+  container: DependencyContainer,
+  env: Pick<Env, 'JOB_PAYMENT_REFUND_INTERVAL_MS'>,
+): JobDefinition[] {
+  container.registerSingleton(TOKENS.RefundJob, RefundJob);
+  const job = container.resolve<RefundJob>(TOKENS.RefundJob);
+  return [{ name: 'payment-refunds', intervalMs: env.JOB_PAYMENT_REFUND_INTERVAL_MS, run: () => job.run() }];
+}
+
 /** Consumer `payments.order-adjustments` (spec 10 UC-PA-3, spec 02 §2). */
 export function createPaymentsHandlers(container: DependencyContainer): EventHandlerDefinition[] {
   const adjustments = container.resolve<OrderAdjustmentService>(TOKENS.OrderAdjustmentService);
@@ -102,6 +116,7 @@ export function createPaymentsHandlers(container: DependencyContainer): EventHan
         SellerOrderReturned,
         SellerOrderDelivered,
         OrderClosed,
+        ReturnCompleted,
       ],
       handle: (envelope, trx) => adjustments.handle(envelope, trx),
     },

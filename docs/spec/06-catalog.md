@@ -1,6 +1,7 @@
 # Spec 06 — catalog
 
 Status: **v1.4 APPROVED (2026-10-10).** v1.0: approved with the Phase 3 clarifications in §7.1. v1.1: an active category always has an active parent (CA-13); attribute writes lock the whole subtree (CA-2). v1.2: product writes hold their category `FOR SHARE` (CA-2). v1.3: the product-detail cache holds neither visibility nor stock, so the consumers have nothing to invalidate (CA-8). v1.4: typo tolerance matches words, not the whole name (CA-14, P3-O1). Changes from now on need explicit approval and a version bump.
+**v2.2 APPROVED (2026-10-22):** §10 CA-20 coupon scope lookups (R2-P7). **v2.1 APPROVED (2026-10-20):** §8.7 R2-P1 implementation clarifications CA-15…CA-19 (every recommendation accepted). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 images (spec 14, R-2, R-3). §9 (2026-10-20) adds the rating projection (spec 17) and product cards (wishlist, spec 04 §8). Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -281,3 +282,127 @@ Consumed: `seller.approved`, `seller.suspended`, `inventory.stock_status_changed
 | CA-12 | The seller `name like` filter runs without a trigram index (seller-scoped, small) (P3-Q12 c) | §4.3 |
 | CA-14 | Typo tolerance compares `q` with the closest run of words in the name (`q <% name`, `word_similarity`), not the whole name (`%` missed typos in multi-word names: "trial runer" vs "Trail Runner …" scored 0.28). The threshold comes from env `SEARCH_WORD_SIMILARITY_THRESHOLD` (0.35, tune in P8 with real names), set per search query with `set_config('pg_trgm.word_similarity_threshold', ?, true)`; `idx_products_name_trgm` serves it (P3-O1, v1.4) | UC-CA-6 |
 | CA-13 | An active category always has an active parent: activating a child of an inactive category, or creating one under it → `409 CATEGORY_PARENT_INACTIVE` (user decision 2026-10-10, v1.1) | UC-CA-1, §6 |
+
+---
+
+## 8. Release 2: product and category images [v2.0, approved 2026-10-20]
+
+### 8.1 Tables and limits
+- New table `product_images`: `product_id` (FK, `RESTRICT`), `media_id` (FK → `media_objects`, `RESTRICT`, unique), `variant_id` (nullable FK, `RESTRICT`: an image may be tied to one variant, R-2), `position` (0-based; `uq_product_images_product_id_position`, deferrable so a reorder can swap positions), `alt_text VARCHAR(200)` nullable (optional; the client falls back to the product name).
+- New column `categories.image_media_id` (nullable FK → `media_objects`, `RESTRICT`, unique) + `categories.image_alt_text VARCHAR(200)` nullable.
+- Limit: **8 images per product** (R-2), a constant (`PRODUCT_IMAGE_LIMIT`) that matches the API and has no DB `CHECK` (counted under the product lock).
+- No image is needed to activate a product (R-3).
+- The **primary image** is the one at `position = 0`. The **image of a variant** is the lowest-position image tied to that variant, else the primary image.
+
+### 8.2 Use cases
+
+#### UC-CA-8 Seller manages product images
+Same guard and locks as every product write (UC-CA-3, CA-2): the seller is read `FOR SHARE` (approved), then the product row is locked `FOR UPDATE`. A deleted product → `PRODUCT_NOT_FOUND`.
+- **Add:**
+  - The count must be below 8 → `PRODUCT_IMAGE_LIMIT_REACHED`.
+  - `variantId`, when sent, must be a non-deleted variant of this product → `VARIANT_NOT_FOUND` (422).
+  - `media.claim([mediaId], { purpose: product_image, ownerUserId }, trx)` → `MEDIA_NOT_ATTACHABLE`.
+  - The image is inserted at the end, or at `position` with the later ones shifted.
+- **Update:** `variantId` (nullable, to untie it), `altText` (nullable).
+- **Reorder:** the body lists **every** image id of the product exactly once → else `PRODUCT_IMAGE_ORDER_INVALID`. Positions are rewritten 0..n-1 in one statement.
+- **Remove:** delete the row, close the gap in positions, then `media.release([mediaId], trx)`.
+- **Product soft delete** keeps its images (order history and a possible restore). **Variant soft delete** unties the images tied to it (`variant_id = NULL`) in the same transaction.
+- Every write deletes `v1:catalog:product:<id>` after commit (CA-8).
+
+#### UC-CA-9 Admin manages a category image
+- Lock the category `FOR UPDATE` (CA-2).
+- **Set:** `media.claim([mediaId], { purpose: category_image }, trx)` (any admin's upload, ME-2), release the previous image, store the new id and alt text.
+- **Remove:** clear both columns, then release.
+- Both delete the category-tree cache after commit.
+
+### 8.3 Public API change
+`getVariantsForPurchase` gains `imageMediaId: string | null` (the variant's image, §8.1). Cart (spec 08 v2.0) shows it, and ordering (spec 09 v2.0) snapshots it on `order_items`.
+
+### 8.4 Endpoint changes
+
+**DTOs.** `ImageDto` is the shared shape (spec 14 §2, conventions v1.4 §9.1).
+```ts
+interface ProductImageDto extends ImageDto { position: number; variantId: string | null; altText: string | null }
+
+// additions to existing DTOs
+CategoryNodeDto       += { image: (ImageDto & { altText: string | null }) | null }  // in the cached tree
+AdminCategoryNodeDto  += { image: (ImageDto & { altText: string | null }) | null }
+ProductListItemDto    += { primaryImage: ImageDto | null }      // one batched read per page (§8.5)
+ProductDetailDto      += { images: ProductImageDto[] }          // by position; in the cached static part (CA-8)
+ProductDetailDto.variants[] += { imageId: string | null }       // id within `images` (§8.1 rule)
+SellerProductDto      += { primaryImage: ImageDto | null }
+SellerProductDetailDto += { images: ProductImageDto[] }
+```
+
+**Seller endpoints** (auth: seller · rate: general):
+
+| Endpoint | Body | Success | Errors |
+|---|---|---|---|
+| `POST /seller/products/:productId/images` | `mediaId uuid` · `variantId opt nullable uuid` · `altText opt nullable str(1..200)` · `position opt int(0..7)` | `201 ProductImageDto[]` (all images, in order) | `PRODUCT_NOT_FOUND` 404, `SELLER_NOT_APPROVED` 403, `PRODUCT_IMAGE_LIMIT_REACHED` 422, `VARIANT_NOT_FOUND` 422, `MEDIA_NOT_ATTACHABLE` 422 |
+| `PATCH /seller/products/:productId/images/:imageId` | `variantId opt nullable uuid` · `altText opt nullable str(1..200)` | `200 ProductImageDto` | `PRODUCT_IMAGE_NOT_FOUND` 404, `SELLER_NOT_APPROVED`, `VARIANT_NOT_FOUND` 422 |
+| `PUT /seller/products/:productId/images/order` | `imageIds uuid[]`, `@ArrayMaxSize(8)`, `@ArrayUnique` | `200 ProductImageDto[]` | `PRODUCT_NOT_FOUND`, `SELLER_NOT_APPROVED`, `PRODUCT_IMAGE_ORDER_INVALID` 422 |
+| `DELETE /seller/products/:productId/images/:imageId` | – | `204` | `PRODUCT_IMAGE_NOT_FOUND` 404, `SELLER_NOT_APPROVED` |
+
+**Admin endpoints** (auth: admin · rate: general):
+
+| Endpoint | Body | Success | Errors |
+|---|---|---|---|
+| `PUT /admin/categories/:categoryId/image` | `mediaId uuid` · `altText opt nullable str(1..200)` | `200 AdminCategoryNodeDto` | `CATEGORY_NOT_FOUND` 404, `MEDIA_NOT_ATTACHABLE` 422 |
+| `DELETE /admin/categories/:categoryId/image` | – | `204` (also when there is no image) | `CATEGORY_NOT_FOUND` 404 |
+
+### 8.5 Reads
+- **List page:** one query `SELECT DISTINCT ON (product_id) … WHERE product_id = ANY(?) ORDER BY product_id, position`, then one `media.getImages` call (no N+1, CLAUDE.md §6.4). Index `uq_product_images_product_id_position` serves it.
+- **Detail:** images are part of the cached static part. The CDN URLs are stable, so caching them is safe.
+
+### 8.6 New error codes
+
+| Code | HTTP | When |
+|---|---|---|
+| `PRODUCT_IMAGE_NOT_FOUND` | 404 | Missing, or the image of another product or seller |
+| `PRODUCT_IMAGE_LIMIT_REACHED` | 422 | A 9th image |
+| `PRODUCT_IMAGE_ORDER_INVALID` | 422 | The reorder list isn't exactly the product's image ids |
+
+### 8.7 Clarifications (R2-P1 implementation, approved 2026-10-20)
+
+| # | Clarification | Where |
+|---|---|---|
+| CA-15 | An image is named by its **media id** everywhere: `ProductImageDto.id` (the `ImageDto.id`), `:imageId` in the paths, `imageIds` of the reorder and `variants[].imageId`. `media_id` is unique in `product_images`, so one id per image is enough; the row's own id stays internal | §8.4 |
+| CA-16 | `position` is `int(0..7)`; a position past the current end appends. Add answers every image in order (`201`), update the one image (`200`) | §8.4 |
+| CA-17 | Category image: setting the image that is already set changes only the alt text (no new claim, nothing released). Removing when there is no image is a `204` no-op and writes no audit row. Both changes are audited as `category.image_set` / `category.image_removed` with `imageMediaId` and `imageAltText` | UC-CA-9 |
+| CA-18 | The category tree cache holds each category's image with its CDN URLs; the product detail cache holds the images and each variant's `imageId`. Entries cached before R2 (without images) are treated as a miss and rebuilt once | §8.5, CA-8 |
+| CA-19 | A product or category image response with a media id that is somehow no longer `ready` leaves that image out instead of failing (attached media is always ready, ME-11) | §8.5 |
+
+---
+
+## 9. Release 2: product rating projection and product cards [v2.0, approved 2026-10-20]
+
+### 9.1 Columns
+New columns on `products`: `rating_count INT NOT NULL` (`CHECK >= 0`), `rating_avg NUMERIC(3,2) NULL` (`CHECK` between 1 and 5; `null` = no reviews), `rating_version BIGINT NOT NULL`. The migration fills existing rows with `0`, `null`, `0`; product create passes them (no DB defaults, G13).
+
+### 9.2 Projection (consumer `catalog.listing-projections` ← `review.rating_changed`)
+`UPDATE products SET rating_count = ?, rating_avg = ?, rating_version = ?, updated_at = now() WHERE id = ? AND rating_version < ?`, with `rating_avg` computed by the spec 17 §1.2 rule. 0 rows → an older or duplicate event, ack. No product lock is taken first: one conditional update needs none, and it touches nothing CA-2 protects. The rating sits on the product row, which is read fresh on every request, so no cache is deleted (CA-8 still holds).
+
+### 9.3 Reads
+- `ProductListItemDto` and `ProductDetailDto` gain `rating: { avg: string | null; count: number }`. `ProductDetailDto.seller` gains the seller's `ratingAvg`, `ratingCount` (from `sellers.getSummaries`, spec 05 §8.2).
+- `GET /products` whitelist addition:
+
+| apiField | column | type | ops | sort |
+|---|---|---|---|---|
+| rating | `rating_avg` | number (1..5) | `gte` | yes, on `COALESCE(rating_avg, 0)` then `id` (unrated products last on `-rating`) |
+
+  The sort needs an index on `(COALESCE(rating_avg, 0), id)` over publicly visible products (database v2.0, with the same partial predicate as the other public list indexes).
+- New public method `getProductCards(productIds) → Map<productId, ProductCardDto>` (customers' wishlist, reviews' lists): one batched read of the product rows plus one primary-image read (§8.5). Deleted and hidden products are returned too, with `available: false`, so callers can show what the customer saved.
+```ts
+interface ProductCardDto {
+  id: string; slug: string; name: string; minPrice: string | null; maxPrice: string | null;
+  inStock: boolean; available: boolean;          // publicly visible right now
+  primaryImage: ImageDto | null; rating: { avg: string | null; count: number };
+}
+```
+- The review endpoints' `PRODUCT_NOT_FOUND` (spec 17 §4.1) uses the existing public visibility rule, through a new `isPubliclyVisible(productId) → boolean` (`EXISTS`, G22).
+
+## 10. Clarifications (R2-P7 coupons, approved 2026-10-22)
+
+| # | Clarification | Where |
+|---|---|---|
+| CA-20 | `PurchasableVariant` gains the product's `categoryId`; new public `getCategorySubtreeIds(categoryId) → string[]` (the category and every descendant, active or not, from the cached tree; unknown id → `[]`). Promotions uses them for the coupon scope (spec 19 PR-11) and checks a coupon's `scopeCategoryId` with the existing `CATEGORY_NOT_FOUND` lookup | §2 |

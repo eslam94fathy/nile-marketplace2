@@ -35,6 +35,12 @@ const SECRET_KEYS = new Set([
   'apisecret',
   'privatekey',
   'encryptedsecrets',
+  // COD refund payout details (spec 18 RE-8, spec 10 §8.4): plain and sealed.
+  'walletnumber',
+  'instapayaddress',
+  'refundpayout',
+  'refundpayoutencrypted',
+  'payoutdetailsencrypted',
   'cardnumber',
   'cvv',
   'body',

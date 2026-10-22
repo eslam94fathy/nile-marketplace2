@@ -46,6 +46,9 @@ export function orderFixtures(db: Knex) {
           delivery_fee: '50.00',
           agent_fee_share_rate: '0.7000',
           total: '150.00',
+          coupon_id: null,
+          coupon_code: null,
+          discount_total: '0.00',
           ship_governorate_id: await governorateId(),
           ship_governorate_name: 'Cairo',
           ship_recipient_name: 'Mona Ali',
@@ -81,6 +84,12 @@ export function orderFixtures(db: Knex) {
           commission_rate: '0.1000',
           commission: '10.00',
           seller_net: '90.00',
+          discount_amount: '0.00',
+          discount_funding: null,
+          returned_subtotal: '0.00',
+          returned_paid: '0.00',
+          returned_commission: '0.00',
+          returned_seller_net: '0.00',
           pickup_governorate_id: await governorateId(),
           pickup_phone: '+201221234567',
           pickup_city: 'Cairo',
@@ -116,7 +125,10 @@ export function orderFixtures(db: Knex) {
           unit_price: '50.00',
           quantity: 2,
           cancelled_quantity: 0,
+          returned_quantity: 0,
           line_total: '100.00',
+          discount_original: '0.00',
+          discount_amount: '0.00',
           ...overrides,
         })
         .returning('id'),
@@ -159,10 +171,15 @@ export function orderFixtures(db: Knex) {
 
   /** A pending COD payment of 150.00. */
   async function insertPayment(orderId: string, overrides: Record<string, unknown> = {}): Promise<string> {
+    const order = await db('orders')
+      .where({ id: orderId })
+      .first<{ customer_id: string } | undefined>('customer_id');
+    if (!order) throw new Error(`order ${orderId} not found`);
     return one(
       db('payments')
         .insert({
           order_id: orderId,
+          customer_id: order.customer_id,
           method: 'cod',
           status: 'pending',
           amount: '150.00',

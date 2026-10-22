@@ -1,4 +1,5 @@
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
+import webPush from 'web-push';
 
 /** One RSA key pair per test process, used to sign test JWTs and to configure JWT_PUBLIC_KEYS. */
 const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -7,13 +8,16 @@ export const TEST_JWT_KID = 'test-k1';
 export const TEST_JWT_PRIVATE_KEY_PEM = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
 export const TEST_JWT_PUBLIC_KEY_PEM = publicKey.export({ type: 'spki', format: 'pem' }).toString();
 
+/** One VAPID key pair per test process (spec 13 §8.6). */
+export const TEST_VAPID_KEYS = webPush.generateVAPIDKeys();
+
 export const TEST_SECRETS_KEY_ID = 'test-s1';
 export const TEST_SECRETS_KEY = randomBytes(32);
 /** Signs the fake gateway's webhooks in tests (spec 10 PA-5). */
 export const TEST_KASHIER_API_KEY = 'test-kashier-api-key';
 
 /**
- * A complete, valid environment for EVERY process (api, worker, migrate, seed-admin):
+ * A complete, valid environment for EVERY process (api, worker, realtime, migrate, seed-admin):
  * each per-process schema keeps only its own keys. Integration tests override the connection URLs.
  */
 export function testEnvInput(overrides: Record<string, string> = {}): Record<string, string> {
@@ -70,6 +74,36 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     RATE_LIMIT_REFRESH_WINDOW_SECONDS: '60',
     RATE_LIMIT_CHECKOUT_POINTS: '10',
     RATE_LIMIT_CHECKOUT_WINDOW_SECONDS: '60',
+    // Upload rate limit, per user (spec 14 ME-6)
+    RATE_LIMIT_UPLOAD_POINTS: '1000',
+    RATE_LIMIT_UPLOAD_WINDOW_SECONDS: '600',
+    RATE_LIMIT_SUPPORT_MESSAGE_POINTS: '1000',
+    RATE_LIMIT_SUPPORT_MESSAGE_WINDOW_SECONDS: '60',
+    RATE_LIMIT_COUPON_PREVIEW_POINTS: '1000',
+    RATE_LIMIT_COUPON_PREVIEW_WINDOW_SECONDS: '60',
+    // realtime gateway (spec 15 §6)
+    RATE_LIMIT_REALTIME_CONNECT_POINTS: '1000',
+    RATE_LIMIT_REALTIME_CONNECT_WINDOW_SECONDS: '60',
+    REALTIME_SIGNAL_RATE_PER_SECOND: '5',
+    // notification centre retention (worker, spec 13 UC-NO-5)
+    NOTIFICATION_RETENTION_DAYS: '90',
+    JOB_NOTIFICATION_RETENTION_INTERVAL_MS: '86400000',
+    NOTIFICATION_RETENTION_BATCH_SIZE: '1000',
+    SUPPORT_SLA_HOURS: '24',
+    SUPPORT_AUTO_CLOSE_AFTER_HOURS: '168',
+    JOB_SUPPORT_INTERVAL_MS: '60000',
+    SUPPORT_JOBS_BATCH_SIZE: '100',
+    JOB_RETURNS_INTERVAL_MS: '60000',
+    RETURN_JOBS_BATCH_SIZE: '100',
+    JOB_SELLER_HOLD_RELEASE_INTERVAL_MS: '60000',
+    SELLER_HOLD_BATCH_SIZE: '100',
+    // Web Push (spec 13 §8.6); tests swap the sender for a fake through DI
+    VAPID_PUBLIC_KEY: TEST_VAPID_KEYS.publicKey,
+    VAPID_PRIVATE_KEY: TEST_VAPID_KEYS.privateKey,
+    VAPID_SUBJECT: 'mailto:test@nile.test',
+    PUSH_HTTP_TIMEOUT_MS: '2000',
+    PUSH_ENDPOINT_HOST_ALLOWLIST:
+      'fcm.googleapis.com,updates.push.services.mozilla.com,*.notify.windows.com,web.push.apple.com',
     IDEMPOTENCY_TTL_HOURS: '24',
     IDEMPOTENCY_LOCK_TTL_SECONDS: '30',
     // identity (cost 10 = the minimum allowed, keeps tests fast)
@@ -81,6 +115,7 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     INVITE_URL_BASE: 'https://app.nile.test/invite',
     // customers
     CUSTOMER_MAX_ADDRESSES: '20',
+    WISHLIST_MAX_ITEMS: '5',
     // delivery reference data
     GOVERNORATES_CACHE_TTL_SECONDS: '3600',
     // catalog
@@ -97,10 +132,49 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     ORDER_JOBS_BATCH_SIZE: '100',
     JOB_SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_MS: '60000',
     SHIPMENT_JOBS_BATCH_SIZE: '100',
+    // audit retention (worker, spec 20 §2.4)
+    AUDIT_RETENTION_DAYS: '730',
+    JOB_AUDIT_RETENTION_INTERVAL_MS: '86400000',
+    AUDIT_RETENTION_BATCH_SIZE: '1000',
+    // Object storage (spec 14 §6; STORAGE_PROVIDER, _BUCKET, _REGION are derived in AWS)
+    STORAGE_HTTP_TIMEOUT_MS: '5000',
+    // Per test file: createTestResources points these at the file's own MinIO bucket.
+    STORAGE_PROVIDER: 'minio',
+    STORAGE_BUCKET: 'test-media',
+    STORAGE_REGION: 'us-east-1',
+    STORAGE_ENDPOINT: 'http://localhost:9000',
+    STORAGE_PUBLIC_ENDPOINT: 'http://localhost:9000',
+    STORAGE_ACCESS_KEY_ID: 'minioadmin',
+    STORAGE_SECRET_ACCESS_KEY: 'minioadmin',
+    // Media uploads (spec 14 §1, §6)
+    MEDIA_PUBLIC_BASE_URL: 'http://localhost:9000/test-media',
+    MEDIA_MAX_UPLOAD_BYTES: '5242880',
+    MEDIA_UPLOAD_URL_TTL_SECONDS: '300',
+    MEDIA_PRIVATE_URL_TTL_SECONDS: '600',
+    MEDIA_MAX_OPEN_UPLOADS_PER_USER: '20',
+    SUPPORT_MAX_OPEN_TICKETS_PER_USER: '20',
+    REVIEW_WINDOW_DAYS: '60',
+    REVIEW_EDIT_WINDOW_DAYS: '30',
+    // returns (spec 18 §1)
+    RETURN_WINDOW_DAYS: '14',
+    RETURN_SELLER_DECISION_HOURS: '48',
+    RETURN_ESCALATION_WINDOW_DAYS: '7',
+    RETURN_INSPECTION_HOURS: '48',
+    // backoffice
+    DASHBOARD_CACHE_TTL_SECONDS: '60',
+    // Media cleanup job (spec 14 UC-ME-4)
+    MEDIA_PENDING_RETENTION_HOURS: '24',
+    JOB_MEDIA_CLEANUP_INTERVAL_MS: '3600000',
+    MEDIA_CLEANUP_BATCH_SIZE: '100',
     // payments: the fake gateway, signing webhooks with TEST_KASHIER_API_KEY
     PAYMENT_GATEWAY: 'fake',
     KASHIER_API_KEY: TEST_KASHIER_API_KEY,
     KASHIER_HTTP_TIMEOUT_MS: '2000',
+    // the refund job (spec 10 UC-PA-6) against the fake
+    JOB_PAYMENT_REFUND_INTERVAL_MS: '60000',
+    PAYMENT_REFUND_BATCH_SIZE: '50',
+    PAYMENT_REFUND_MAX_ATTEMPTS: '5',
+    PAYMENT_REFUND_STUCK_MINUTES: '10',
     // secrets in event payloads
     SECRETS_ENCRYPTION_KEYS: JSON.stringify({ [TEST_SECRETS_KEY_ID]: TEST_SECRETS_KEY.toString('base64') }),
     SECRETS_ENCRYPTION_ACTIVE_KEY_ID: TEST_SECRETS_KEY_ID,

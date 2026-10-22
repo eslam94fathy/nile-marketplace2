@@ -19,6 +19,9 @@ const COLUMNS = [
   'delivery_fee',
   'agent_fee_share_rate',
   'total',
+  'coupon_id',
+  'coupon_code',
+  'discount_total',
   'ship_governorate_id',
   'ship_governorate_name',
   'ship_recipient_name',
@@ -47,6 +50,9 @@ interface OrderTable {
   delivery_fee: string;
   agent_fee_share_rate: string;
   total: string;
+  coupon_id: string | null;
+  coupon_code: string | null;
+  discount_total: string;
   ship_governorate_id: string;
   ship_governorate_name: string;
   ship_recipient_name: string;
@@ -79,6 +85,9 @@ function toModel(row: OrderRow): Order {
     deliveryFee: Money.of(row.delivery_fee),
     agentFeeShareRate: Rate.of(row.agent_fee_share_rate),
     total: Money.of(row.total),
+    couponId: row.coupon_id,
+    couponCode: row.coupon_code,
+    discountTotal: Money.of(row.discount_total),
     shipping: {
       recipientName: row.ship_recipient_name,
       recipientPhone: row.ship_recipient_phone,
@@ -108,6 +117,8 @@ export interface NewOrder {
   deliveryFee: Money;
   agentFeeShareRate: Rate;
   total: Money;
+  coupon: { id: string; code: string } | null;
+  discountTotal: Money;
   shipping: ShippingSnapshot;
   paymentExpiresAt: Date | null;
   placedAt: Date | null;
@@ -116,6 +127,7 @@ export interface NewOrder {
 export interface OrderStateUpdate {
   status: OrderStatus;
   itemsTotal: Money;
+  discountTotal: Money;
   deliveryFee: Money;
   total: Money;
   completedAt: Date | null;
@@ -142,6 +154,9 @@ export class OrderRepository {
         delivery_fee: order.deliveryFee.toString(),
         agent_fee_share_rate: order.agentFeeShareRate.toString(),
         total: order.total.toString(),
+        coupon_id: order.coupon?.id ?? null,
+        coupon_code: order.coupon?.code ?? null,
+        discount_total: order.discountTotal.toString(),
         ship_governorate_id: order.shipping.governorateId,
         ship_governorate_name: order.shipping.governorateName,
         ship_recipient_name: order.shipping.recipientName,
@@ -222,6 +237,7 @@ export class OrderRepository {
       .update({
         status: state.status,
         items_total: state.itemsTotal.toString(),
+        discount_total: state.discountTotal.toString(),
         delivery_fee: state.deliveryFee.toString(),
         total: state.total.toString(),
         completed_at: state.completedAt,
@@ -229,6 +245,16 @@ export class OrderRepository {
         updated_at: trx.fn.now(),
       })
       .where({ id });
+  }
+
+  /** Order numbers only, one batched query on the primary key (spec 09 §8.1 `getOrderNumbers`). */
+  async findOrderNumbers(ids: readonly string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.db
+      .knex<OrderTable>(T)
+      .select('id', 'order_number')
+      .whereIn('id', [...new Set(ids)]);
+    return new Map(rows.map((row) => [row.id, row.order_number]));
   }
 
   /** One batched `id IN (...)` query (G20). */

@@ -27,6 +27,8 @@ import {
   PRODUCT_DESCRIPTION_MAX_LENGTH,
   PRODUCT_NAME_MAX_LENGTH,
   PRODUCT_NAME_MIN_LENGTH,
+  BLOCK_REASON_MAX,
+  BLOCK_REASON_MIN,
   SKU_MAX_LENGTH,
   SKU_PATTERN,
   STOCK_DELTA_MAX,
@@ -38,6 +40,12 @@ import { ProductStatus, VariantStatus } from '../enums';
 export class ProductIdParamsDto {
   @UuidField()
   productId!: string;
+}
+
+/** `POST /admin/products/:productId/block` (spec 20 §3.4). */
+export class BlockProductDto {
+  @StrField(BLOCK_REASON_MIN, BLOCK_REASON_MAX)
+  reason!: string;
 }
 
 export class ProductVariantParamsDto {

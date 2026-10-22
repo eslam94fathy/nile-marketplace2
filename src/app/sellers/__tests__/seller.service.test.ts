@@ -29,6 +29,8 @@ const seller = (status: SellerStatus = SellerStatus.PENDING_APPROVAL) =>
     commissionRate: Rate.of('0.12'),
     rejectionReason: null,
     approvedAt: null,
+    ratingCount: 0,
+    ratingAvg: null,
     createdAt: NOW,
     updatedAt: NOW,
   });

@@ -10,6 +10,7 @@ import {
 } from '../../src/app/ordering/dto/order-response.dto';
 import { errorBody, successBody } from '../helpers/http';
 import { signTestAccessToken } from '../helpers/jwt';
+import { attachProductImage } from '../helpers/media';
 import { CAIRO_FEE as FEE, orderingApi } from '../helpers/ordering-api';
 import { startTestApp, type TestApp } from '../helpers/test-app';
 
@@ -406,6 +407,68 @@ describe('ordering: COD checkout and order views', () => {
       const buyer = await customer();
       expect((await as(buyer.token).get('/seller/orders')).status).toBe(403);
       expect((await as(adminToken).get('/seller/orders')).status).toBe(403);
+    });
+  });
+
+  describe('item image snapshot (spec 09 §8.3)', () => {
+    it("keeps the variant's image at checkout, shows it in every view, and keeps it after the seller removes it", async () => {
+      const buyer = await customer();
+      const a = await listedVariant({ price: '10.00' });
+      const b = await api.listedVariant({ price: '20.00', sellerId: a.sellerId });
+      await attachProductImage(t, { productId: a.productId, ownerUserId: a.sellerUserId, position: 0 });
+      const own = await attachProductImage(t, {
+        productId: a.productId,
+        ownerUserId: a.sellerUserId,
+        position: 1,
+        variantId: a.variantId,
+      });
+      const { order } = await api.placeOrder(
+        buyer,
+        [
+          { variantId: a.variantId, quantity: 1 },
+          { variantId: b.variantId, quantity: 1 },
+        ],
+        '80.00',
+      );
+      const imageIds = (items: { variantId: string; image: { id: string } | null }[]) =>
+        items.map((item) => [item.variantId, item.image?.id ?? null]);
+      const expected = [
+        [a.variantId, own],
+        [b.variantId, null],
+      ];
+
+      // The tied image wins over the primary one; a variant without images snapshots null.
+      expect(imageIds(must(order.sellerOrders[0]).items)).toEqual(expected);
+      expect(must(order.sellerOrders[0]?.items[0]?.image)).toMatchObject({ width: 1200, height: 800 });
+      const rows = await knex()('order_items')
+        .whereIn('variant_id', [a.variantId, b.variantId])
+        .orderBy('line_total')
+        .select<{ image_media_id: string | null }[]>('image_media_id');
+      expect(rows.map((row) => row.image_media_id)).toEqual([own, null]);
+      // The snapshot does not claim: catalog keeps the only claim.
+      expect(
+        (await knex()('media_objects').where({ id: own }).first<{ claimed_at: Date | null }>('claimed_at'))
+          ?.claimed_at,
+      ).not.toBeNull();
+
+      const sellerToken = await signTestAccessToken({ sub: a.sellerUserId, role: 'seller' });
+      const sellerOrderId = must(order.sellerOrders[0]).id;
+      const sellerView = successBody<SellerOrderDto>(
+        await as(sellerToken).get(`/seller/orders/${sellerOrderId}`),
+      );
+      expect(imageIds(sellerView.data.items)).toEqual(expected);
+      const adminView = successBody<AdminOrderDetailDto>(
+        await as(adminToken).get(`/admin/orders/${order.id}`),
+      );
+      expect(imageIds(must(adminView.data.sellerOrders[0]).items)).toEqual(expected);
+
+      // The seller removes the image (catalog deletes its row and releases the media): history keeps it,
+      // and the order-item FK keeps the media row from being deleted.
+      await knex()('product_images').where({ media_id: own }).del();
+      await knex()('media_objects').where({ id: own }).update({ released_at: new Date() });
+      const detail = successBody<OrderDetailDto>(await as(buyer.token).get(`/orders/${order.id}`));
+      expect(imageIds(must(detail.data.sellerOrders[0]).items)).toEqual(expected);
+      await expect(knex()('media_objects').where({ id: own }).del()).rejects.toMatchObject({ code: '23001' });
     });
   });
 

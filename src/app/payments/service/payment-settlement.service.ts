@@ -1,4 +1,5 @@
 import { inject, injectable } from 'tsyringe';
+import { type IClock } from '../../../lib/clock';
 import { type DbTransaction } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import { type IOutbox, PaymentFailed, PaymentPaid } from '../../../lib/events';
@@ -32,6 +33,7 @@ export class PaymentSettlementService {
     @inject(TOKENS.PaymentRefundRepository) private readonly refunds: PaymentRefundRepository,
     @inject(TOKENS.Outbox) private readonly outbox: IOutbox,
     @inject(TOKENS.Logger) private readonly logger: ILogger,
+    @inject(TOKENS.Clock) private readonly clock: IClock,
   ) {}
 
   async applySuccess(
@@ -66,6 +68,8 @@ export class PaymentSettlementService {
           sellerOrderId: null,
           amount: paid.amount,
           reason: RefundReason.AMOUNT_MISMATCH,
+          // Kashier refunds go to the refund job (PA-22, K-12).
+          autoAt: this.clock.now(),
         },
         trx,
       );
@@ -93,6 +97,8 @@ export class PaymentSettlementService {
           sellerOrderId: null,
           amount: paid.amount,
           reason: RefundReason.LATE_PAYMENT_AFTER_EXPIRY,
+          // Kashier refunds go to the refund job (PA-22, K-12).
+          autoAt: this.clock.now(),
         },
         trx,
       );

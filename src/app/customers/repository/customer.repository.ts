@@ -1,7 +1,8 @@
 import { inject, injectable } from 'tsyringe';
 import { type DbExecutor, type DbTransaction, type IDatabase } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
-import { CUSTOMERS_TABLES } from '../constants';
+import { applyListQuery, escapeLike, type ParsedListQuery } from '../../../lib/http';
+import { CUSTOMER_LIST_PARAMS, CUSTOMERS_TABLES } from '../constants';
 import { Customer } from '../model/customer.model';
 
 const T = CUSTOMERS_TABLES.CUSTOMERS;
@@ -44,6 +45,52 @@ export class CustomerRepository {
 
   private exec(trx?: DbTransaction): DbExecutor {
     return trx ?? this.db.knex;
+  }
+
+  /** Profile id → user id, one batched query on the primary key; unknown ids are left out. */
+  async findUserIds(ids: readonly string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.db
+      .knex<{ id: string; user_id: string }>(T)
+      .select('id', 'user_id')
+      .whereIn('id', [...new Set(ids)]);
+    return new Map(rows.map((row) => [row.id, row.user_id]));
+  }
+
+  /** Batched lookup by profile id (reviewer names, spec 04 §8.3); unknown ids are left out. */
+  async findByIds(ids: readonly string[]): Promise<Customer[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .knex<CustomerRow>(T)
+      .select(...COLUMNS)
+      .whereIn('id', [...new Set(ids)]);
+    return rows.map(toModel);
+  }
+
+  /**
+   * `GET /admin/customers` (spec 20 §3.3): the name filter is a contains match on the same expression
+   * as `idx_customers_name_trgm`, so the trigram index serves it.
+   */
+  async list(query: ParsedListQuery): Promise<Customer[]> {
+    const qb = this.db.knex<CustomerRow>(T).select(...COLUMNS);
+    const name = query.filters.find((filter) => filter.field === CUSTOMER_LIST_PARAMS.NAME);
+    if (name) {
+      qb.whereRaw(`(first_name || ' ' || last_name) ILIKE ? ESCAPE '\\'`, [
+        `%${escapeLike(String(name.value).trim())}%`,
+      ]);
+    }
+    const rows = (await applyListQuery(qb, query, 'id')) as CustomerRow[];
+    return rows.map(toModel);
+  }
+
+  /** Batched lookup by user id (support admin views, spec 04 §8.7); unknown ids are left out. */
+  async findByUserIds(userIds: readonly string[]): Promise<Customer[]> {
+    if (userIds.length === 0) return [];
+    const rows = await this.db
+      .knex<CustomerRow>(T)
+      .select(...COLUMNS)
+      .whereIn('user_id', [...new Set(userIds)]);
+    return rows.map(toModel);
   }
 
   async findByUserId(userId: string, trx?: DbTransaction): Promise<Customer | undefined> {

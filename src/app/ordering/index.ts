@@ -1,10 +1,12 @@
 /**
  * ordering module (docs/spec/09-ordering.md): checkout (the orchestrator), the order and its
  * per-seller split, snapshots, stored statuses and the money of each seller order.
- * Owns tables: orders, seller_orders, order_items, order_item_cancellations, order_status_history,
- * seller_order_status_history. No other module reads or writes them.
- * May call: customers, cart, catalog, sellers, inventory, payments, delivery. Nobody calls ordering
- * (architecture §2): it has no public service API, only event contracts and its routes.
+ * Owns tables: orders, seller_orders, order_items, order_item_cancellations, order_item_returns,
+ * order_status_history, seller_order_status_history. No other module reads or writes them.
+ * May call: customers, cart, catalog, sellers, inventory, payments, delivery, media. From R2 its public
+ * API (`IOrderingDirectory`, spec 09 §8.1) is read by realtime, notifications and support; ordering calls
+ * none of them, so the graph stays acyclic (architecture v2.0 §14.2). Returns calls `IOrderReturns`
+ * (spec 09 §8.7); ordering never calls returns.
  */
 import { type Router } from 'express';
 import { type DependencyContainer } from 'tsyringe';
@@ -29,6 +31,7 @@ import { AdminOrderController } from './controller/admin-order.controller';
 import { OrderController } from './controller/order.controller';
 import { SellerOrderController } from './controller/seller-order.controller';
 import { OrderItemCancellationRepository } from './repository/order-item-cancellation.repository';
+import { OrderItemReturnRepository } from './repository/order-item-return.repository';
 import { OrderItemRepository } from './repository/order-item.repository';
 import { OrderRepository } from './repository/order.repository';
 import { SellerOrderRepository } from './repository/seller-order.repository';
@@ -36,18 +39,42 @@ import { StatusHistoryRepository } from './repository/status-history.repository'
 import { PAYMENT_UPDATES_QUEUE, SHIPMENT_UPDATES_QUEUE } from './constants';
 import { orderingRoutes } from './routes';
 import { AcceptanceTimeoutJob } from './service/acceptance-timeout.job';
+import { AdminOrderActionService } from './service/admin-order-action.service';
 import { CheckoutService } from './service/checkout.service';
 import { OrderActionService } from './service/order-action.service';
 import { OrderLifecycleService } from './service/order-lifecycle.service';
 import { OrderViewService } from './service/order-view.service';
+import { OrderingStatsRepository } from './repository/ordering-stats.repository';
+import { OrderingDirectory } from './service/ordering-directory.service';
+import { OrderReturnService } from './service/order-returns.service';
 import { PaymentExpiryJob } from './service/payment-expiry.job';
 import { PaymentUpdateService } from './service/payment-update.service';
 import { ShipmentUpdateService } from './service/shipment-update.service';
 
-export { OrderingErrorCode } from './errors';
-export { OrderStatus, SellerOrderStatus } from './enums';
+export { OrderingErrorCode, returnQuantityInvalid } from './errors';
+export { OrderStatus, SellerOrderStatus, SellerOrderCancelReason } from './enums';
+export type { NotificationParty, OrderLink } from './model/notification-party.model';
+export type { DeliveredItem, DeliveredItemsQuery, ReviewableItem } from './model/reviewable-item.model';
+export type { DashboardStatsQuery, OrderingDashboardStats } from './model/dashboard-stats.model';
+export { OPEN_SELLER_ORDER_STATUSES, type OpenSellerOrderStatus } from './enums';
+export type {
+  OrderItemSnapshot,
+  ReturnableItem,
+  ReturnableSellerOrder,
+  ReturnAmounts,
+  ReturnLine,
+  ReturnLogistics,
+} from './model/return.model';
+export type { PickupSnapshot, ShippingSnapshot } from './model/order.model';
+/** Inject with `TOKENS.OrderReturns`. */
+export type { IOrderReturns } from './service/order-returns.service';
+/** Inject with `TOKENS.OrderingDirectory`. */
+export type { IOrderingDirectory } from './service/ordering-directory.service';
 
-/** What both processes need: the repositories and the shared order write path. Needs inventory first. */
+/**
+ * What both processes need: the repositories, the shared order write path and the returns API (the
+ * worker completes returns too). Needs inventory and sellers first.
+ */
 function registerOrderingCore(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.OrderRepository, OrderRepository);
   container.registerSingleton(TOKENS.SellerOrderRepository, SellerOrderRepository);
@@ -55,13 +82,18 @@ function registerOrderingCore(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.StatusHistoryRepository, StatusHistoryRepository);
   container.registerSingleton(TOKENS.OrderItemCancellationRepository, OrderItemCancellationRepository);
   container.registerSingleton(TOKENS.OrderLifecycleService, OrderLifecycleService);
+  container.registerSingleton(TOKENS.OrderingStatsRepository, OrderingStatsRepository);
+  container.registerSingleton(TOKENS.OrderingDirectory, OrderingDirectory);
+  container.registerSingleton(TOKENS.OrderItemReturnRepository, OrderItemReturnRepository);
+  container.registerSingleton(TOKENS.OrderReturns, OrderReturnService);
 }
 
-/** api process. Needs customers, cart, catalog, sellers, inventory, payments and delivery registered first. */
+/** api process. Needs customers, cart, catalog, sellers, inventory, payments, delivery and media registered first. */
 export function registerOrderingModule(container: DependencyContainer): void {
   registerOrderingCore(container);
   container.registerSingleton(TOKENS.CheckoutService, CheckoutService);
   container.registerSingleton(TOKENS.OrderActionService, OrderActionService);
+  container.registerSingleton(TOKENS.AdminOrderActionService, AdminOrderActionService);
   container.registerSingleton(TOKENS.OrderViewService, OrderViewService);
   container.registerSingleton(TOKENS.OrderController, OrderController);
   container.registerSingleton(TOKENS.SellerOrderController, SellerOrderController);

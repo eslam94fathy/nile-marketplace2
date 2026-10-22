@@ -6,7 +6,7 @@ import { forbidden } from '../../../lib/error';
 import { type ILogger } from '../../../lib/logger';
 import { type IAccountService } from '../../identity';
 import { SellerStatus } from '../enums';
-import { sellerInvalidStatusTransition } from '../errors';
+import { sellerInvalidStatusTransition, sellerNotFound } from '../errors';
 import { type PickupAddress, type Seller } from '../model/seller.model';
 import { type SellerSettingsRepository } from '../repository/seller-settings.repository';
 import { type SellerStatusHistoryRepository } from '../repository/seller-status-history.repository';
@@ -130,5 +130,12 @@ export class SellerService {
     // sellers.user_id is a FK to users, so the user always exists.
     if (!user) throw new Error(`user ${userId} of a seller profile is missing`);
     return user.email;
+  }
+
+  /** The public seller page (spec 05 §8.2): approved sellers only; any other status reads as missing. */
+  async getPublic(sellerId: string): Promise<Seller> {
+    const seller = await this.sellers.findById(sellerId);
+    if (seller?.status !== SellerStatus.APPROVED) throw sellerNotFound();
+    return seller;
   }
 }

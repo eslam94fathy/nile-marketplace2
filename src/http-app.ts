@@ -2,6 +2,8 @@ import cors from 'cors';
 import express, { type Express, type Router } from 'express';
 import helmet from 'helmet';
 import { type DependencyContainer } from 'tsyringe';
+import { createAuditRouter } from './app/audit';
+import { createMediaRouter } from './app/media';
 import { createHealthRouter, HEALTH_BASE_PATH } from './app/health';
 import { createCartRouter } from './app/cart';
 import { createCatalogRouter } from './app/catalog';
@@ -9,12 +11,18 @@ import { createCustomersRouter } from './app/customers';
 import { createDeliveryRouter } from './app/delivery';
 import { createFinanceRouter } from './app/finance';
 import { createIdentityRouter } from './app/identity';
+import { createNotificationsRouter } from './app/notifications';
 import { createOrderingRouter } from './app/ordering';
 import { createPaymentsRouter, createPaymentsWebhookRouter, PAYMENTS_PATHS } from './app/payments';
+import { createReturnsRouter } from './app/returns';
+import { createPromotionsRouter } from './app/promotions';
+import { createReviewsRouter } from './app/reviews';
+import { createBackofficeRouter } from './app/backoffice';
 import { createSellersRouter } from './app/sellers';
+import { createSupportRouter } from './app/support';
 import { createErrorHandler } from './lib/error';
 import { createDocsRouter, recordMountPath } from './lib/http';
-import { byIp, correlationId, notFound, RateLimitClass, requestLogger } from './lib/middleware';
+import { byIp, correlationId, HEADER, notFound, RateLimitClass, requestLogger } from './lib/middleware';
 import { type ApiInfrastructure } from './infrastructure';
 
 export const API_BASE_PATH = '/api/v1';
@@ -49,8 +57,22 @@ export function createApp(
   app.use(correlationId());
   app.use(requestLogger(logger, clock, [HEALTH_BASE_PATH]));
 
-  // 4. CORS allow-list (mostly irrelevant for the mobile app).
-  app.use(cors({ origin: [...env.CORS_ALLOWED_ORIGINS] }));
+  // 4. CORS allow-list. Credentials for the web client's refresh cookie (spec 03 §8.1): exact origins
+  // only, never `*`. X-Nile-Client forces a preflight, which an origin outside the list fails.
+  app.use(
+    cors({
+      origin: [...env.CORS_ALLOWED_ORIGINS],
+      credentials: true,
+      allowedHeaders: [
+        HEADER.AUTHORIZATION,
+        HEADER.CONTENT_TYPE,
+        HEADER.IDEMPOTENCY_KEY,
+        HEADER.CORRELATION_ID,
+        HEADER.NILE_CLIENT,
+      ],
+      exposedHeaders: [HEADER.CORRELATION_ID, HEADER.RETRY_AFTER, HEADER.IDEMPOTENT_REPLAYED],
+    }),
+  );
 
   // 5. Raw body for the Kashier webhook, JSON for everything else.
   const bodyLimit = env.HTTP_BODY_LIMIT_KB * BYTES_PER_KB;
@@ -69,14 +91,22 @@ export function createApp(
   // 7. Routes.
   if (env.API_DOCS_ENABLED) app.use(DOCS_PATH, recordMountPath(), createDocsRouter(infra.openApi, API_INFO));
   app.use(API_BASE_PATH, recordMountPath(), createIdentityRouter(container, API_BASE_PATH));
+  app.use(API_BASE_PATH, recordMountPath(), createNotificationsRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createDeliveryRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createCustomersRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createSellersRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createCatalogRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createCartRouter(container, API_BASE_PATH));
+  app.use(API_BASE_PATH, recordMountPath(), createPromotionsRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createOrderingRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createPaymentsRouter(container, API_BASE_PATH));
   app.use(API_BASE_PATH, recordMountPath(), createFinanceRouter(container, API_BASE_PATH));
+  app.use(API_BASE_PATH, recordMountPath(), createAuditRouter(container, API_BASE_PATH));
+  app.use(API_BASE_PATH, recordMountPath(), createMediaRouter(container, API_BASE_PATH));
+  app.use(API_BASE_PATH, recordMountPath(), createSupportRouter(container, API_BASE_PATH));
+  app.use(API_BASE_PATH, recordMountPath(), createReviewsRouter(container, API_BASE_PATH));
+  app.use(API_BASE_PATH, recordMountPath(), createReturnsRouter(container, API_BASE_PATH));
+  app.use(API_BASE_PATH, recordMountPath(), createBackofficeRouter(container, API_BASE_PATH));
   for (const { path, router } of options.extraRouters ?? []) app.use(path, recordMountPath(), router);
 
   // 8. 404, then the global error handler.

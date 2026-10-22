@@ -1,6 +1,7 @@
 import { inject, injectable } from 'tsyringe';
+import { type AuditAction, type AuditValues, type IAuditRecorder } from '../../../lib/audit';
+import { type DbTransaction, type ITransactionRunner } from '../../../lib/db';
 import { UserRole } from '../../../lib/auth';
-import { type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import { type PageMeta, type ParsedListQuery, toPage } from '../../../lib/http';
 import { type ILogger } from '../../../lib/logger';
@@ -37,6 +38,7 @@ export class DeliveryAgentService {
     @inject(TOKENS.Logger) private readonly logger: ILogger,
     @inject(TOKENS.AccountService) private readonly accounts: IAccountService,
     @inject(TOKENS.DeliveryAgentRepository) private readonly agents: DeliveryAgentRepository,
+    @inject(TOKENS.AuditRecorder) private readonly audit: IAuditRecorder,
   ) {}
 
   /** The invited login and the agent in one transaction; identity sends the invite email. */
@@ -46,7 +48,12 @@ export class DeliveryAgentService {
         { email: input.email, role: UserRole.DELIVERY_AGENT },
         trx,
       );
-      return this.agents.insert({ ...input, userId }, trx);
+      const created = await this.agents.insert({ ...input, userId }, trx);
+      await this.audit.record(
+        { action: 'delivery_agent.created', targetId: created.id, after: agentValues(created) },
+        trx,
+      );
+      return created;
     });
     this.logger.info('delivery agent created', { event: 'DELIVERY_AGENT_CREATED', agentId: agent.id });
     return this.viewOf(agent);
@@ -54,8 +61,11 @@ export class DeliveryAgentService {
 
   async update(agentId: string, changes: AgentProfileChanges): Promise<AgentView> {
     const agent = await this.tx.run(async (trx) => {
-      if (!(await this.agents.lockById(agentId, trx))) throw agentNotFound();
-      return this.agents.update(agentId, changes, trx);
+      const current = await this.agents.lockById(agentId, trx);
+      if (!current) throw agentNotFound();
+      const updated = await this.agents.update(agentId, changes, trx);
+      await this.recordChange('delivery_agent.updated', current, updated, trx);
+      return updated;
     });
     return this.viewOf(agent);
   }
@@ -79,6 +89,7 @@ export class DeliveryAgentService {
       if ((await this.userStatusOf(current)) === UserStatus.ACTIVE) {
         await this.accounts.setUserStatus(current.userId, UserStatus.SUSPENDED, actorUserId, trx);
       }
+      await this.recordChange('delivery_agent.deactivated', current, updated, trx);
       return updated;
     });
     this.logger.info('delivery agent deactivated', { event: 'DELIVERY_AGENT_DEACTIVATED', agentId });
@@ -95,6 +106,7 @@ export class DeliveryAgentService {
       if ((await this.userStatusOf(current)) === UserStatus.SUSPENDED) {
         await this.accounts.setUserStatus(current.userId, UserStatus.ACTIVE, actorUserId, trx);
       }
+      await this.recordChange('delivery_agent.activated', current, updated, trx);
       return updated;
     });
     this.logger.info('delivery agent activated', { event: 'DELIVERY_AGENT_ACTIVATED', agentId });
@@ -137,6 +149,19 @@ export class DeliveryAgentService {
     return { items: await this.viewsOf(page.items), meta: page.meta };
   }
 
+  /** The audit row of an agent write (spec 20 §2.3), in its transaction. */
+  private recordChange(
+    action: AuditAction,
+    before: DeliveryAgent,
+    after: DeliveryAgent,
+    trx: DbTransaction,
+  ): Promise<void> {
+    return this.audit.record(
+      { action, targetId: after.id, before: agentValues(before), after: agentValues(after) },
+      trx,
+    );
+  }
+
   async viewOf(agent: DeliveryAgent): Promise<AgentView> {
     const [view] = await this.viewsOf([agent]);
     if (!view) throw new Error(`no view for agent ${agent.id}`);
@@ -166,4 +191,14 @@ export class DeliveryAgentService {
     const [user] = await this.accounts.getUsersByIds([agent.userId]);
     return user?.status;
   }
+}
+
+/** Audited fields of an agent (spec 20 §2.3). The email belongs to identity and isn't recorded. */
+function agentValues(agent: DeliveryAgent): AuditValues {
+  return {
+    fullName: agent.fullName,
+    phone: agent.phone,
+    homeGovernorateId: agent.homeGovernorateId,
+    status: agent.status,
+  };
 }

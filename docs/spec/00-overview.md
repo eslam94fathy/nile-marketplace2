@@ -1,6 +1,7 @@
 # Nile Marketplace — Spec Overview (Release 1)
 
 Status: **v1.1 APPROVED (2026-10-08).** v1.0 approved 2026-10-07. v1.1: §7 now points to `02-events.md` (O-3); per-module answers in §9.1. Changes from now on need explicit approval and a version bump.
+**v2.0 APPROVED (2026-10-20):** §10 adds the Release 2 scope. R-1…R-21 answered 2026-10-19 (§10.8). §10 approved 2026-10-20 (R2-Q1), with the answers in §10.8–§10.13. §1–§9 describe Release 1; where §10.3–§10.4 and the Release 2 sections of the module specs differ, the module specs win.
 Legend: **[CONFIRMED]** = decided by the user · **[PROPOSED]** = Claude's proposal, not yet approved · **Q-n** = open question (§8). Answers are logged in §9.
 
 Nothing marked [PROPOSED] may be implemented until it is approved.
@@ -338,3 +339,313 @@ The user accepted every recommendation in §8.1.
 | S-17 | All product writes require an `approved` seller |
 | S-18 | No shipment reassignment after pickup in R1 |
 | S-19 | Add `POST /auth/password/change` (revokes other sessions) |
+
+---
+
+## 10. Release 2 [CONFIRMED 2026-10-20]
+
+### 10.1 Scope
+
+Confirmed by the user (2026-10-19):
+
+| Area | In R2 |
+|---|---|
+| Media | Product and category images in object storage (S3 + CloudFront; MinIO locally) |
+| Realtime | WebSocket (Socket.IO) pushes of state changes to the client (a **web app** in R2, R-4) |
+| Support | Support chat as **tickets**: customer → admin support, seller → admin support. No customer ↔ seller chat |
+| Push | Browser push notifications (standard Web Push, VAPID; R-20), an in-app notification centre and notification preferences |
+| Reviews | Product reviews and ratings (verified purchase), wishlist |
+| Back-office | Admin order / seller-order cancellation (S-9), user search, dashboard stats, audit log of admin actions |
+| Returns | Return requests after delivery, reverse shipments, automated Kashier refunds, COD customer refunds, seller holding period (Q-25) |
+| Promotions | Coupons |
+
+Sequencing (user, 2026-10-19): R2 specs and design are written now; P9 (staging deploy) runs when the AWS accounts arrive; R2 code starts after R1 is on staging.
+
+### 10.2 Modules
+
+| Module | New / changed | Owns (tables, proposed) | Responsibility in R2 |
+|---|---|---|---|
+| `media` | **new** | `media_objects` | Presigned uploads, verification, image processing (worker), public URLs, orphan cleanup |
+| `realtime` | **new** (own entrypoint `realtime.ts`) | none | Socket.IO gateway: JWT handshake, rooms, server → client events; fed by a worker consumer through Redis |
+| `support` | **new** | `support_tickets`, `support_messages`, `support_ticket_reads` | Tickets, messages, assignment, internal notes, auto-close, SLA flag |
+| `reviews` | **new** | `product_reviews`, `review_images`, `review_replies` | Verified reviews, seller reply, admin hide; publishes rating events |
+| `returns` | **new** | `return_requests`, `return_items`, `return_status_history` | Return lifecycle, seller decision, hand-off to delivery, refund trigger |
+| `promotions` | **new** | `coupons`, `coupon_redemptions` | Coupon definition, validation, atomic redemption, release |
+| `audit` | **new** | `admin_audit_log` | Append-only log of admin actions, written in the action's transaction |
+| `catalog` | changed | + `product_images`, `categories.image_media_id`, `products.rating_avg` / `rating_count` | Images on products and categories; rating projection for filters and sort |
+| `customers` | changed | + `wishlist_items` | Wishlist |
+| `notifications` | changed | + `push_subscriptions`, `notification_preferences`, `user_notifications` | Web Push (R-20), notification centre, preferences |
+| `ordering` | changed | snapshot columns | Admin cancel, coupon discount snapshot, primary image snapshot, `returned` item quantities |
+| `payments` | changed | + refund rows | Automated Kashier refunds (manual fallback stays) |
+| `delivery` | changed | `shipments.kind` | Reverse (return) shipments: customer → seller |
+| `finance` | changed | + pending balance, customer refund payable | Holding period, coupon funding, refund entries |
+| `sellers` | changed | + `rating_avg` / `rating_count` | Seller rating projection |
+
+### 10.3 Cross-cutting rules [CONFIRMED]
+
+**Media**
+- Clients upload **directly to object storage** with a short-lived presigned POST limited by size and content type. The api never receives image bytes.
+- An upload is `pending` until the client completes it. The server then checks the object (size, magic bytes), and the worker strips metadata (EXIF / GPS) and re-encodes it to fixed sizes. Only `ready` images can be attached. Unattached uploads are deleted after a retention period.
+- Images are served from the CDN under immutable keys. API responses carry the URLs per size, never storage keys or bucket names.
+- A seller may attach images only to their own products (ownership check in the service). Category images are admin-only.
+- `order_items` snapshots the product's primary image, so order history keeps its picture after the seller changes images.
+
+**Realtime**
+- The socket is a **notification channel**, not a write path. Every state change (including sending a chat message) goes through the REST API. After reconnecting, the app refetches what it shows. The database stays the source of truth, so a missed socket event loses nothing.
+- Connecting needs a valid access token. A suspended user is refused (I-11). The connection is closed when the token expires, and the app reconnects with a refreshed one.
+- A user receives only events about their own resources (rooms per user; per ticket for support; one room for admins on support duty).
+
+**Push and notification centre**
+- Every user-facing event creates a `user_notifications` row (the in-app list) and a socket event. A push is sent according to the user's preferences (R-5, R-6).
+- Push subscriptions (Web Push endpoint + keys) are registered after login and removed on logout; subscriptions the push service reports gone (404 / 410) are deleted.
+- Push payloads carry no PII beyond what the lock screen may show (order number, short text) (R-7).
+
+### 10.4 Business rules per feature [CONFIRMED; details in the module specs]
+
+**Product and category images**
+- Up to N images per product, ordered, one marked primary (the first). An image may be tied to a variant, so the app shows it when that variant is picked (R-2).
+- One optional image per category.
+- A product needs no image to be `active` (R-3).
+
+**Support tickets**
+- A customer or a seller opens a ticket with a category, a subject and a first message, optionally about one of their own orders / seller orders.
+- `open → awaiting_admin ⇄ awaiting_user → resolved → closed`. Any admin can pick up an unassigned ticket or reassign it. A user message moves the ticket to `awaiting_admin`, an admin reply to `awaiting_user`.
+- The user may reopen a `resolved` ticket within the auto-close period; after it, the ticket is `closed` and the user opens a new one.
+- Admins can add **internal notes** that the user never sees.
+- Messages are text plus up to N image attachments (R-9). A retried message is not stored twice (client message id).
+
+**Reviews, ratings, wishlist**
+- A customer can review a product once per **delivered** order item, within a window after delivery (R-10). Rating 1–5, optional text and images.
+- Reviews are published at once and an admin can hide one (R-10). The seller may reply once.
+- Product rating = average of its published reviews; seller rating = average over the seller's products (R-11). Both are shown and filterable.
+- Wishlist: products, not variants; capped in size (R-12). Unavailable products stay in the list, marked unavailable.
+
+**Admin back-office and audit**
+- Admins can cancel an order or a seller order before `picked_up`, with a reason. It uses the same cancellation rules and money effects as a seller cancel (§4.3), with actor `admin` (S-9 answered for R2).
+- Every admin write is recorded in the audit log with actor, action, target, before / after values (secrets never stored) and correlation id, in the same transaction as the change.
+- Dashboard stats are read-only aggregates (orders by status, GMV per day, top sellers, open tickets, COD outstanding).
+
+**Returns and refunds**
+- A customer can request a return of delivered items (per item and quantity) within the return window, with a reason and photos (R-13).
+- The seller approves or rejects within a deadline; no answer → auto-approved; a rejected customer can escalate through a support ticket, where an admin decides (R-14).
+- An approved return creates a **reverse shipment** (agent picks up at the customer, drops at the seller). The seller confirms receipt → stock is restocked → the items count as `returned` → the refund runs.
+- Refund: Kashier orders are refunded through the Kashier API automatically (manual recording stays as a fallback); COD orders get a refund owed to the customer, paid by an admin outside the system and recorded (R-15).
+- Who bears the return delivery cost depends on the reason (R-13).
+
+**Holding period (Q-25)**
+- The seller net is credited as **pending** on `delivered` and becomes **available** when the return window of that seller order closes with no open return (R-16). Payouts are recorded against the available balance only.
+
+**Coupons**
+- A coupon has a code, a percent or fixed discount, a minimum item subtotal, an optional maximum discount, validity dates, a global and a per-customer usage limit, and a scope (platform-wide, one seller, one category) (R-17).
+- One coupon per checkout. It applies to the items only, never to the delivery fee.
+- Redemption is atomic at checkout (the limit can't be exceeded under concurrency). The discount is snapshotted per seller order and per item.
+- Who funds the discount decides the commission and the ledger entries (R-17). Cancelling a whole checkout before delivery frees the redemption (R-18).
+
+### 10.5 R2 phases (detailed in `docs/plan/01-release-2-plan.md`)
+
+| Phase | Content |
+|---|---|
+| R2-P0 | Specs 14–20, spec bumps, architecture v2.0, database v2.0, new dependencies, R2 plan: **done** (approved 2026-10-20) |
+| R2-P1 | Audit (moved from R2-P5, R2-Q2) + media + product / category images |
+| R2-P2 | Realtime gateway + push + notification centre |
+| R2-P3 | Support tickets |
+| R2-P4 | Reviews, ratings, wishlist |
+| R2-P5 | Admin back-office (dashboard, user directory, admin cancellation, product block) |
+| R2-P6 | Holding period, returns, automated refunds |
+| R2-P7 | Coupons |
+| R2-P8 | Hardening (upload and socket security review, socket load test), staging rollout |
+
+### 10.6 Open questions (R-n)
+
+| # | Topic | Options / recommendation | Spec |
+|---|---|---|---|
+| R-1 | Image format and sizes | **Rec:** WebP only, widths 200 / 600 / 1200 px, aspect kept; uploads jpeg / png / webp up to 5 MB · or WebP + AVIF (smaller files, about twice the processing time) | 14 |
+| R-2 | Images per product, variant images | **Rec:** max 8 per product; an image may be tied to one variant (colour variants) · or product-level only | 06, 14 |
+| R-3 | Image required to publish | **Rec:** no (R1 products have none; the app shows a placeholder) · or ≥1 image required to become `active` | 06 |
+| R-4 | Client | **Answered:** a web app only for now (mobile later); the API stays client-agnostic | 15 |
+| R-5 | Push while the app is open | **Rec:** always push per preferences; the app hides the banner if it is in the foreground on that screen (socket presence is unreliable on mobile) · or skip push while a socket is connected | 13, 15 |
+| R-6 | Notification preferences | **Rec:** categories `orders`, `shipments`, `support`, `promotions`; transactional ones on by default and mutable for push only; `promotions` off by default (opt-in) | 13 |
+| R-7 | Push text | **Rec:** order number + status, ticket subject; no names, addresses or amounts · or richer text | 13 |
+| R-8 | Support details | **Rec:** categories `order`, `payment`, `delivery`, `return`, `account`, `seller_onboarding`, `other`; SLA flag after 24 h without an admin reply; auto-close 7 days after `resolved`; max 20 open tickets per user; sellers don't see customer tickets about their orders (S-11), admins relay | 16 |
+| R-9 | Chat attachments | **Rec:** images only, max 3 per message, same limits as R-1 · or also PDF | 16 |
+| R-10 | Review rules | **Rec:** review window 60 days after delivery; edit within 30 days of posting; published immediately, admin hides afterwards (post-moderation); seller replies once · or pre-moderation (admin approves each review) | 17 |
+| R-11 | Seller rating | **Rec:** derived from the seller's product reviews (no separate seller review) · or a separate rating of the seller per seller order | 17 |
+| R-12 | Wishlist | **Rec:** in `customers`, products only, max 200 items | 04 |
+| R-13 | Return window, reasons, return delivery cost | **Rec:** 14 days after `delivered`; reasons `damaged`, `wrong_item`, `not_as_described`, `changed_mind`; seller-fault reasons → seller bears the return delivery fee (deducted from their balance), `changed_mind` → the customer (deducted from the refund) · or the platform always bears it | 18 |
+| R-14 | Seller decision | **Rec:** seller decides within 48 h, silence = approve; a rejection can be escalated to support, the admin decision is final · or an admin decides every return | 18 |
+| R-15 | Refund execution | **Rec:** Kashier: automated API refund, failures retried, then flagged for manual handling; COD: refund owed to the customer, admin pays outside the system and records it (customer payout details collected in the request) | 10, 12, 18 |
+| R-16 | Holding period | **Rec:** until the return window closes (delivered + 14 days) and no return is open · or a fixed number of days from env | 12 |
+| R-17 | Coupon funding and commission | **Rec:** admins create platform-funded coupons (commission on the undiscounted subtotal; the platform absorbs the discount); sellers create seller-funded coupons for their own products (commission on the discounted subtotal) · or platform-funded only in R2 | 09, 12, 19 |
+| R-18 | Coupon release | **Rec:** the redemption is freed only if the whole checkout is cancelled before any delivery (or expires unpaid); partial cancels and returns keep it and share the discount pro rata | 19 |
+| R-19 | Audit scope | **Rec:** every admin write endpoint, plus seed-admin CLI runs; kept 2 years · or a chosen subset | 20 |
+| R-20 | Push technology for a web client (R-4) | **Rec:** standard Web Push (VAPID keys, `web-push` library; Chrome, Edge, Firefox, Safari incl. iOS 16.4+ installed web apps); no Google account needed; a mobile app later adds FCM behind the same `pkg/push` interface · or FCM for web (Firebase SDK in the browser, also ready for mobile later) | 13 |
+| R-21 | Token storage on the web (CLAUDE.md §10 / O1 assume Keychain / Keystore) | **Rec:** keep Bearer access token **in memory only**; refresh token in an `HttpOnly; Secure; SameSite=Strict` cookie scoped to `/api/v1/auth`, read only by refresh and logout, which also require a custom header (`X-Requested-With`) against CSRF; body transport stays for a future mobile app · or keep the R1 rule (refresh token in the body, the web app stores it in `localStorage`; exposed to any XSS) | 03 |
+
+### 10.7 Out of R2 (suggested for later)
+Live agent location tracking (builds on the socket), back-in-stock alerts, product Q&A, seller analytics dashboard, Arabic content fields for products and categories, SMS OTP, customer ↔ seller chat.
+
+### 10.8 Answered log: Release 2 (2026-10-19)
+
+The user accepted every recommendation R-1…R-19 except R-4, answered as "a web app only for now". The R-4 answer opened R-20 (push for the web) and R-21 (token storage on the web); both recommendations accepted the same day.
+
+| Q | Answer |
+|---|---|
+| R-1 | WebP only, widths 200 / 600 / 1200 px; uploads jpeg / png / webp up to 5 MB |
+| R-2 | Max 8 images per product; an image may be tied to one variant |
+| R-3 | No image required to publish |
+| R-4 | The client is a web app only for now; mobile later; the API stays client-agnostic |
+| R-5 | Always push per preferences; the client hides the banner when it already shows that screen |
+| R-6 | Categories `orders`, `shipments`, `support`, `promotions`; transactional on by default and mutable for push only; `promotions` opt-in |
+| R-7 | Push text: order number + status, ticket subject; no names, addresses or amounts |
+| R-8 | Support categories as listed; SLA flag 24 h; auto-close 7 days after `resolved`; max 20 open tickets per user; sellers don't see customer tickets |
+| R-9 | Chat attachments: images only, max 3 per message |
+| R-10 | Review window 60 days; edit 30 days; post-moderation; one seller reply |
+| R-11 | Seller rating derived from product reviews |
+| R-12 | Wishlist in `customers`, products only, max 200 |
+| R-13 | Return window 14 days; reasons `damaged`, `wrong_item`, `not_as_described`, `changed_mind`; seller-fault → seller bears the return fee, `changed_mind` → customer |
+| R-14 | Seller decides within 48 h, silence = approve; escalation to support, admin final |
+| R-15 | Kashier automated refund with retries then manual flag; COD refund owed to the customer, paid by admin and recorded |
+| R-16 | Holding period until the return window closes with no open return |
+| R-17 | Platform-funded coupons (commission on the undiscounted subtotal) and seller-funded coupons (commission on the discounted subtotal) |
+| R-18 | Redemption freed only when the whole checkout is cancelled before any delivery or expires unpaid |
+| R-19 | Every admin write + seed-admin runs audited; kept 2 years |
+| R-20 | Standard Web Push (VAPID keys, `web-push` library); a future mobile app adds FCM behind the same `pkg/push` interface |
+| R-21 | Web: access token in memory only; refresh token in an `HttpOnly; Secure; SameSite=Strict` cookie scoped to `/api/v1/auth`, used by refresh and logout, which also require a custom header against CSRF; body transport kept for a future mobile app (spec 03 and CLAUDE.md §10 / O1 change) |
+
+### 10.9 Answered log: Release 2 spec questions (2026-10-20)
+
+The user accepted every recommendation in the open-question tables of specs 03 §8.3, 13 §8.7, 14 §7, 15 §7 and 16 §7.
+
+| Q | Answer |
+|---|---|
+| IW-1 | Web app on `app.<domain>`, api on `api.<domain>` (same registrable domain, `SameSite=Strict` works) |
+| IW-2 | The web client serialises refreshes across tabs (Web Locks + BroadcastChannel); no server grace window |
+| IW-3 | Opt-in header `X-Nile-Client: web`, also the CSRF guard |
+| NO-6 | Push through a second outbox event and queue `notifications.push` (retries, DLQ) |
+| NO-7 | In-app notifications kept 90 days |
+| NO-8 | Password reset and suspension delete all of the user's push subscriptions; change-password keeps them |
+| NO-9 | New tickets reach admins through the socket only; the assigned admin gets in-app + push for user messages |
+| NO-10 | Agents use the web app and get `shipment_assigned` push with `high` urgency |
+| NO-11 | `promotions` category created now, off by default, no sender in R2 |
+| ME-1 | Private media under `private/`, never on the CDN, presigned GET URLs (10 min) for authorised viewers only |
+| ME-2 | Any admin may claim any admin's `category_image` upload |
+| ME-3 | `complete` answers `202` + `MediaDto`; the client polls or waits for the socket push |
+| ME-4 | The FK `RESTRICT` decides cleanup: still referenced → kept (`retained_at`) |
+| ME-5 | Orphan objects after a failed delete accepted, `warn` log |
+| ME-6 | New rate-limit class `upload`, keyed by user id (30 per 10 min proposed) |
+| RT-1 | Gateway in its own entrypoint and ECS service behind the same ALB (`/realtime*`, idle timeout 120 s), 2 × 0.25 vCPU to start |
+| RT-2 | Disconnect at token `exp`; the client refreshes through REST and reconnects |
+| RT-3 | Fan-out with Redis down: drop with `warn` |
+| RT-4 | Kashier return page waits for `payment.updated` (~30 s), fallback poll every 5 s |
+| RT-5 | 5 signals / s per socket, no per-user connection cap; revisit after the R2-P8 socket load test |
+| RT-6 | Hand-written `docs/realtime.md`, payload types exported from `src/app/realtime/messages.ts` |
+| RT-7 | Classic pub/sub Redis adapter; emitter compatibility verified in R2-P2 |
+| SU-1 | `Idempotency-Key` required on ticket open and message post (replaces the "client message id") |
+| SU-2 | The first replying admin takes an unassigned ticket |
+| SU-3 | Users see every admin as "Nile Support"; admins see names |
+| SU-4 | Open-ticket limit is a soft check; a small overshoot is accepted |
+| SU-5 | Assign, resolve and close are audited; messages and notes are not |
+| SU-6 | Tickets kept indefinitely in R2 |
+
+### 10.10 Answered log: Release 2 spec questions, second batch (2026-10-20)
+
+The user accepted every recommendation in specs 04 §8.6, 09 §8.6, 17 §7 and 20 §7.
+
+| Q | Answer |
+|---|---|
+| RV-1 | One live review per customer and product, based on any delivered item of it |
+| RV-2 | A review stays after the item is returned |
+| RV-3 | Up to 4 public images per review |
+| RV-4 | The author may delete any time (soft delete) and write a new one while the window is open |
+| RV-5 | One final seller reply; an admin may hide it |
+| RV-6 | Reviewer shown as first name + last initial |
+| RV-7 | No user reports of reviews in R2 |
+| RV-8 | In-app + push under `orders`: the seller on a new review, the reviewer on a reply |
+| WL-1 | `GET /me/wishlist/product-ids` once per session; product endpoints stay anonymous |
+| WL-2 | Unavailable products stay in the wishlist and count toward the 200 |
+| WL-3 | No wishlist alerts in R2 |
+| OR-17 | Admin whole-order cancel is all or nothing (`409 ORDER_NOT_CANCELLABLE` names the blockers) |
+| OR-18 | Admin cancel reason: required free text 3..500 |
+| OR-19 | The customer sees `admin_cancelled` only; the text stays internal |
+| BO-1 | Table-less `backoffice` module composes the dashboard and directory |
+| BO-2 | Trigger rejects `UPDATE` on the audit log; `DELETE` only by the retention job |
+| BO-3 | Admin reads are not audited in R2 |
+| BO-4 | Every admin may read the audit log |
+| BO-5 | Dashboard days are `Africa/Cairo` business days |
+| BO-6 | Admin product block is in R2 |
+| BO-7 | Placed and delivered GMV both shown; returns reduce delivered GMV on the day received |
+| BO-8 | The seller is notified in-app + push when a product is blocked |
+
+### 10.11 Answered log: Release 2 spec questions, third batch (2026-10-20)
+
+The user accepted every recommendation in specs 09 §8.9, 10 §8.7, 11 §8.6, 12 §8.7, 18 §7 and 19 §7.
+
+| Q | Answer |
+|---|---|
+| RE-1 | One open return per seller order; later requests for what is still returnable within the window |
+| RE-2 | At least 1 photo (max 4) for seller-fault reasons, optional for `changed_mind` |
+| RE-3 | A rejection can be escalated within 7 days; the admin decides in returns, final |
+| RE-4 | One reason per request |
+| RE-5 | Return fee = the customer governorate's current delivery fee, snapshotted with the agent share rate |
+| RE-6 | Seller inspects within 48 h (confirm with restock choice, or dispute); silence = confirmed without restock |
+| RE-7 | The original delivery fee is never refunded |
+| RE-8 | COD payout via mobile wallet or InstaPay, stored and sent encrypted, cleared at the end |
+| RE-9 | Return notifications to seller and customer under `orders` |
+| RE-10 | No extra abuse limits in R2 |
+| PR-1 | Coupon preview endpoint; the code is sent again at checkout, the cart stores nothing |
+| PR-2 | Proportional allocation with largest-remainder rounding |
+| PR-3 | Per-customer limit required (forms propose 1) |
+| PR-4 | No customer targeting in R2 |
+| PR-5 | No public coupon list |
+| PR-6 | Rate class `coupon-preview` (20 / min per user) |
+| PR-7 | Seller coupons: commission on the discounted subtotal, shown on the seller order |
+| PR-8 | After the first redemption only `endsAt`, `globalLimit`, `status` change |
+| PR-9 | Admins may deactivate seller coupons (audited) |
+| OR-20 | Return amounts computed in ordering |
+| OR-21 | A seller order stays `delivered` after a return |
+| OR-22 | Existing customer-money event fields carry paid amounts, version 1, consumers deployed first |
+| PA-22 | Every Kashier refund flag is refunded automatically |
+| PA-23 | `partially_refunded` / `refunded` replace the `_manually` statuses (expand/contract) |
+| PA-24 | An unknown refund outcome is checked with Kashier before any resend; undecidable → manual |
+| PA-25 | Refunds run in the worker, which now holds the Kashier secret key (reverses PA-18) |
+| PA-26 | Customer notified when a refund is issued |
+| DE-17 | Return pickups auto-assigned by the customer's governorate |
+| DE-18 | Up to 3 pickup attempts; refusal ends at once; no fee on failure |
+| DE-19 | Seller absent at hand-over not modelled in R2 |
+| FI-12 | `seller_payable` may go negative for a fee larger than the hold |
+| FI-13 | No holds for seller orders delivered before R2 |
+| FI-14 | Coupon cost in `platform_promotions` |
+| FI-15 | A refund event before the return booking is retried |
+
+### 10.12 Answered log: Release 2 design questions (2026-10-20)
+
+The user accepted every recommendation in architecture v2.0 §14.11 and database v2.0 §14.15.
+
+| Q | Answer |
+|---|---|
+| A-5 | The web app is hosted outside this repository by the web team |
+| A-6 | Images processed in the worker (prefetch 1, prod worker 1 vCPU / 2 GB) |
+| A-7 | The existing ALB serves `/realtime*`; idle timeout 120 s |
+| A-8 | CDN on `media.<domain>` |
+| A-9 | New dependencies of architecture §14.10 approved |
+| A-10 | MinIO through Testcontainers; in-memory storage fake in unit tests |
+| DB-Q7 | New `NOT NULL` columns via a temporary default dropped in the same migration |
+| DB-Q8 | An admin block sets the product `inactive` and locks its status; unblock leaves it inactive (spec 20 §3.4 amended) |
+| DB-Q9 | Partial index on `order_items.image_media_id` |
+| DB-Q10 | Rating sort indexed globally; per-category index only after measuring |
+| DB-Q11 | Encrypted payout details stored as `TEXT` with a length CHECK |
+| DB-Q12 | No holds for seller orders delivered before R2 |
+
+### 10.13 Answered log: Release 2 plan questions (2026-10-20)
+
+The user accepted every recommendation in `docs/plan/01-release-2-plan.md` §2.2.
+
+| Q | Answer |
+|---|---|
+| R2-Q1 | Every R2 document approved as written. The Release 2 sections stay as their own numbered sections (not moved into §1–§7), so cross-references stay valid |
+| R2-Q2 | Audit built in R2-P1, wired into every existing admin write |
+| R2-Q3 | `r2-specs` merges into `main` (docs only); then one branch per phase from `main` |
+| R2-Q4 | Before go-live a phase ships in one deploy; after go-live, unparseable payload changes ship consumers first, publisher second |
+| R2-Q5 | R2 phases go to staging as they merge; production at the separate go-live decision |
+| R2-Q6 | The user provides DNS for `media.<domain>` before R2-P1, the web origins and realtime URL before R2-P2, the Kashier test account before R2-P6 |
+| R2-Q7 | VAPID key pair per environment generated by hand, private key in Secrets Manager |

@@ -5,6 +5,7 @@ import { cartFixtures } from '../helpers/cart-fixtures';
 import { errorBody, successBody } from '../helpers/http';
 import { API } from '../helpers/identity';
 import { signTestAccessToken } from '../helpers/jwt';
+import { attachProductImage } from '../helpers/media';
 import { startTestApp, type TestApp } from '../helpers/test-app';
 
 const MAX_LINES = 5;
@@ -155,6 +156,51 @@ describe('cart endpoints', () => {
       // A deactivated product is unavailable too.
       await knex()('products').where({ id: ok.productId }).update({ status: 'inactive' });
       expect(lineOf(await cartOf(token), ok.variantId)?.issue).toBe('UNAVAILABLE');
+    });
+
+    it("shows each line's variant image: its own, else the product's primary, else null (spec 08 §8)", async () => {
+      const { token } = await customer();
+      const seller = await fx.insertSeller();
+      const tied = await listedVariant({ sellerId: seller.sellerId });
+      const primaryOnly = await listedVariant({ sellerId: seller.sellerId });
+      const none = await listedVariant({ sellerId: seller.sellerId });
+      const primary = await attachProductImage(t, {
+        productId: tied.productId,
+        ownerUserId: seller.userId,
+        position: 0,
+      });
+      const own = await attachProductImage(t, {
+        productId: tied.productId,
+        ownerUserId: seller.userId,
+        position: 1,
+        variantId: tied.variantId,
+      });
+      const otherPrimary = await attachProductImage(t, {
+        productId: primaryOnly.productId,
+        ownerUserId: seller.userId,
+        position: 0,
+      });
+      for (const v of [tied, primaryOnly, none]) expect((await add(token, v.variantId, 1)).status).toBe(201);
+
+      const cart = await cartOf(token);
+      expect([tied, primaryOnly, none].map((v) => lineOf(cart, v.variantId)?.image?.id ?? null)).toEqual([
+        own,
+        otherPrimary,
+        null,
+      ]);
+      expect(lineOf(cart, tied.variantId)?.image).toMatchObject({
+        width: 1200,
+        height: 800,
+        urls: {
+          thumb: expect.stringContaining(own) as unknown,
+          medium: expect.any(String) as unknown,
+          large: expect.any(String) as unknown,
+        },
+      });
+
+      // Untied, the variant falls back to the primary image.
+      await knex()('product_images').where({ media_id: own }).update({ variant_id: null });
+      expect(lineOf(await cartOf(token), tied.variantId)?.image?.id).toBe(primary);
     });
   });
 

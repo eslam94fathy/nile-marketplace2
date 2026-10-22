@@ -4,6 +4,8 @@ export const MovementType = {
   RESERVE: 'reserve',
   RELEASE: 'release',
   COMMIT: 'commit',
+  /** Returned units put back on hand (spec 07 §8). */
+  RETURN_RESTOCK: 'return_restock',
 } as const;
 export type MovementType = (typeof MovementType)[keyof typeof MovementType];
 

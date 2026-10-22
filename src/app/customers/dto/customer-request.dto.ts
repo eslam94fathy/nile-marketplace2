@@ -1,6 +1,9 @@
 import { IsBoolean } from 'class-validator';
 import {
   EmailField,
+  FieldType,
+  FilterOp,
+  type ListSpec,
   Nullable,
   Optional,
   PasswordField,
@@ -9,7 +12,7 @@ import {
   StrField,
   UuidField,
 } from '../../../lib/http';
-import { ADDRESS_LIMITS as L, NAME_MAX_LENGTH } from '../constants';
+import { ADDRESS_LIMITS as L, CUSTOMER_LIST_PARAMS, NAME_MAX_LENGTH } from '../constants';
 
 /** Request DTOs for spec 04 §4. Notation: docs/spec/01-api-conventions.md §1.1. */
 
@@ -147,3 +150,18 @@ export class UpdateAddressDto extends PatchDto {
   @IsBoolean()
   isDefault?: boolean;
 }
+
+export class CustomerIdParamsDto {
+  @UuidField()
+  customerId!: string;
+}
+
+/** Spec 20 §3.3 whitelist. `name[like]` is applied by the repository on the trigram-indexed full name. */
+export const CUSTOMER_LIST_SPEC: ListSpec = {
+  fields: {
+    [CUSTOMER_LIST_PARAMS.NAME]: { type: FieldType.TEXT, ops: [FilterOp.LIKE] },
+    phone: { column: 'phone', type: FieldType.TEXT, ops: [FilterOp.EQ] },
+    createdAt: { column: 'created_at', type: FieldType.DATE, ops: [], sortable: true },
+  },
+  defaultSort: '-createdAt',
+};

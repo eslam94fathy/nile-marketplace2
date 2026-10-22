@@ -13,7 +13,7 @@ const SQL_OPERATOR: Readonly<Record<Exclude<FilterOp, 'in' | 'like'>, string>> =
 };
 
 /** Escapes LIKE wildcards so user text is matched literally. */
-function escapeLike(value: string): string {
+export function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 

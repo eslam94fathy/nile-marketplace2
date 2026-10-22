@@ -1,17 +1,18 @@
 import { Router } from 'express';
 import { type JwtVerifier, UserRole } from '../../lib/auth';
 import { type OpenApiRegistry } from '../../lib/http';
-import { authenticate, requireRole } from '../../lib/middleware';
+import { authenticate, byUser, RateLimitClass, type RateLimiters, requireRole } from '../../lib/middleware';
 import { CART_PATHS as P } from './constants';
 import { type CartController } from './controller/cart.controller';
-import { AddCartItemDto, UpdateCartItemDto } from './dto/cart-request.dto';
-import { CartDto } from './dto/cart-response.dto';
+import { AddCartItemDto, CouponPreviewRequestDto, UpdateCartItemDto } from './dto/cart-request.dto';
+import { CartDto, CouponQuoteDto } from './dto/cart-response.dto';
 
 const TAGS = ['cart'] as const;
 
 export interface CartRouteDeps {
   cart: CartController;
   jwtVerifier: JwtVerifier;
+  rateLimiters: RateLimiters;
   docs: OpenApiRegistry;
   /** Where the router is mounted (`/api/v1`), for the documented paths. */
   basePath: string;
@@ -28,6 +29,13 @@ export function cartRoutes(deps: CartRouteDeps): Router {
   router.post(P.ITEMS, ...customerOnly, cart.addItem);
   router.patch(P.ITEM, ...customerOnly, cart.updateItem);
   router.delete(P.ITEM, ...customerOnly, cart.removeItem);
+  // PR-6: its own per-user class against guessing codes, on top of the general limit.
+  router.post(
+    P.COUPON_PREVIEW,
+    ...customerOnly,
+    deps.rateLimiters.limit(RateLimitClass.COUPON_PREVIEW, byUser),
+    cart.couponPreview,
+  );
 
   const mine = { tags: TAGS, auth: true } as const;
   docs.add({
@@ -69,6 +77,15 @@ export function cartRoutes(deps: CartRouteDeps): Router {
     path: `${basePath}${P.CART}`,
     summary: 'Empty my cart',
     responses: { 204: { description: 'Emptied' } },
+  });
+  docs.add({
+    ...mine,
+    method: 'post',
+    path: `${basePath}${P.COUPON_PREVIEW}`,
+    summary:
+      'What a coupon code would take off my cart (lines with an issue left out); nothing is stored, send the code again at checkout. 422: CART_EMPTY, COUPON_NOT_FOUND, COUPON_INACTIVE, COUPON_NOT_ACTIVE_YET, COUPON_EXPIRED, COUPON_LIMIT_REACHED, COUPON_CUSTOMER_LIMIT_REACHED, COUPON_NOT_APPLICABLE, COUPON_MIN_SUBTOTAL_NOT_MET (details: the missing amount). Rate class coupon-preview (429)',
+    requestBody: CouponPreviewRequestDto,
+    responses: { 200: { description: 'The discount per seller and line', body: CouponQuoteDto } },
   });
 
   return router;

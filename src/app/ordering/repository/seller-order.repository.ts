@@ -5,7 +5,9 @@ import { applyListQuery, type ParsedListQuery } from '../../../lib/http';
 import { Money, Rate } from '../../../lib/money';
 import { ORDERING_TABLES } from '../constants';
 import { type SellerOrderCancelReason, SellerOrderStatus } from '../enums';
+import { type CouponFunding } from '../../promotions';
 import { type PickupSnapshot, type SellerOrder } from '../model/order.model';
+import { type ReturnAmounts } from '../model/return.model';
 
 const T = ORDERING_TABLES.SELLER_ORDERS;
 const COLUMNS = [
@@ -17,6 +19,12 @@ const COLUMNS = [
   'commission_rate',
   'commission',
   'seller_net',
+  'discount_amount',
+  'discount_funding',
+  'returned_subtotal',
+  'returned_paid',
+  'returned_commission',
+  'returned_seller_net',
   'pickup_governorate_id',
   'pickup_phone',
   'pickup_city',
@@ -45,6 +53,12 @@ interface SellerOrderTable {
   commission_rate: string;
   commission: string;
   seller_net: string;
+  discount_amount: string;
+  discount_funding: CouponFunding | null;
+  returned_subtotal: string;
+  returned_paid: string;
+  returned_commission: string;
+  returned_seller_net: string;
   pickup_governorate_id: string;
   pickup_phone: string;
   pickup_city: string;
@@ -77,6 +91,12 @@ function toModel(row: SellerOrderRow): SellerOrder {
     commissionRate: Rate.of(row.commission_rate),
     commission: Money.of(row.commission),
     sellerNet: Money.of(row.seller_net),
+    discountAmount: Money.of(row.discount_amount),
+    discountFunding: row.discount_funding,
+    returnedSubtotal: Money.of(row.returned_subtotal),
+    returnedPaid: Money.of(row.returned_paid),
+    returnedCommission: Money.of(row.returned_commission),
+    returnedSellerNet: Money.of(row.returned_seller_net),
     pickup: {
       governorateId: row.pickup_governorate_id,
       phone: row.pickup_phone,
@@ -107,6 +127,8 @@ export interface NewSellerOrder {
   commissionRate: Rate;
   commission: Money;
   sellerNet: Money;
+  discountAmount: Money;
+  discountFunding: CouponFunding | null;
   pickup: PickupSnapshot;
   acceptDeadlineAt: Date | null;
 }
@@ -144,6 +166,12 @@ export class SellerOrderRepository {
           commission_rate: s.commissionRate.toString(),
           commission: s.commission.toString(),
           seller_net: s.sellerNet.toString(),
+          discount_amount: s.discountAmount.toString(),
+          discount_funding: s.discountFunding,
+          returned_subtotal: Money.zero().toString(),
+          returned_paid: Money.zero().toString(),
+          returned_commission: Money.zero().toString(),
+          returned_seller_net: Money.zero().toString(),
           pickup_governorate_id: s.pickup.governorateId,
           pickup_phone: s.pickup.phone,
           pickup_city: s.pickup.city,
@@ -173,6 +201,16 @@ export class SellerOrderRepository {
       .select(...COLUMNS)
       .whereIn('order_id', [...new Set(orderIds)])
       .orderBy([{ column: 'created_at' }, { column: 'id' }]);
+    return rows.map(toModel);
+  }
+
+  /** One batched query on the primary key (G20); unknown ids are left out. */
+  async findByIds(ids: readonly string[]): Promise<SellerOrder[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .knex<SellerOrderTable>(T)
+      .select(...COLUMNS)
+      .whereIn('id', [...new Set(ids)]);
     return rows.map(toModel);
   }
 
@@ -223,14 +261,35 @@ export class SellerOrderRepository {
   /** Partial item cancellation (spec 09 §3.5 step 3), under the order lock. */
   async updateMoney(
     id: string,
-    money: { subtotal: Money; commission: Money; sellerNet: Money },
+    money: {
+      subtotal: Money;
+      discountAmount: Money;
+      discountFunding: CouponFunding | null;
+      commission: Money;
+      sellerNet: Money;
+    },
     trx: DbTransaction,
   ): Promise<void> {
     await trx<SellerOrderTable>(T)
       .update({
         subtotal: money.subtotal.toString(),
+        discount_amount: money.discountAmount.toString(),
+        discount_funding: money.discountFunding,
         commission: money.commission.toString(),
         seller_net: money.sellerNet.toString(),
+        updated_at: trx.fn.now(),
+      })
+      .where({ id });
+  }
+
+  /** Adds a return's amounts to the returned sums (spec 09 §8.7), under the order lock. */
+  async addReturned(id: string, amounts: ReturnAmounts, trx: DbTransaction): Promise<void> {
+    await trx<SellerOrderTable>(T)
+      .update({
+        returned_subtotal: trx.raw('returned_subtotal + ?', [amounts.itemsSubtotal.toString()]),
+        returned_paid: trx.raw('returned_paid + ?', [amounts.itemsPaid.toString()]),
+        returned_commission: trx.raw('returned_commission + ?', [amounts.commissionReversed.toString()]),
+        returned_seller_net: trx.raw('returned_seller_net + ?', [amounts.sellerNetReversed.toString()]),
         updated_at: trx.fn.now(),
       })
       .where({ id });

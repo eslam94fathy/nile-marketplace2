@@ -6,6 +6,11 @@ import { CATALOG_ADMIN_PATHS as A, CATALOG_PATHS as P, CATALOG_PRODUCT_PATHS as 
 import { type CategoryAdminController } from './controller/category-admin.controller';
 import { type CategoryController } from './controller/category.controller';
 import { type ProductController } from './controller/product.controller';
+import { type ProductImageController } from './controller/product-image.controller';
+import { type ProductBlockController } from './controller/product-block.controller';
+import { BlockProductDto } from './dto/product-request.dto';
+import { AdminProductDetailDto } from './dto/product-response.dto';
+import { SetCategoryImageDto } from './dto/product-image.dto';
 import { ProductDetailDto, ProductListItemDto } from './dto/product-public.dto';
 import { type SellerProductController } from './controller/seller-product.controller';
 import { type SellerVariantController } from './controller/seller-variant.controller';
@@ -35,6 +40,8 @@ export interface CatalogRouteDeps {
   products: ProductController;
   sellerProducts: SellerProductController;
   sellerVariants: SellerVariantController;
+  productImages: ProductImageController;
+  productBlocks: ProductBlockController;
   jwtVerifier: JwtVerifier;
   idempotency: RequestHandler;
   docs: OpenApiRegistry;
@@ -62,10 +69,16 @@ export function catalogRoutes(deps: CatalogRouteDeps): Router {
   router.post(A.ATTRIBUTE_OPTIONS, ...adminOnly, admin.addOption);
   router.patch(A.OPTION, ...adminOnly, admin.updateOption);
   router.delete(A.OPTION, ...adminOnly, admin.deleteOption);
+  router.put(A.CATEGORY_IMAGE, ...adminOnly, admin.setImage);
+  router.delete(A.CATEGORY_IMAGE, ...adminOnly, admin.removeImage);
+  router.get(A.PRODUCT, ...adminOnly, deps.productBlocks.get);
+  router.post(A.PRODUCT_BLOCK, ...adminOnly, deps.productBlocks.block);
+  router.post(A.PRODUCT_UNBLOCK, ...adminOnly, deps.productBlocks.unblock);
 
   addCatalogSellerRoutes(router, {
     products: deps.sellerProducts,
     variants: deps.sellerVariants,
+    images: deps.productImages,
     jwtVerifier: deps.jwtVerifier,
     idempotency: deps.idempotency,
     docs,
@@ -96,7 +109,7 @@ export function catalogRoutes(deps: CatalogRouteDeps): Router {
     method: 'get',
     path: `${basePath}${PP.PRODUCTS}`,
     summary:
-      'Browse and search visible products. Filters: categoryId[eq] (includes subcategories), price[gte|lte] (lowest variant price), inStock[eq], sellerId[eq], attr.<code>[in] (needs categoryId; all on the same variant; max 5). q = search text (2..100). Sort: publishedAt, minPrice, relevance (with q only); default -relevance with q, else -publishedAt',
+      'Browse and search visible products. Filters: categoryId[eq] (includes subcategories), price[gte|lte] (lowest variant price), inStock[eq], sellerId[eq], rating[gte] (1..5; unrated products never match), attr.<code>[in] (needs categoryId; all on the same variant; max 5). q = search text (2..100). Sort: publishedAt, minPrice, rating (unrated last on -rating), relevance (with q only); default -relevance with q, else -publishedAt',
     tags: TAGS,
     auth: false,
     query: [
@@ -106,10 +119,22 @@ export function catalogRoutes(deps: CatalogRouteDeps): Router {
       {
         name: 'sort',
         in: 'query',
-        schema: { enum: ['publishedAt', '-publishedAt', 'minPrice', '-minPrice', 'relevance', '-relevance'] },
+        schema: {
+          enum: [
+            'publishedAt',
+            '-publishedAt',
+            'minPrice',
+            '-minPrice',
+            'rating',
+            '-rating',
+            'relevance',
+            '-relevance',
+          ],
+        },
       },
       { name: 'categoryId[eq]', in: 'query', schema: { type: 'string', format: 'uuid' } },
       { name: 'price[gte]', in: 'query', schema: { type: 'string' } },
+      { name: 'rating[gte]', in: 'query', schema: { type: 'number', minimum: 1, maximum: 5 } },
       { name: 'price[lte]', in: 'query', schema: { type: 'string' } },
       { name: 'inStock[eq]', in: 'query', schema: { type: 'boolean' } },
       { name: 'sellerId[eq]', in: 'query', schema: { type: 'string', format: 'uuid' } },
@@ -206,5 +231,52 @@ export function catalogRoutes(deps: CatalogRouteDeps): Router {
     responses: { 204: { description: 'Deleted' } },
   });
 
+  docs.add({
+    method: 'put',
+    path: `${basePath}${A.CATEGORY_IMAGE}`,
+    summary:
+      'Set the image of the category from a ready category_image upload; the previous image is released (CATEGORY_NOT_FOUND, MEDIA_NOT_ATTACHABLE)',
+    tags: ADMIN_TAGS,
+    auth: true,
+    requestBody: SetCategoryImageDto,
+    responses: { 200: { description: 'The category node', body: AdminCategoryNodeDto } },
+  });
+  docs.add({
+    method: 'delete',
+    path: `${basePath}${A.CATEGORY_IMAGE}`,
+    summary: 'Remove the image of the category; nothing to remove is fine (CATEGORY_NOT_FOUND)',
+    tags: ADMIN_TAGS,
+    auth: true,
+    responses: { 204: { description: 'Removed' } },
+  });
+
+  const adminProduct = { description: 'The admin product view', body: AdminProductDetailDto };
+  docs.add({
+    method: 'get',
+    path: `${basePath}${A.PRODUCT}`,
+    summary: "A product in the seller's view, any status, plus its seller (PRODUCT_NOT_FOUND)",
+    tags: ADMIN_TAGS,
+    auth: true,
+    responses: { 200: adminProduct },
+  });
+  docs.add({
+    method: 'post',
+    path: `${basePath}${A.PRODUCT_BLOCK}`,
+    summary:
+      'Block a product: an active one becomes inactive, activation is refused until unblocked; the seller is notified (PRODUCT_NOT_FOUND, PRODUCT_BLOCK_INVALID_STATUS)',
+    tags: ADMIN_TAGS,
+    auth: true,
+    requestBody: BlockProductDto,
+    responses: { 200: adminProduct },
+  });
+  docs.add({
+    method: 'post',
+    path: `${basePath}${A.PRODUCT_UNBLOCK}`,
+    summary:
+      'Unblock a product; it stays inactive for the seller to re-activate (PRODUCT_NOT_FOUND, PRODUCT_BLOCK_INVALID_STATUS)',
+    tags: ADMIN_TAGS,
+    auth: true,
+    responses: { 200: adminProduct },
+  });
   return router;
 }

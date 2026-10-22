@@ -213,7 +213,14 @@ describe('catalog: category tree, attributes, options (spec 06 §4.1–§4.2)', 
       expect(await t.infra.cache.get(CATEGORY_TREE_CACHE_KEY)).toBeNull();
       expect((await publicRoot())?.children).toEqual([]);
       const node = await publicRoot();
-      expect(node).toEqual({ id: root.id, name: root.name, slug: root.slug, sortOrder: 0, children: [] });
+      expect(node).toEqual({
+        id: root.id,
+        name: root.name,
+        slug: root.slug,
+        sortOrder: 0,
+        image: null,
+        children: [],
+      });
     });
   });
 

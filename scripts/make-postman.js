@@ -60,7 +60,7 @@ const idempotencyKey = { key: 'Idempotency-Key', value: '{{$guid}}' };
 const API = '/api/v1';
 const collection = {
   info: {
-    name: 'Nile Marketplace API (Phases 1–7)',
+    name: 'Nile Marketplace API (Release 1 + R2-P1…P7)',
     _postman_id: 'c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01',
     description: [
       'Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10), delivery (spec 11): governorates and fees, agents, shipments and the work of delivery agents, and finance (spec 12): balances, statements, COD remittances and payouts.',
@@ -89,6 +89,19 @@ const collection = {
       '',
       'Finance flow: once an order is delivered (the worker books it in the ledger) → "Admin: finance" → List accounts (stores the first in `accountId`) → Account statement; "Entries of a seller order" uses `sellerOrderId`. "Confirm COD remittance" takes cash from `agentId`; "Record payout" pays `sellerId` (set it to the seller\'s id) with a fresh `payoutReference`. Log in as the seller → "Seller: finance", or as the agent → "Agent: finance", to see the same money from their side.',
       '',
+      'Release 2 so far: the audit log (spec 20 §2), image uploads (spec 14) with product and category images (spec 06 §8), the notification centre and Web Push (spec 13 §8), the web refresh cookie (spec 03 §8), support tickets (spec 16), reviews and ratings (spec 17), the wishlist (spec 04 §8), returns (spec 18) with automated refunds (spec 10 §8) and the seller holding period (spec 12 §8), and coupons (spec 19). The live socket (spec 15) is not HTTP: see docs/realtime.md.',
+      '',
+      'Image flow: "Media" → Request upload (stores `mediaId`) → POST the file to the returned `upload.url` with every `upload.fields` entry first and the file last as `file` (multipart/form-data; in Postman a new request, Body → form-data) → Complete upload → poll Get media until `ready` (the worker processes it). Then attach it: "Seller: product images" → Add image, or "Admin: category images" → Set image.',
+      '',
+      'Support flow: log in as a customer or seller → "Support" → Open ticket (stores `ticketId`) → Messages / Post message. Log in as an admin → "Admin: support" → Queue → Reply (the first reply assigns the ticket to you) or Internal note → Resolve / Close. Attachments: upload with purpose support_attachment first, then pass the `mediaId` in `attachmentMediaIds`.',
+      '',
+      'Review flow: a customer with a delivered order → "Reviews" → Reviewable items (stores `orderItemId`) → Write a review (stores `reviewId`); the worker moves the product and seller ratings. Log in as the seller → "Seller: reviews" → Reply. As an admin → "Admin: reviews" → Hide / Unhide. "Catalog" → Product reviews / Review summary show the public side.',
+      '',
+      'Back-office flow (admin): "Admin: dashboard" shows the figures (cached for DASHBOARD_CACHE_TTL_SECONDS; generatedAt is their age). "Admin: users" → List users finds any account; "Admin: customers" → List customers (stores `customerId`) → Customer detail, then "Admin: orders" with customerId[eq]. "Admin: orders" → Cancel seller order / Cancel order (Idempotency-Key, a reason for the audit log). "Admin: products" → Product (admin view) → Block (the seller is notified and can no longer activate it) → Unblock. Every admin write appears in "Admin: audit log".',
+      '',
+      'Return flow: a customer with a delivered order → "Returns" → Returnable items (uses `orderId` and `sellerOrderId`; stores the first line in `orderItemId`) → Request a return (Idempotency-Key; stores `returnId`; damaged / wrong_item / not_as_described need a photo: upload with purpose return_photo first; a COD order needs `refundPayout`). Log in as the seller → "Seller: returns" → Approve (or Reject; the customer may then Escalate and an admin decides in "Admin: returns"). The worker assigns the return pickup to an agent: "Agent" → My shipments → Picked up → Delivered (handed to the seller). The seller → Return detail (stores `returnItemId`) → Confirm receipt (or Dispute; an admin resolves it). The refund follows: Kashier refunds are sent by the worker; COD refunds wait in "Admin: payments" → Refund queue → Refund detail (shows the wallet / InstaPay details) → Record a refund. "Seller: finance" → My balance / My holds shows money held until the return window ends.',
+      '',
+      'Coupon flow: as an admin → "Admin: coupons" → Create a platform coupon (stores `couponId` and `couponCode`), or as an approved seller → "Seller: coupons" → Create a coupon for your products. As a customer with items in the cart → "Cart" → Coupon preview shows the discount per seller and line (nothing is stored). Then "Checkout & orders" → Checkout with a coupon: expectedTotal must be the discounted total (the first send stores it from ORDER_TOTAL_CHANGED). After the first use only endsAt, globalLimit and status can change. An admin may block a seller coupon ("Admin: coupons" → Block): it goes inactive and the seller is notified.',
       'Tokens are per account: log in as the admin again (Auth → Login) before the "Admin: …" folders.',
       '',
       'Errors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.',
@@ -149,6 +162,18 @@ const collection = {
     { key: 'accountId', value: '' },
     { key: 'payoutReference', value: 'BANK-TRANSFER-001' },
     { key: 'paidAt', value: '2026-10-13T09:00:00Z' },
+    { key: 'mediaId', value: '' },
+    { key: 'imageId', value: '' },
+    { key: 'auditEntryId', value: '' },
+    { key: 'notificationId', value: '' },
+    { key: 'ticketId', value: '' },
+    { key: 'assigneeUserId', value: '' },
+    { key: 'reviewId', value: '' },
+    { key: 'customerId', value: '' },
+    { key: 'returnId', value: '' },
+    { key: 'returnItemId', value: '' },
+    { key: 'couponId', value: '' },
+    { key: 'couponCode', value: 'SAVE-10' },
   ],
   item: [
     {
@@ -205,6 +230,15 @@ const collection = {
           description:
             'Rotates the refresh token (43 chars). Reusing an old token revokes the whole session family: INVALID_REFRESH_TOKEN 401. The app must not refresh concurrently.',
           tests: saveSession,
+        }),
+        req({
+          name: 'Refresh (web cookie)',
+          method: 'POST',
+          path: `${API}/auth/refresh`,
+          headers: [{ key: 'X-Nile-Client', value: 'web' }],
+          description:
+            'The web transport (spec 03 §8, R-21): no body; the refresh token travels in the HttpOnly cookie that a login sent with `X-Nile-Client: web` sets (Postman keeps it in its cookie jar for the api host). The response carries the access token only and rotates the cookie. Without the header the body transport applies.',
+          tests: `${expect(200)}\nif (pm.response.code === 200) pm.collectionVariables.set('accessToken', pm.response.json().data.accessToken);`,
         }),
         req({
           name: 'Logout',
@@ -317,6 +351,44 @@ const collection = {
           tests: `${expect(200)}\nconst { meta } = pm.response.json();\nif (meta) pm.collectionVariables.set('cursor', meta.nextCursor ?? '');`,
         }),
         req({
+          name: 'List users',
+          method: 'GET',
+          path: `${API}/admin/users`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'sort', value: '-createdAt' },
+            {
+              key: 'cursor',
+              value: '{{cursor}}',
+              disabled: true,
+              description: 'meta.nextCursor of the previous page',
+            },
+            {
+              key: 'role[eq]',
+              value: 'customer',
+              disabled: true,
+              description: 'customer, seller, admin, delivery_agent',
+            },
+            {
+              key: 'status[in]',
+              value: 'active,suspended',
+              disabled: true,
+              description: 'eq | in: pending_email_verification, invited, active, suspended',
+            },
+            {
+              key: 'email[like]',
+              value: 'mona',
+              disabled: true,
+              description: 'email prefix, case-insensitive',
+            },
+            { key: 'createdAt[gte]', value: '2026-01-01', disabled: true },
+          ],
+          description:
+            'spec 20 §3.3. Every role. 200 { id, email, role, status, emailVerifiedAt, lastLoginAt, createdAt }[] + meta. INVALID_QUERY 400. The test stores the first id in `targetUserId`.',
+          tests: `${expect(200)}\nconst { data, meta } = pm.response.json();\nif (data && data[0]) pm.collectionVariables.set('targetUserId', data[0].id);\nif (meta) pm.collectionVariables.set('cursor', meta.nextCursor ?? '');`,
+        }),
+        req({
           name: 'Resend invite',
           method: 'POST',
           path: `${API}/admin/users/{{targetUserId}}/resend-invite`,
@@ -342,6 +414,36 @@ const collection = {
           auth: true,
           description:
             'suspended → active. 200 { id, email, role, status }. Errors: USER_NOT_FOUND 404, USER_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: customers',
+      description: 'spec 20 §3.3. Admin role. Reads only, not audited.',
+      item: [
+        req({
+          name: 'List customers',
+          method: 'GET',
+          path: `${API}/admin/customers`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'sort', value: '-createdAt' },
+            { key: 'name[like]', value: 'mona', disabled: true, description: 'first or last name, contains' },
+            { key: 'phone[eq]', value: '+201001234567', disabled: true, description: 'E.164' },
+          ],
+          description:
+            '200 { id, userId, email, firstName, lastName, phone, userStatus, createdAt }[] + meta. The test stores the first id in `customerId`.',
+          tests: saveId('customerId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Customer detail',
+          method: 'GET',
+          path: `${API}/admin/customers/{{customerId}}`,
+          auth: true,
+          description:
+            'The list item plus addressCount. Their orders: "Admin: orders" → List orders with customerId[eq]. CUSTOMER_NOT_FOUND 404.',
           tests: expect(200),
         }),
       ],
@@ -672,12 +774,13 @@ const collection = {
             { key: 'categoryId[eq]', value: '{{categoryId}}', disabled: true },
             { key: 'price[lte]', value: '1000', disabled: true },
             { key: 'inStock[eq]', value: 'true', disabled: true },
+            { key: 'rating[gte]', value: '4', disabled: true },
             { key: 'attr.color[in]', value: 'black,white', disabled: true },
             { key: 'sort', value: '-publishedAt', disabled: true },
             { key: 'cursor', value: '{{cursor}}', disabled: true },
           ],
           description:
-            'Filters: categoryId[eq] (includes subcategories), price[gte|lte] (lowest variant price), inStock[eq], sellerId[eq], attr.<code>[in] (needs categoryId; all attr filters must match the same variant; max 5). q: search text 2..100 (full text + typo tolerant). Sort: publishedAt, minPrice, relevance (with q only). Default: -relevance with q, else -publishedAt.',
+            'Filters: categoryId[eq] (includes subcategories), price[gte|lte] (lowest variant price), inStock[eq], sellerId[eq], rating[gte] (1..5; unrated never match), attr.<code>[in] (needs categoryId; all attr filters must match the same variant; max 5). q: search text 2..100 (full text + typo tolerant). Sort: publishedAt, minPrice, rating (unrated last on -rating), relevance (with q only). Default: -relevance with q, else -publishedAt.',
           tests: saveId('productId', 200, 'data[0] && body.data[0].id'),
         }),
         req({
@@ -984,6 +1087,16 @@ if (pm.response.code === 201) {
           description: 'Removes every line; 204 also when there is no cart yet.',
           tests: expect(204),
         }),
+        req({
+          name: 'Coupon preview',
+          method: 'POST',
+          path: `${API}/cart/coupon-preview`,
+          auth: true,
+          body: { code: '{{couponCode}}' },
+          description:
+            'What {{couponCode}} would take off the cart, per seller and line; lines with an issue are left out. Nothing is stored: send the code again at checkout. Its own per-user rate limit (coupon-preview, 429). 422: CART_EMPTY, COUPON_NOT_FOUND, COUPON_INACTIVE, COUPON_NOT_ACTIVE_YET, COUPON_EXPIRED, COUPON_LIMIT_REACHED, COUPON_CUSTOMER_LIMIT_REACHED, COUPON_NOT_APPLICABLE, COUPON_MIN_SUBTOTAL_NOT_MET (details[0].value = the missing amount).',
+          tests: expect(200),
+        }),
       ],
     },
     {
@@ -1021,6 +1134,34 @@ if (pm.response.code === 201) {
     pm.collectionVariables.set('sellerOrderId', first.id);
     if (first.items[0]) pm.collectionVariables.set('orderItemId', first.items[0].id);
   }
+}`,
+        }),
+        req({
+          name: 'Checkout with a coupon',
+          method: 'POST',
+          path: `${API}/checkout`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: {
+            addressId: '{{addressId}}',
+            paymentMethod: '{{paymentMethod}}',
+            expectedTotal: '{{expectedTotal}}',
+            couponCode: '{{couponCode}}',
+          },
+          description:
+            'As Checkout, with {{couponCode}}: the items are discounted (never the delivery fee) and expectedTotal is the discounted total. data.order.coupon shows the code and discount; seller orders show discountAmount and discountFunding, lines discountAmount and paidTotal. The coupon codes of Coupon preview answer 422 and nothing is placed. KASHIER_TOTAL_ZERO 422: a Kashier order that would cost 0.00 (use cod).',
+          tests: `
+if (pm.response.code === 409 && pm.response.json().error.code === 'ORDER_TOTAL_CHANGED') {
+  pm.collectionVariables.set('expectedTotal', pm.response.json().error.details[0].value);
+  console.log('expectedTotal updated: send again');
+  return;
+}
+${expect(201)}
+if (pm.response.code === 201) {
+  const { order } = pm.response.json().data;
+  pm.collectionVariables.set('orderId', order.id);
+  console.log('coupon:', JSON.stringify(order.coupon));
+  if (order.sellerOrders[0]) pm.collectionVariables.set('sellerOrderId', order.sellerOrders[0].id);
 }`,
         }),
         req({
@@ -1145,7 +1286,8 @@ if (pm.response.code === 201) {
     },
     {
       name: 'Admin: orders',
-      description: 'spec 09 §4.3. Admin role. No admin cancellation in R1 (S-9).',
+      description:
+        'spec 09 §4.3, §8.4. Admin role. Cancellations need an Idempotency-Key and a reason (3..500, admins only; the customer sees cancelReason admin_cancelled).',
       item: [
         req({
           name: 'List orders',
@@ -1167,6 +1309,78 @@ if (pm.response.code === 201) {
           auth: true,
           description:
             'Adds commission per seller order and the full status histories (actor role, actor id, reason).',
+          tests: `${expect(200)}\nconst { data } = pm.response.json();\nif (data && data.sellerOrders && data.sellerOrders[0]) pm.collectionVariables.set('sellerOrderId', data.sellerOrders[0].id);`,
+        }),
+        req({
+          name: 'Cancel seller order',
+          method: 'POST',
+          path: `${API}/admin/seller-orders/{{sellerOrderId}}/cancel`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { reason: 'Fraudulent order' },
+          description:
+            'From placed, accepted or ready_for_pickup: releases stock, flags a refund for a paid Kashier order, writes an audit row. 200 the admin order detail. SELLER_ORDER_NOT_FOUND 404, SELLER_ORDER_NOT_CANCELLABLE 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Cancel order',
+          method: 'POST',
+          path: `${API}/admin/orders/{{orderId}}/cancel`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { reason: 'Customer fraud report' },
+          description:
+            'All or nothing (OR-17): every open seller order is cancelled, or none when one is past ready_for_pickup. 200 the admin order detail. ORDER_NOT_FOUND 404, ORDER_NOT_CANCELLABLE 409 (details: the blocking sellerOrderIds; none when nothing is left to cancel).',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: products',
+      description:
+        'spec 20 §3.4. Admin role. Uses `productId`. A block takes the product off the shop (active → inactive) and refuses activation until unblocked; the seller may still edit it.',
+      item: [
+        req({
+          name: 'Product (admin view)',
+          method: 'GET',
+          path: `${API}/admin/products/{{productId}}`,
+          auth: true,
+          description:
+            "The seller's product detail (any status) plus sellerId, adminBlocked and adminBlockReason. PRODUCT_NOT_FOUND 404.",
+          tests: expect(200),
+        }),
+        req({
+          name: 'Block product',
+          method: 'POST',
+          path: `${API}/admin/products/{{productId}}/block`,
+          auth: true,
+          body: { reason: 'Prohibited item' },
+          description:
+            '`reason` 3..500, shown to the seller in their product view. The seller is notified (product_blocked). 200 the admin view. PRODUCT_NOT_FOUND 404, PRODUCT_BLOCK_INVALID_STATUS 409 (already blocked).',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Unblock product',
+          method: 'POST',
+          path: `${API}/admin/products/{{productId}}/unblock`,
+          auth: true,
+          description:
+            'Clears the block; the product stays inactive for the seller to activate. 200 the admin view. PRODUCT_NOT_FOUND 404, PRODUCT_BLOCK_INVALID_STATUS 409 (not blocked).',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: dashboard',
+      description: 'spec 20 §3.2. Admin role. Days are Cairo business days.',
+      item: [
+        req({
+          name: 'Dashboard',
+          method: 'GET',
+          path: `${API}/admin/dashboard`,
+          auth: true,
+          description:
+            'orders (open seller orders by status, placedToday, placedLast7Days), gmv (30 days ending today: placed and delivered), topSellers (10, by delivered GMV over the same days), sellers.pendingApproval, support, finance (codOutstanding, sellerPayable, agentFeePayable), delivery. Cached for DASHBOARD_CACHE_TTL_SECONDS; generatedAt is when it was computed.',
           tests: expect(200),
         }),
       ],
@@ -1174,7 +1388,7 @@ if (pm.response.code === 201) {
     {
       name: 'Admin: payments',
       description:
-        'spec 10 §4.2. Admin role. R1 refunds are done by hand in the Kashier dashboard, then recorded here; the queue lists the refunds due, oldest first.',
+        'spec 10 §4.2, §8. Admin role. Kashier refunds are sent by the worker (pending_auto → processing → succeeded). Every COD refund, R1 refunds and a Kashier refund the worker could not settle wait as pending_manual: pay it by hand (Kashier dashboard, wallet or InstaPay), then record it here. The queue lists refunds oldest first.',
       item: [
         req({
           name: 'Payment of an order',
@@ -1200,9 +1414,30 @@ if (pm.response.code === 201) {
           query: [
             { key: 'status[eq]', value: 'pending_manual' },
             { key: 'limit', value: '20' },
-            { key: 'reason[in]', value: 'seller_order_cancelled,late_payment_after_expiry', disabled: true },
+            { key: 'reason[in]', value: 'return,seller_order_cancelled', disabled: true },
+            { key: 'createdAt[gte]', value: '2026-01-01', disabled: true },
           ],
+          description:
+            'status: pending_auto, processing, succeeded, pending_manual, recorded. lastError says why a refund waits for an admin. Stores the first in refundId.',
           tests: saveId('refundId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Refund detail',
+          method: 'GET',
+          path: `${API}/admin/payments/refunds/{{refundId}}`,
+          auth: true,
+          description:
+            'The refund plus, for a COD return refund, the decrypted payoutDetails (mobile_wallet walletNumber or instapay instapayAddress) to pay it to. REFUND_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Retry a refund',
+          method: 'POST',
+          path: `${API}/admin/payments/refunds/{{refundId}}/retry`,
+          auth: true,
+          description:
+            'Hands a pending_manual Kashier refund back to the worker (pending_auto) once the cause is fixed. Check the Kashier dashboard first: never retry a refund Kashier may already have applied. REFUND_NOT_FOUND 404, REFUND_NOT_RETRYABLE 409.',
+          tests: expect(200),
         }),
         req({
           name: 'Record a refund',
@@ -1212,7 +1447,7 @@ if (pm.response.code === 201) {
           headers: [idempotencyKey],
           body: { providerRefundRef: 'KASHIER-REFUND-REF' },
           description:
-            'After refunding in the Kashier dashboard. The payment becomes partially_refunded_manually or refunded_manually. REFUND_NOT_FOUND 404, REFUND_ALREADY_RECORDED 409.',
+            'After paying by hand: the Kashier refund reference, or the wallet / InstaPay transfer reference for COD. A Kashier payment becomes partially_refunded or refunded; COD keeps its status. REFUND_NOT_FOUND 404, REFUND_ALREADY_RECORDED 409.',
           tests: expect(200),
         }),
       ],
@@ -1356,7 +1591,7 @@ if (pm.response.code === 201) {
             { key: 'cursor', value: '{{cursor}}', disabled: true },
           ],
           description:
-            'Without a status filter the active ones, oldest first; enable status[in] for the history. Stores the first one in shipmentId.',
+            'Without a status filter the active ones, oldest first; enable status[in] for the history. kind is delivery or return: a return is collected at dropoff (the customer) and handed over at pickup (the seller) with Picked up → Delivered, or Failed attempt; nothing to collect. Stores the first one in shipmentId.',
           tests: saveId('shipmentId', 200, 'data[0] && body.data[0].id'),
         }),
         req({
@@ -1551,7 +1786,8 @@ if (pm.response.code === 201) {
           method: 'GET',
           path: `${API}/seller/finance/balance`,
           auth: true,
-          description: 'What the platform owes you; "0.00" and updatedAt null before your first delivery.',
+          description:
+            'available: what the platform owes you now (may be negative after a seller-fault return fee; no payout while it is). pending: earnings held until their return windows end. "0.00" and updatedAt null before your first delivery.',
           tests: expect(200),
         }),
         req({
@@ -1575,6 +1811,25 @@ if (pm.response.code === 201) {
             { key: 'limit', value: '20' },
             { key: 'cursor', value: '{{cursor}}', disabled: true },
           ],
+          tests: expect(200),
+        }),
+        req({
+          name: 'My holds',
+          method: 'GET',
+          path: `${API}/seller/finance/holds`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            {
+              key: 'sort',
+              value: 'releaseAfter',
+              disabled: true,
+              description: 'releaseAfter (default) | -releaseAfter',
+            },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description:
+            'Earnings still held per seller order, next release first. blockedByReturn: an open return keeps it held past releaseAfter. The worker releases due holds into your available balance.',
           tests: expect(200),
         }),
       ],
@@ -1615,6 +1870,1002 @@ if (pm.response.code === 201) {
             { key: 'limit', value: '20' },
             { key: 'cursor', value: '{{cursor}}', disabled: true },
           ],
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: audit log',
+      description: 'spec 20 §2. Every admin write leaves an append-only row; reads are not audited.',
+      item: [
+        req({
+          name: 'List entries',
+          method: 'GET',
+          path: `${API}/admin/audit-log`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'action[eq]', value: 'support_ticket.assigned', disabled: true },
+            { key: 'targetType[eq]', value: 'support_ticket', disabled: true },
+            { key: 'targetId[eq]', value: '{{ticketId}}', disabled: true },
+            { key: 'actorUserId[eq]', value: '{{userId}}', disabled: true },
+            { key: 'createdAt[gte]', value: '2026-10-01', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description: 'Newest first. Stores the first entry in `auditEntryId`.',
+          tests: saveId('auditEntryId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Entry',
+          method: 'GET',
+          path: `${API}/admin/audit-log/{{auditEntryId}}`,
+          auth: true,
+          description: 'AUDIT_ENTRY_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Media',
+      description:
+        'spec 14. Customers, sellers and admins; rate class `upload` per user. Purposes: product_image (sellers), category_image (admins), review_image (customers), support_attachment (all three, private), return_photo (customers, private).',
+      item: [
+        req({
+          name: 'Request upload',
+          method: 'POST',
+          path: `${API}/media/uploads`,
+          auth: true,
+          body: { purpose: 'product_image', contentType: 'image/png', sizeBytes: 120000 },
+          description:
+            '201 { media, upload: { url, fields, expiresAt } }: POST the file straight to storage with that form. Stores `mediaId`. Errors: MEDIA_PURPOSE_NOT_ALLOWED 403, MEDIA_OPEN_UPLOAD_LIMIT_REACHED 422.',
+          tests: saveId('mediaId', 201, 'data && body.data.media.id'),
+        }),
+        req({
+          name: 'Complete upload',
+          method: 'POST',
+          path: `${API}/media/uploads/{{mediaId}}/complete`,
+          auth: true,
+          description:
+            '202 processing (200 when already processing or ready). Errors: MEDIA_UPLOAD_MISSING 409 (the file is not in storage yet), MEDIA_UPLOAD_INVALID 422, MEDIA_INVALID_STATUS 409.',
+        }),
+        req({
+          name: 'Get media',
+          method: 'GET',
+          path: `${API}/media/{{mediaId}}`,
+          auth: true,
+          description:
+            'Your upload: poll until status is ready (with image URLs) or failed. MEDIA_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Seller: product images',
+      description:
+        'spec 06 §8. Up to 8 per product, from your own ready product_image uploads. Log in as the seller first.',
+      item: [
+        req({
+          name: 'Add image',
+          method: 'POST',
+          path: `${API}/seller/products/{{productId}}/images`,
+          auth: true,
+          body: { mediaId: '{{mediaId}}', variantId: null, altText: 'Front view' },
+          description:
+            'Answers every image of the product. Optional `position` (0..7; past the end appends) and `variantId` (an image of one variant). Stores the last image in `imageId`. Errors: MEDIA_NOT_ATTACHABLE 422, the 8-image limit 422.',
+          tests: saveId('imageId', 201, 'data[body.data.length - 1] && body.data[body.data.length - 1].id'),
+        }),
+        req({
+          name: 'Update image',
+          method: 'PATCH',
+          path: `${API}/seller/products/{{productId}}/images/{{imageId}}`,
+          auth: true,
+          body: { altText: 'Side view' },
+          description: '`variantId` and / or `altText`; at least one.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Reorder images',
+          method: 'PUT',
+          path: `${API}/seller/products/{{productId}}/images/order`,
+          auth: true,
+          body: { imageIds: ['{{imageId}}'] },
+          description: 'Every image id of the product, once each, in the new order.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Remove image',
+          method: 'DELETE',
+          path: `${API}/seller/products/{{productId}}/images/{{imageId}}`,
+          auth: true,
+          tests: expect(204),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: category images',
+      description: "spec 06 §8. Any admin may use any admin's ready category_image upload (ME-2). Audited.",
+      item: [
+        req({
+          name: 'Set image',
+          method: 'PUT',
+          path: `${API}/admin/categories/{{categoryId}}/image`,
+          auth: true,
+          body: { mediaId: '{{mediaId}}', altText: 'Kitchen' },
+          description: 'Setting the same image again changes only the alt text.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Remove image',
+          method: 'DELETE',
+          path: `${API}/admin/categories/{{categoryId}}/image`,
+          auth: true,
+          description: 'A category without an image is a no-op.',
+          tests: expect(204),
+        }),
+      ],
+    },
+    {
+      name: 'Notifications & push',
+      description:
+        'spec 13 §8. Any signed-in role. In-app rows are kept 90 days; preferences affect push only. Web Push needs a browser (pushManager.subscribe); the requests below show the shapes.',
+      item: [
+        req({
+          name: 'My notifications',
+          method: 'GET',
+          path: `${API}/me/notifications`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'read[eq]', value: 'false', disabled: true },
+            { key: 'category[in]', value: 'orders,support', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description: 'Newest first. Stores the first in `notificationId`.',
+          tests: saveId('notificationId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Unread count',
+          method: 'GET',
+          path: `${API}/me/notifications/unread-count`,
+          auth: true,
+          description: 'Counted up to 100 (show "99+").',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Mark read',
+          method: 'POST',
+          path: `${API}/me/notifications/{{notificationId}}/read`,
+          auth: true,
+          description: 'Idempotent. NOTIFICATION_NOT_FOUND 404.',
+          tests: expect(204),
+        }),
+        req({
+          name: 'Mark all read',
+          method: 'POST',
+          path: `${API}/me/notifications/read-all`,
+          auth: true,
+          tests: expect(204),
+        }),
+        req({
+          name: 'Push preferences',
+          method: 'GET',
+          path: `${API}/me/notification-preferences`,
+          auth: true,
+          description: 'All four categories with defaults filled in (promotions off).',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Change push preferences',
+          method: 'PUT',
+          path: `${API}/me/notification-preferences`,
+          auth: true,
+          body: { preferences: [{ category: 'support', pushEnabled: false }] },
+          description: 'Only the listed categories change.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Push config',
+          method: 'GET',
+          path: `${API}/push/config`,
+          auth: true,
+          description: 'The VAPID public key for pushManager.subscribe.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Register push subscription',
+          method: 'POST',
+          path: `${API}/me/push-subscriptions`,
+          auth: true,
+          body: {
+            endpoint: 'https://fcm.googleapis.com/fcm/send/example-endpoint',
+            expirationTime: null,
+            keys: {
+              p256dh:
+                'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM',
+              auth: 'tBHItJI5svbpez7KI4CCXg',
+            },
+          },
+          description:
+            '`PushSubscription.toJSON()` as the browser gives it. A host outside the allow-list: PUSH_ENDPOINT_NOT_ALLOWED 422. 10 per user; the 11th replaces the oldest.',
+          tests: expect(201),
+        }),
+        req({
+          name: 'Unregister push subscription',
+          method: 'POST',
+          path: `${API}/me/push-subscriptions/unregister`,
+          auth: true,
+          body: { endpoint: 'https://fcm.googleapis.com/fcm/send/example-endpoint' },
+          description: 'Before logout. Always 204.',
+          tests: expect(204),
+        }),
+      ],
+    },
+    {
+      name: 'Support',
+      description:
+        'spec 16 §4.1. Customers and sellers, their own tickets. Opening and posting need an Idempotency-Key and are in rate class support-message. Admins appear as "Nile Support".',
+      item: [
+        req({
+          name: 'Open ticket',
+          method: 'POST',
+          path: `${API}/support/tickets`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: {
+            category: 'order',
+            subject: 'Where is my parcel?',
+            body: 'It has been a week since I ordered.',
+            orderId: '{{orderId}}',
+            attachmentMediaIds: [],
+          },
+          description:
+            'Customers may link `orderId` and optionally one `sellerOrderId` of it; sellers send `sellerOrderId` only (an `orderId` from a seller is 400). Remove the link fields for a general question. `seller_onboarding` is for sellers. Up to 3 private images (purpose support_attachment). Stores `ticketId`. Errors (422): SUPPORT_CATEGORY_NOT_ALLOWED, ORDER_NOT_FOUND, SELLER_ORDER_NOT_FOUND, SUPPORT_OPEN_TICKET_LIMIT_REACHED, MEDIA_NOT_ATTACHABLE.',
+          tests: saveId('ticketId', 201),
+        }),
+        req({
+          name: 'My tickets',
+          method: 'GET',
+          path: `${API}/support/tickets`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'status[in]', value: 'open,awaiting_admin,awaiting_user', disabled: true },
+            { key: 'category[eq]', value: 'order', disabled: true },
+            { key: 'sort', value: '-lastMessageAt', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description: 'Latest activity first; `hasUnread` marks a reply you have not read.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Ticket',
+          method: 'GET',
+          path: `${API}/support/tickets/{{ticketId}}`,
+          auth: true,
+          description: "SUPPORT_TICKET_NOT_FOUND 404 (also for another user's ticket).",
+          tests: expect(200),
+        }),
+        req({
+          name: 'Messages',
+          method: 'GET',
+          path: `${API}/support/tickets/{{ticketId}}/messages`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description:
+            "Newest first (reverse to show). Attachment URLs are short-lived: refetch, don't store.",
+          tests: expect(200),
+        }),
+        req({
+          name: 'Post message',
+          method: 'POST',
+          path: `${API}/support/tickets/{{ticketId}}/messages`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { body: 'Any news?', attachmentMediaIds: [] },
+          description: 'Reopens a resolved ticket. SUPPORT_TICKET_CLOSED 409: open a new ticket.',
+          tests: expect(201),
+        }),
+        req({
+          name: 'Mark read',
+          method: 'POST',
+          path: `${API}/support/tickets/{{ticketId}}/read`,
+          auth: true,
+          tests: expect(204),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: support',
+      description:
+        'spec 16 §4.2. Every ticket, for any admin. Assign, resolve and close are audited; replies and notes are not.',
+      item: [
+        req({
+          name: 'Queue',
+          method: 'GET',
+          path: `${API}/admin/support/tickets`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'status[in]', value: 'open,awaiting_admin', disabled: true },
+            { key: 'assigned[eq]', value: 'false', disabled: true },
+            { key: 'assignedAdminId[eq]', value: '{{userId}}', disabled: true },
+            { key: 'slaBreached[eq]', value: 'true', disabled: true },
+            { key: 'openerRole[eq]', value: 'seller', disabled: true },
+            { key: 'sort', value: 'awaitingAdminSince', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description:
+            'Latest activity first. `sort=awaitingAdminSince` is the oldest-waiting queue (waiting tickets only). `assigned` with `assignedAdminId` is INVALID_QUERY. Stores the first in `ticketId`.',
+          tests: saveId('ticketId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Ticket',
+          method: 'GET',
+          path: `${API}/admin/support/tickets/{{ticketId}}`,
+          auth: true,
+          description: 'With the opener (name, email), the assignee and the SLA fields.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Messages (notes included)',
+          method: 'GET',
+          path: `${API}/admin/support/tickets/{{ticketId}}/messages`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          tests: expect(200),
+        }),
+        req({
+          name: 'Reply',
+          method: 'POST',
+          path: `${API}/admin/support/tickets/{{ticketId}}/messages`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { body: 'We are looking into it.', attachmentMediaIds: [] },
+          description:
+            'Waits for the user afterwards; the first reply on an unassigned ticket assigns it to you. SUPPORT_TICKET_CLOSED 409.',
+          tests: expect(201),
+        }),
+        req({
+          name: 'Internal note',
+          method: 'POST',
+          path: `${API}/admin/support/tickets/{{ticketId}}/messages`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { body: 'Courier says delivered; checking.', internal: true },
+          description: 'Never shown to the user; no status change; allowed on a closed ticket.',
+          tests: expect(201),
+        }),
+        req({
+          name: 'Assign',
+          method: 'POST',
+          path: `${API}/admin/support/tickets/{{ticketId}}/assign`,
+          auth: true,
+          body: { adminUserId: '{{assigneeUserId}}' },
+          description:
+            "An active admin's user id, or null to unassign. The current assignee again changes nothing. SUPPORT_ASSIGNEE_INVALID 422, SUPPORT_TICKET_CLOSED 409.",
+          tests: expect(200),
+        }),
+        req({
+          name: 'Resolve',
+          method: 'POST',
+          path: `${API}/admin/support/tickets/{{ticketId}}/resolve`,
+          auth: true,
+          description:
+            'The user can reopen it by writing; closed automatically after SUPPORT_AUTO_CLOSE_AFTER_HOURS. SUPPORT_TICKET_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Close',
+          method: 'POST',
+          path: `${API}/admin/support/tickets/{{ticketId}}/close`,
+          auth: true,
+          description: 'For good (spam, duplicates). SUPPORT_TICKET_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Mark read',
+          method: 'POST',
+          path: `${API}/admin/support/tickets/{{ticketId}}/read`,
+          auth: true,
+          tests: expect(204),
+        }),
+      ],
+    },
+    {
+      name: 'Reviews',
+      description:
+        'spec 17 §4.2. Customers review products they received: one live review per product, within REVIEW_WINDOW_DAYS of delivery; edit within REVIEW_EDIT_WINDOW_DAYS. Images: upload with purpose review_image first.',
+      item: [
+        req({
+          name: 'Reviewable items',
+          method: 'GET',
+          path: `${API}/me/reviewable-items`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description:
+            'Delivered items still in the window, products already reviewed left out, newest delivery first. Stores the first in `orderItemId`.',
+          tests: saveId('orderItemId', 200, 'data[0] && body.data[0].orderItemId'),
+        }),
+        req({
+          name: 'Write a review',
+          method: 'POST',
+          path: `${API}/reviews`,
+          auth: true,
+          body: {
+            orderItemId: '{{orderItemId}}',
+            rating: 5,
+            title: 'Great',
+            body: 'Works as described.',
+            imageMediaIds: [],
+          },
+          description:
+            'Published at once. Stores `reviewId`. Errors: REVIEW_NOT_ALLOWED 422, REVIEW_WINDOW_CLOSED 422, REVIEW_ALREADY_EXISTS 409, MEDIA_NOT_ATTACHABLE 422.',
+          tests: saveId('reviewId', 201),
+        }),
+        req({
+          name: 'My reviews',
+          method: 'GET',
+          path: `${API}/me/reviews`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description: 'Newest first; hidden ones included (status hidden, no reason).',
+          tests: expect(200),
+        }),
+        req({
+          name: 'My review',
+          method: 'GET',
+          path: `${API}/me/reviews/{{reviewId}}`,
+          auth: true,
+          tests: expect(200),
+        }),
+        req({
+          name: 'Edit my review',
+          method: 'PATCH',
+          path: `${API}/me/reviews/{{reviewId}}`,
+          auth: true,
+          body: { rating: 4, body: 'Still good after a month.' },
+          description: 'At least one field; imageMediaIds replaces the list. REVIEW_EDIT_WINDOW_CLOSED 422.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Delete my review',
+          method: 'DELETE',
+          path: `${API}/me/reviews/{{reviewId}}`,
+          auth: true,
+          description: 'The product can be reviewed again while its window is open.',
+          tests: expect(204),
+        }),
+        req({
+          name: 'Product reviews (public)',
+          method: 'GET',
+          path: `${API}/products/{{productId}}/reviews`,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'rating[in]', value: '4,5', disabled: true },
+            { key: 'hasImages[eq]', value: 'true', disabled: true },
+            { key: 'sort', value: '-rating', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description: 'Published reviews of a visible product (PRODUCT_NOT_FOUND 404). No token needed.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Review summary (public)',
+          method: 'GET',
+          path: `${API}/products/{{productId}}/reviews/summary`,
+          description: 'Average, count and distribution, from the stored aggregate.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Seller: reviews',
+      description: 'spec 17 §4.3. Reading works in any seller status; replying needs an approved seller.',
+      item: [
+        req({
+          name: 'Reviews of my products',
+          method: 'GET',
+          path: `${API}/seller/reviews`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'replied[eq]', value: 'false', disabled: true },
+            { key: 'productId[eq]', value: '{{productId}}', disabled: true },
+            { key: 'rating[in]', value: '1,2', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description: 'Stores the first in `reviewId`.',
+          tests: saveId('reviewId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Reply',
+          method: 'POST',
+          path: `${API}/seller/reviews/{{reviewId}}/reply`,
+          auth: true,
+          body: { body: 'Thank you for the review!' },
+          description: 'Once, final. SELLER_NOT_APPROVED 403, REVIEW_HIDDEN 409, REVIEW_ALREADY_REPLIED 409.',
+          tests: expect(201),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: reviews',
+      description: 'spec 17 §4.4. Hiding a review removes it from the ratings; every action is audited.',
+      item: [
+        req({
+          name: 'List reviews',
+          method: 'GET',
+          path: `${API}/admin/reviews`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'status[eq]', value: 'hidden', disabled: true },
+            { key: 'rating[lte]', value: '2', disabled: true },
+            { key: 'productId[eq]', value: '{{productId}}', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description: 'Stores the first in `reviewId`.',
+          tests: saveId('reviewId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Review',
+          method: 'GET',
+          path: `${API}/admin/reviews/{{reviewId}}`,
+          auth: true,
+          tests: expect(200),
+        }),
+        req({
+          name: 'Hide review',
+          method: 'POST',
+          path: `${API}/admin/reviews/{{reviewId}}/hide`,
+          auth: true,
+          body: { reason: 'Abusive language' },
+          description: 'REVIEW_INVALID_STATUS_TRANSITION 409 when already hidden.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Unhide review',
+          method: 'POST',
+          path: `${API}/admin/reviews/{{reviewId}}/unhide`,
+          auth: true,
+          tests: expect(200),
+        }),
+        req({
+          name: 'Hide reply',
+          method: 'POST',
+          path: `${API}/admin/reviews/{{reviewId}}/reply/hide`,
+          auth: true,
+          body: { reason: 'Rude reply' },
+          description: 'REVIEW_REPLY_NOT_FOUND 404 without a reply.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Unhide reply',
+          method: 'POST',
+          path: `${API}/admin/reviews/{{reviewId}}/reply/unhide`,
+          auth: true,
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Wishlist',
+      description: 'spec 04 §8. Customers; products, not variants; WISHLIST_MAX_ITEMS per customer.',
+      item: [
+        req({
+          name: 'My wishlist',
+          method: 'GET',
+          path: `${API}/me/wishlist`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description:
+            'Newest first, with product cards; products no longer visible stay with available: false.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Wishlisted product ids',
+          method: 'GET',
+          path: `${API}/me/wishlist/product-ids`,
+          auth: true,
+          tests: expect(200),
+        }),
+        req({
+          name: 'Add product',
+          method: 'PUT',
+          path: `${API}/me/wishlist/{{productId}}`,
+          auth: true,
+          description: 'Idempotent. PRODUCT_NOT_FOUND 422 (not visible), WISHLIST_LIMIT_REACHED 422.',
+          tests: expect(204),
+        }),
+        req({
+          name: 'Remove product',
+          method: 'DELETE',
+          path: `${API}/me/wishlist/{{productId}}`,
+          auth: true,
+          description: 'Always 204.',
+          tests: expect(204),
+        }),
+      ],
+    },
+    {
+      name: 'Sellers (public)',
+      description: 'spec 05 §8.2.',
+      item: [
+        req({
+          name: 'Seller page',
+          method: 'GET',
+          path: `${API}/sellers/{{sellerId}}`,
+          description:
+            'An approved seller: name, rating, member since. SELLER_NOT_FOUND 404 otherwise. No token needed.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Returns',
+      description:
+        'spec 18 §4.1. Customers return delivered items within RETURN_WINDOW_DAYS of delivery; one open return per seller order. The refund is the paid amount of the returned items, less the return fee for changed_mind (the seller pays the fee for the other reasons).',
+      item: [
+        req({
+          name: 'Returnable items',
+          method: 'GET',
+          path: `${API}/orders/{{orderId}}/seller-orders/{{sellerOrderId}}/returnable-items`,
+          auth: true,
+          description:
+            'What can still be returned, the window end and the current return fee. Stores the first line in orderItemId. ORDER_NOT_FOUND / SELLER_ORDER_NOT_FOUND 404, RETURN_NOT_ALLOWED / RETURN_WINDOW_CLOSED / RETURN_PICKUP_UNAVAILABLE 422.',
+          tests: saveId('orderItemId', 200, 'data.items[0] && body.data.items[0].orderItemId'),
+        }),
+        req({
+          name: 'Request a return',
+          method: 'POST',
+          path: `${API}/returns`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: {
+            sellerOrderId: '{{sellerOrderId}}',
+            reason: 'changed_mind',
+            description: 'Wrong size',
+            items: [{ orderItemId: '{{orderItemId}}', quantity: 1 }],
+            photoMediaIds: [],
+            refundPayout: { method: 'mobile_wallet', walletNumber: '+201001234567' },
+          },
+          description:
+            'reason: damaged | wrong_item | not_as_described (a photo is required: upload with purpose return_photo) | changed_mind. refundPayout is required for a COD order (mobile_wallet with walletNumber, or instapay with instapayAddress) and refused for Kashier: remove it then. Stores returnId. Errors: RETURN_QUANTITY_INVALID / RETURN_PHOTOS_REQUIRED / RETURN_AMOUNT_TOO_LOW / MEDIA_NOT_ATTACHABLE 422, RETURN_ALREADY_OPEN 409.',
+          tests: saveId('returnId', 201),
+        }),
+        req({
+          name: 'My returns',
+          method: 'GET',
+          path: `${API}/returns`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'status[in]', value: 'requested,approved', disabled: true },
+            { key: 'createdAt[gte]', value: '2026-01-01', disabled: true },
+            { key: 'sort', value: '-createdAt', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          tests: expect(200),
+        }),
+        req({
+          name: 'Return',
+          method: 'GET',
+          path: `${API}/returns/{{returnId}}`,
+          auth: true,
+          description: 'Items, photos, deadlines, the timeline and the refund status. RETURN_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Cancel',
+          method: 'POST',
+          path: `${API}/returns/{{returnId}}/cancel`,
+          auth: true,
+          description: 'Until the agent picks it up. RETURN_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Escalate',
+          method: 'POST',
+          path: `${API}/returns/{{returnId}}/escalate`,
+          auth: true,
+          body: { note: 'The item arrived broken; see the photo.' },
+          description:
+            'A rejected return, within the escalation window: an admin decides. RETURN_INVALID_STATUS_TRANSITION / RETURN_ESCALATION_WINDOW_CLOSED 409.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Seller: returns',
+      description:
+        'spec 18 §4.2. Log in as the seller. Decide before sellerDecisionDeadlineAt (silence approves); inspect before inspectionDeadlineAt (silence confirms without restock).',
+      item: [
+        req({
+          name: 'My returns',
+          method: 'GET',
+          path: `${API}/seller/returns`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'status[eq]', value: 'requested', disabled: true },
+            {
+              key: 'sort',
+              value: 'sellerDecisionDeadlineAt',
+              disabled: true,
+              description: 'the decision queue, with status=requested',
+            },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description: 'Stores the first in returnId.',
+          tests: saveId('returnId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Return detail',
+          method: 'GET',
+          path: `${API}/seller/returns/{{returnId}}`,
+          auth: true,
+          description:
+            'Stores the first return item in returnItemId (for Confirm receipt). RETURN_NOT_FOUND 404.',
+          tests: saveId('returnItemId', 200, 'data.items[0] && body.data.items[0].id'),
+        }),
+        req({
+          name: 'Approve',
+          method: 'POST',
+          path: `${API}/seller/returns/{{returnId}}/approve`,
+          auth: true,
+          description:
+            'requested → approved; delivery creates the return pickup. RETURN_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Reject',
+          method: 'POST',
+          path: `${API}/seller/returns/{{returnId}}/reject`,
+          auth: true,
+          body: { reason: 'The item shows signs of use.' },
+          description:
+            'requested → rejected; the customer may escalate. RETURN_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Confirm receipt',
+          method: 'POST',
+          path: `${API}/seller/returns/{{returnId}}/confirm-receipt`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { items: [{ returnItemId: '{{returnItemId}}', restock: true }] },
+          description:
+            'received → completed: every item of the return exactly once; restock false for damaged goods. The refund and the ledger follow. RETURN_ITEMS_MISMATCH 422, RETURN_INVALID_STATUS_TRANSITION / RETURN_INSPECTION_WINDOW_CLOSED 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Dispute',
+          method: 'POST',
+          path: `${API}/seller/returns/{{returnId}}/dispute`,
+          auth: true,
+          body: { reason: 'A different item came back.', photoMediaIds: [] },
+          description:
+            'received → disputed; an admin resolves it. Photos: upload with purpose return_photo. MEDIA_NOT_ATTACHABLE 422, RETURN_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: returns',
+      description: 'spec 18 §4.3. Admin role. Decisions and dispute resolutions are audited.',
+      item: [
+        req({
+          name: 'List returns',
+          method: 'GET',
+          path: `${API}/admin/returns`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'status[in]', value: 'escalated,disputed', disabled: true },
+            { key: 'reason[in]', value: 'damaged,wrong_item', disabled: true },
+            { key: 'sellerId[eq]', value: '{{sellerId}}', disabled: true },
+            { key: 'customerId[eq]', value: '{{customerId}}', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description: 'Stores the first in returnId.',
+          tests: saveId('returnId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Return (admin)',
+          method: 'GET',
+          path: `${API}/admin/returns/{{returnId}}`,
+          auth: true,
+          description:
+            'With the parties, the payout method (never the details) and the full history. RETURN_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Decide',
+          method: 'POST',
+          path: `${API}/admin/returns/{{returnId}}/decide`,
+          auth: true,
+          body: { decision: 'approve', note: 'Photo shows the damage.' },
+          description:
+            'requested or escalated → approved | rejected (final). RETURN_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Resolve dispute',
+          method: 'POST',
+          path: `${API}/admin/returns/{{returnId}}/resolve-dispute`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: { decision: 'refund', note: 'The seller received the right item.' },
+          description:
+            'disputed → completed (refund) or refused (no_refund). RETURN_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Seller: coupons',
+      description:
+        'spec 19 §4.2. Log in as the seller. Seller-funded coupons for your own products: commission is taken on the discounted subtotal (R-17). Writes need an approved seller; reads work in any status. Seller writes are not audited.',
+      item: [
+        req({
+          name: 'My coupons',
+          method: 'GET',
+          path: `${API}/seller/coupons`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'status[eq]', value: 'active', disabled: true },
+            { key: 'sort', value: '-createdAt', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description:
+            'Newest first; displayStatus: scheduled | active | expired | inactive. Stores the first in couponId.',
+          tests: saveId('couponId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Create a coupon',
+          method: 'POST',
+          path: `${API}/seller/coupons`,
+          auth: true,
+          body: {
+            code: 'SAVE-10',
+            discountType: 'percent',
+            discountValue: '0.10',
+            maxDiscount: '50.00',
+            minItemsSubtotal: '100.00',
+            scope: 'seller',
+            startsAt: '2026-01-01T00:00:00+02:00',
+            endsAt: '2027-01-01T00:00:00+02:00',
+            globalLimit: 100,
+            perCustomerLimit: 1,
+          },
+          description:
+            'scope seller (all your products) or category (with scopeCategoryId: your products in that category and below); scopeSellerId is not accepted. discountType percent: discountValue a rate 0.01..0.90, maxDiscount optional; fixed: an amount above 0, no maxDiscount. The code (4..32 letters, digits, dashes) is upper-cased. startsAt may be past, endsAt must be future. perCustomerLimit 1..100, globalLimit null = unlimited. SELLER_NOT_APPROVED 403, COUPON_INVALID 422 (details), CATEGORY_NOT_FOUND 422, COUPON_CODE_TAKEN 409. Stores couponId and couponCode.',
+          tests: `
+${expect(201)}
+if (pm.response.code === 201) {
+  pm.collectionVariables.set('couponId', pm.response.json().data.id);
+  pm.collectionVariables.set('couponCode', pm.response.json().data.code);
+}`,
+        }),
+        req({
+          name: 'Coupon',
+          method: 'GET',
+          path: `${API}/seller/coupons/{{couponId}}`,
+          auth: true,
+          description:
+            "adminBlocked and adminBlockReason show a block. COUPON_NOT_FOUND 404 (also another seller's).",
+          tests: expect(200),
+        }),
+        req({
+          name: 'Change a coupon',
+          method: 'PATCH',
+          path: `${API}/seller/coupons/{{couponId}}`,
+          auth: true,
+          body: { status: 'inactive' },
+          description:
+            'Any create field but code, plus status; at least one. After the first use only endsAt, globalLimit (not below the uses) and status (COUPON_LOCKED 409). A blocked coupon cannot be activated (COUPON_BLOCKED 409). COUPON_NOT_FOUND 404, COUPON_INVALID 422, SELLER_NOT_APPROVED 403.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: coupons',
+      description:
+        'spec 19 §4.3. Admin role. Platform-funded coupons (the platform absorbs the discount, commission on the undiscounted subtotal) and the block of seller coupons. Every write is audited.',
+      item: [
+        req({
+          name: 'List coupons',
+          method: 'GET',
+          path: `${API}/admin/coupons`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'funding[eq]', value: 'seller', disabled: true },
+            { key: 'status[eq]', value: 'active', disabled: true },
+            { key: 'sellerId[eq]', value: '{{sellerId}}', disabled: true },
+            { key: 'code[eq]', value: '{{couponCode}}', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description: 'Newest first. code is matched as stored (upper-case). Stores the first in couponId.',
+          tests: saveId('couponId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Create a platform coupon',
+          method: 'POST',
+          path: `${API}/admin/coupons`,
+          auth: true,
+          body: {
+            code: 'SAVE-10',
+            discountType: 'percent',
+            discountValue: '0.10',
+            maxDiscount: '50.00',
+            minItemsSubtotal: '100.00',
+            scope: 'all',
+            startsAt: '2026-01-01T00:00:00+02:00',
+            endsAt: '2027-01-01T00:00:00+02:00',
+            globalLimit: 100,
+            perCustomerLimit: 1,
+          },
+          description:
+            'scope all, seller (with scopeSellerId) or category (with scopeCategoryId). discountType percent: discountValue a rate 0.01..0.90, maxDiscount optional; fixed: an amount above 0, no maxDiscount. The code (4..32 letters, digits, dashes) is upper-cased. startsAt may be past, endsAt must be future. perCustomerLimit 1..100, globalLimit null = unlimited. COUPON_INVALID 422 (details), CATEGORY_NOT_FOUND / SELLER_NOT_FOUND 422, COUPON_CODE_TAKEN 409. Stores couponId and couponCode.',
+          tests: `
+${expect(201)}
+if (pm.response.code === 201) {
+  pm.collectionVariables.set('couponId', pm.response.json().data.id);
+  pm.collectionVariables.set('couponCode', pm.response.json().data.code);
+}`,
+        }),
+        req({
+          name: 'Coupon (admin)',
+          method: 'GET',
+          path: `${API}/admin/coupons/{{couponId}}`,
+          auth: true,
+          description: 'With its last 50 redemptions (active or released). COUPON_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Change a platform coupon',
+          method: 'PATCH',
+          path: `${API}/admin/coupons/{{couponId}}`,
+          auth: true,
+          body: { globalLimit: 200 },
+          description:
+            'As a seller changes theirs. A seller coupon is blocked or unblocked instead (COUPON_SELLER_FUNDED 409). COUPON_NOT_FOUND 404, COUPON_LOCKED 409, COUPON_INVALID 422.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Block a seller coupon',
+          method: 'POST',
+          path: `${API}/admin/coupons/{{couponId}}/block`,
+          auth: true,
+          body: { reason: 'Misleading coupon code' },
+          description:
+            'The coupon goes inactive and its seller cannot activate it; the seller is notified (coupon_blocked). reason 3..500, kept in the audit log. COUPON_NOT_FOUND 404, COUPON_BLOCK_INVALID_STATUS 409 (a platform coupon, or already blocked).',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Unblock a seller coupon',
+          method: 'POST',
+          path: `${API}/admin/coupons/{{couponId}}/unblock`,
+          auth: true,
+          description:
+            'Clears the block; the coupon stays inactive for the seller to activate. COUPON_NOT_FOUND 404, COUPON_BLOCK_INVALID_STATUS 409.',
           tests: expect(200),
         }),
       ],

@@ -8,14 +8,18 @@ export const OrderingErrorCode = {
   CART_HAS_ISSUES: 'CART_HAS_ISSUES',
   GOVERNORATE_NOT_DELIVERABLE: 'GOVERNORATE_NOT_DELIVERABLE',
   ORDER_TOTAL_CHANGED: 'ORDER_TOTAL_CHANGED',
+  KASHIER_TOTAL_ZERO: 'KASHIER_TOTAL_ZERO',
   ORDER_PAYMENT_PENDING: 'ORDER_PAYMENT_PENDING',
   ORDER_NOT_FOUND: 'ORDER_NOT_FOUND',
   ORDER_NOT_AWAITING_PAYMENT: 'ORDER_NOT_AWAITING_PAYMENT',
   SELLER_ORDER_NOT_FOUND: 'SELLER_ORDER_NOT_FOUND',
   SELLER_ORDER_INVALID_STATUS_TRANSITION: 'SELLER_ORDER_INVALID_STATUS_TRANSITION',
   SELLER_ORDER_NOT_CANCELLABLE: 'SELLER_ORDER_NOT_CANCELLABLE',
+  ORDER_NOT_CANCELLABLE: 'ORDER_NOT_CANCELLABLE',
   ORDER_ITEM_NOT_FOUND: 'ORDER_ITEM_NOT_FOUND',
   ITEM_CANCEL_QUANTITY_INVALID: 'ITEM_CANCEL_QUANTITY_INVALID',
+  /** Also raised by returns at request time (spec 09 OR-28). */
+  RETURN_QUANTITY_INVALID: 'RETURN_QUANTITY_INVALID',
 } as const;
 
 const C = OrderingErrorCode;
@@ -53,6 +57,14 @@ export const orderPaymentPending = (orderId: string) =>
         { field: 'orderId', value: orderId, constraint: 'pending_payment', message: 'awaiting payment' },
       ],
     },
+  );
+
+/** A coupon took every item and the delivery fee is 0: Kashier can't charge 0.00 (spec 09 OR-32). */
+export const kashierTotalZero = () =>
+  new AppError(
+    C.KASHIER_TOTAL_ZERO,
+    'This order costs nothing; choose cash on delivery',
+    S.UNPROCESSABLE_ENTITY,
   );
 
 export const orderTotalChanged = (currentTotal: string) =>
@@ -109,6 +121,32 @@ export const itemCancelQuantityInvalid = (open: number) =>
     },
   );
 
+/**
+ * A return line over what is still returnable, of another seller order, or listed twice: one detail per
+ * line (spec 18 §6, spec 09 OR-28). Ordering's code, so returns and recordReturn raise the same 422.
+ */
+export const returnQuantityInvalid = (details: readonly ErrorDetail[]) =>
+  new AppError(
+    C.RETURN_QUANTITY_INVALID,
+    'Some items can not be returned in these quantities',
+    S.UNPROCESSABLE_ENTITY,
+    { details },
+  );
+
 /** Registration creates the user and the profile in one transaction, so this is a bug (as cart CT-8). */
 export const profileMissing = (role: string, userId: string) =>
   internalError(new Error(`${role}-role user ${userId} has no ${role} profile`));
+
+/**
+ * UC-OR-10 (OR-17): a seller order is past `ready_for_pickup`, or nothing is open. `details` names each
+ * blocking seller order (none when nothing is open); nothing was cancelled.
+ */
+export const orderNotCancellable = (blocking: readonly { sellerOrderId: string; status: string }[]) =>
+  new AppError(C.ORDER_NOT_CANCELLABLE, 'This order can no longer be cancelled as a whole', S.CONFLICT, {
+    details: blocking.map((s): ErrorDetail => ({
+      field: 'sellerOrderId',
+      constraint: 'not_cancellable',
+      message: `seller order is ${s.status}`,
+      value: s.sellerOrderId,
+    })),
+  });

@@ -1,3 +1,4 @@
+import { IsString, Length } from 'class-validator';
 import { IntField, UuidField } from '../../../lib/http';
 import { CART_MAX_LINE_QUANTITY } from '../constants';
 
@@ -19,4 +20,11 @@ export class UpdateCartItemDto {
 export class CartItemIdParamsDto {
   @UuidField()
   itemId!: string;
+}
+
+/** `POST /cart/coupon-preview` (spec 08 §8). The quote upper-cases the code (spec 19 PR-12). */
+export class CouponPreviewRequestDto {
+  @IsString()
+  @Length(4, 32)
+  code!: string;
 }

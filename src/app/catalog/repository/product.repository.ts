@@ -30,12 +30,18 @@ export interface ProductSearch {
   wordSimilarityThreshold: number;
 }
 
+/** The public list's rating sort (spec 06 §9.3), matching idx_products_rating_id. */
+export const RATING_SORT_FIELD = 'rating';
+const RATING_SORT_SQL = 'COALESCE(p.rating_avg, 0)';
+
 export interface PublicListCriteria {
   /** The filter category and its descendants; null = no category filter. */
   categoryIds: string[] | null;
   /** One entry per `attr.*` filter: the option ids it accepts. */
   attributeOptionIds: string[][];
   search: ProductSearch | null;
+  /** `rating[gte]`: unrated products (rating_avg null) never match. */
+  minRating: number | null;
 }
 
 export interface PublicListRow {
@@ -57,6 +63,10 @@ const COLUMNS = [
   'max_price',
   'in_stock',
   'published_at',
+  'rating_count',
+  'rating_avg',
+  'admin_blocked_at',
+  'admin_block_reason',
   'deleted_at',
   'created_at',
   'updated_at',
@@ -76,6 +86,13 @@ interface ProductTable {
   max_price: string | null;
   in_stock: boolean;
   published_at: Date | null;
+  rating_count: number;
+  /** NUMERIC comes back from pg as a string; null until the first published review. */
+  rating_avg: string | null;
+  /** BIGINT comes back from pg as a string. */
+  rating_version: string;
+  admin_blocked_at: Date | null;
+  admin_block_reason: string | null;
   deleted_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -110,6 +127,10 @@ function toModel(row: ProductRow): Product {
     maxPrice: row.max_price === null ? null : Money.of(row.max_price),
     inStock: row.in_stock,
     publishedAt: row.published_at,
+    ratingCount: row.rating_count,
+    ratingAvg: row.rating_avg,
+    adminBlockedAt: row.admin_blocked_at,
+    adminBlockReason: row.admin_block_reason,
     deletedAt: row.deleted_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -138,6 +159,10 @@ export class ProductRepository {
         max_price: null,
         in_stock: product.inStock,
         published_at: null,
+        // No reviews yet; the rating projection fills them (spec 06 §9.1, no DB defaults, G13).
+        rating_count: 0,
+        rating_avg: null,
+        rating_version: '0',
       })
       .returning<ProductRow[]>(COLUMNS);
     if (!row) throw new Error('products insert returned no row');
@@ -272,6 +297,7 @@ export class ProductRepository {
       .whereNull('p.deleted_at');
 
     if (criteria.categoryIds) void qb.whereIn('p.category_id', criteria.categoryIds);
+    if (criteria.minRating !== null) void qb.where('p.rating_avg', '>=', criteria.minRating);
 
     // Every attr.* condition must hold on the SAME active, live variant (spec 06 CA-5).
     if (criteria.attributeOptionIds.length > 0) {
@@ -306,11 +332,89 @@ export class ProductRepository {
       void qb.select(db.raw(`${RELEVANCE_SQL} AS relevance`, [q, q]));
       if (query.sort.field === RELEVANCE_FIELD) sortExpression = db.raw(RELEVANCE_SQL, [q, q]);
     }
+    // Unrated products last on -rating; idx_products_rating_id without a category (spec 06 §9.3).
+    if (query.sort.field === RATING_SORT_FIELD) sortExpression = db.raw(RATING_SORT_SQL);
 
     const rows = (await applyListQuery(qb, query, 'p.id', { sortExpression })) as (ProductRow & {
       relevance?: string;
     })[];
     return rows.map((row) => ({ product: toModel(row), relevance: row.relevance ?? null }));
+  }
+
+  /** Batched by id, deleted and hidden ones included (product cards, spec 06 §9.3). Unknown ids are left out. */
+  async findByIds(ids: readonly string[]): Promise<Product[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .knex<ProductTable>(T)
+      .select(...COLUMNS)
+      .whereIn('id', [...new Set(ids)]);
+    return (rows as ProductRow[]).map(toModel);
+  }
+
+  /** VIS as an EXISTS on the primary key (G22): the review endpoints' PRODUCT_NOT_FOUND (spec 06 §9.3). */
+  async existsVisible(id: string): Promise<boolean> {
+    const visible = this.db
+      .knex<ProductTable>(T)
+      .select(this.db.knex.raw('1'))
+      .where({ id, status: PRODUCT_STATUS_ACTIVE, seller_active: true })
+      .whereNull('deleted_at');
+    const result = await this.db.knex.raw<{ rows: { exists: boolean }[] }>('SELECT EXISTS (?) AS "exists"', [
+      visible,
+    ]);
+    return result.rows[0]?.exists ?? false;
+  }
+
+  /**
+   * The rating projection (spec 06 §9.2): one conditional update, applied only when newer than the
+   * stored version (an older or duplicate event changes nothing). No product lock first, and it touches
+   * nothing CA-2 protects. False when it was not newer.
+   */
+  async applyRating(
+    id: string,
+    rating: { ratingCount: number; ratingAvg: string | null; version: number },
+    trx: DbTransaction,
+  ): Promise<boolean> {
+    const updated = await trx<ProductTable>(T)
+      .where({ id })
+      .andWhere('rating_version', '<', rating.version)
+      .update({
+        rating_count: rating.ratingCount,
+        rating_avg: rating.ratingAvg,
+        rating_version: String(rating.version),
+        updated_at: trx.fn.now(),
+      });
+    return updated > 0;
+  }
+
+  /**
+   * The admin block (spec 20 §3.4): sets or clears both columns; `status`, when given, moves the product
+   * off the shop in the same update (BO-16).
+   */
+  async setAdminBlock(
+    id: string,
+    block: { reason: string; at: Date } | null,
+    status: ProductStatus | null,
+    trx: DbTransaction,
+  ): Promise<void> {
+    await trx<ProductTable>(T)
+      .where({ id })
+      .update({
+        admin_blocked_at: block?.at ?? null,
+        admin_block_reason: block?.reason ?? null,
+        ...(status ? { status } : {}),
+        updated_at: trx.fn.now(),
+      });
+  }
+
+  /** A live product by id, any seller, without a transaction (admin reads). */
+  async findLiveByIdForRead(id: string): Promise<Product | null> {
+    const row = await this.db
+      .knex<ProductTable>(T)
+      .select(...COLUMNS)
+      .where({ id })
+      .whereNull('deleted_at')
+      .first<ProductRow | undefined>();
+    return row ? toModel(row) : null;
   }
 
   /** A visible (VIS) product by id or by slug (uq_products_slug); null when hidden, deleted or missing. */

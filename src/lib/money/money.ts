@@ -10,6 +10,7 @@ export type Currency = typeof EGP;
 
 const MONEY_SCALE = 2;
 const RATE_SCALE = 4;
+const PIASTRE = new Decimal('0.01');
 const DECIMAL_STRING = /^-?\d+(\.\d+)?$/;
 
 function parseDecimal(value: string, what: string): Decimal {
@@ -89,6 +90,21 @@ export class Money {
   }
 
   /**
+   * Multiply by `numerator / denominator`, rounded half-up to the piastre: a line's coupon share on the
+   * units it still keeps, `round(discount × kept / quantity)` (spec 09 §8.7).
+   */
+  timesRatio(numerator: number, denominator: number): Money {
+    if (!Number.isSafeInteger(numerator) || !Number.isSafeInteger(denominator) || denominator <= 0) {
+      throw new RangeError(
+        `ratio must be integers over a positive denominator, got ${numerator}/${denominator}`,
+      );
+    }
+    return new Money(
+      this.amount.times(numerator).dividedBy(denominator).toDecimalPlaces(MONEY_SCALE, Decimal.ROUND_HALF_UP),
+    );
+  }
+
+  /**
    * Splits into `parts` equal shares rounded DOWN to the piastre, plus the leftover piastres
    * (docs/spec/09-ordering.md §3.8: `base × parts + remainder = this`).
    */
@@ -98,6 +114,35 @@ export class Money {
     if (this.isNegative()) throw new RangeError('Cannot split a negative amount');
     const base = this.amount.dividedBy(parts).toDecimalPlaces(MONEY_SCALE, Decimal.ROUND_DOWN);
     return { base: new Money(base), remainder: new Money(this.amount.minus(base.times(parts))) };
+  }
+
+  /**
+   * Splits this amount over `weights` in proportion: each share rounded DOWN to the piastre, then the
+   * leftover piastres one by one to the largest remainders (ties: the earlier weight). The shares add
+   * up to this amount exactly, and none exceeds its weight while this amount ≤ Σ weights (spec 19 §1.2).
+   */
+  allocate(weights: readonly Money[]): Money[] {
+    if (this.isNegative() || weights.some((weight) => weight.isNegative())) {
+      throw new RangeError('Cannot allocate negative amounts');
+    }
+    const total = weights.reduce((sum, weight) => sum.plus(weight.amount), new Decimal(0));
+    if (total.isZero()) {
+      if (!this.isZero()) throw new RangeError('Cannot allocate an amount over zero weights');
+      return weights.map(() => Money.zero());
+    }
+    const exact = weights.map((weight) => this.amount.times(weight.amount).dividedBy(total));
+    const shares = exact.map((value) => value.toDecimalPlaces(MONEY_SCALE, Decimal.ROUND_DOWN));
+    const allocated = shares.reduce((sum, share) => sum.plus(share), new Decimal(0));
+    let leftover = this.amount.minus(allocated).times(100).toNumber();
+    const byRemainder = exact
+      .map((value, index) => ({ index, remainder: value.minus(shares[index] ?? 0) }))
+      .sort((a, b) => b.remainder.comparedTo(a.remainder) || a.index - b.index);
+    for (const { index } of byRemainder) {
+      if (leftover <= 0) break;
+      shares[index] = (shares[index] ?? new Decimal(0)).plus(PIASTRE);
+      leftover -= 1;
+    }
+    return shares.map((share) => new Money(share));
   }
 
   isZero(): boolean {

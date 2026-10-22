@@ -20,6 +20,7 @@ import {
   toAdminCategoryTreeDto,
   toOptionDto,
 } from '../dto/category-response.dto';
+import { SetCategoryImageDto } from '../dto/product-image.dto';
 import { type CategoryAdminService } from '../service/category-admin.service';
 
 /** HTTP only (spec 06 §4.2). Admin-guarded in routes. */
@@ -87,6 +88,19 @@ export class CategoryAdminController {
   deleteOption = async (req: Request, res: Response): Promise<void> => {
     const { optionId } = await validateDto(OptionIdParamsDto, req.params);
     await this.admin.deleteOption(optionId, actorOf(req));
+    sendNoContent(res);
+  };
+
+  setImage = async (req: Request, res: Response): Promise<void> => {
+    const { categoryId } = await validateDto(CategoryIdParamsDto, req.params);
+    const { mediaId, altText } = await validateDto(SetCategoryImageDto, req.body);
+    await this.admin.setImage(categoryId, mediaId, altText ?? null, actorOf(req));
+    sendSuccess(res, HTTP_STATUS.OK, toAdminCategoryNodeDto(await this.admin.getTree(), categoryId));
+  };
+
+  removeImage = async (req: Request, res: Response): Promise<void> => {
+    const { categoryId } = await validateDto(CategoryIdParamsDto, req.params);
+    await this.admin.removeImage(categoryId, actorOf(req));
     sendNoContent(res);
   };
 }

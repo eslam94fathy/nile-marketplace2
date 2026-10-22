@@ -8,7 +8,7 @@ import {
   type ReferenceEntryDto,
   type RemittanceDto,
 } from '../../src/app/finance/dto/finance-response.dto';
-import { deliveryBooking } from '../../src/app/finance/model/booking-rules';
+import { deliveryBooking, holdReleaseBooking } from '../../src/app/finance/model/booking-rules';
 import { type LedgerService } from '../../src/app/finance/service/ledger.service';
 import { TOKENS } from '../../src/lib/di';
 import { Money } from '../../src/lib/money';
@@ -44,7 +44,10 @@ describe('finance: admin API', () => {
   const v7 = async () =>
     (await knex().raw<{ rows: { id: string }[] }>('SELECT uuidv7() AS id')).rows[0]?.id ?? '';
 
-  /** A COD delivery booked through the ledger (seller net 90, commission 10, share 14, cash 160 with the fee). */
+  /**
+   * A COD delivery booked through the ledger (seller net 90, commission 10, share 14, cash 160 with the fee),
+   * its hold then released as the job does (spec 12 §8.3), so the net is payable.
+   */
   async function delivered(options: {
     sellerId: string;
     agentId: string;
@@ -62,6 +65,7 @@ describe('finance: admin API', () => {
             paymentMethod: 'cod',
             sellerNet: m(options.sellerNet ?? '90.00'),
             commission: m('10.00'),
+            platformDiscount: m('0.00'),
             agentFeeShare: m('14.00'),
             codCollectedAmount: m(options.cash ?? '160.00'),
             deliveryFeeCollected: true,
@@ -69,6 +73,16 @@ describe('finance: admin API', () => {
           },
           randomUUID(),
         ),
+        trx,
+      ),
+    );
+    await t.infra.db.run((trx) =>
+      t.container.resolve<LedgerService>(TOKENS.LedgerService).post(
+        holdReleaseBooking({
+          sellerOrderId,
+          sellerId: options.sellerId,
+          heldAmount: m(options.sellerNet ?? '90.00'),
+        }),
         trx,
       ),
     );
@@ -101,13 +115,9 @@ describe('finance: admin API', () => {
       const own = successBody<AccountDto[]>(
         await admin().get(`/admin/finance/accounts?ownerId=${sellerId}`),
       ).data;
-      expect(own).toEqual([
-        expect.objectContaining({
-          accountType: 'seller_payable',
-          ownerId: sellerId,
-          ownerName: business?.business_name,
-          balance: '90.00',
-        }),
+      expect(own.map((a) => [a.accountType, a.ownerId, a.ownerName, a.balance]).sort()).toEqual([
+        ['seller_payable', sellerId, business?.business_name, '90.00'],
+        ['seller_pending', sellerId, business?.business_name, '0.00'],
       ]);
       const agent = successBody<AccountDto[]>(
         await admin().get(`/admin/finance/accounts?ownerId[eq]=${agentId}&sort=updatedAt`),
@@ -169,7 +179,7 @@ describe('finance: admin API', () => {
       const one = successBody<AccountDto>(await admin().get(`/admin/finance/accounts/${account?.id}`)).data;
       expect(one).toMatchObject({ id: account?.id, balance: '135.00', accountType: 'seller_payable' });
       const statement = successBody<LedgerEntryDto[]>(
-        await admin().get(`/admin/finance/accounts/${account?.id}/entries?entryType=seller_net_earned`),
+        await admin().get(`/admin/finance/accounts/${account?.id}/entries?entryType=seller_net_released`),
       );
       expect(statement.data.map((e) => [e.amount, e.balanceAfter])).toEqual([
         ['45.00', '135.00'],
@@ -191,7 +201,7 @@ describe('finance: admin API', () => {
         await admin().get(`/admin/finance/entries?referenceType=seller_order&referenceId=${sellerOrderId}`),
       ).data;
       expect(entries.map((e) => e.entryType)).toEqual([
-        'seller_net_earned',
+        'seller_net_held',
         'commission_earned',
         'agent_fee_earned',
         'agent_fee_earned',

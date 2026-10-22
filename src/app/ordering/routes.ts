@@ -7,7 +7,12 @@ import { ORDERING_PATHS as P } from './constants';
 import { type AdminOrderController } from './controller/admin-order.controller';
 import { type OrderController } from './controller/order.controller';
 import { type SellerOrderController } from './controller/seller-order.controller';
-import { CancelOrderItemDto, CancelSellerOrderDto, CheckoutDto } from './dto/order-request.dto';
+import {
+  AdminCancelDto,
+  CancelOrderItemDto,
+  CancelSellerOrderDto,
+  CheckoutDto,
+} from './dto/order-request.dto';
 import {
   AdminOrderDetailDto,
   AdminOrderSummaryDto,
@@ -67,6 +72,9 @@ export function orderingRoutes(deps: OrderingRouteDeps): Router {
 
   router.get(P.ADMIN_ORDERS, ...adminOnly, adminOrders.list);
   router.get(P.ADMIN_ORDER, ...adminOnly, adminOrders.get);
+  // Spec 09 §8.4: an Idempotency-Key is required (stock and money effects, G25).
+  router.post(P.ADMIN_ORDER_CANCEL, ...adminOnly, deps.idempotency, adminOrders.cancelOrder);
+  router.post(P.ADMIN_SELLER_ORDER_CANCEL, ...adminOnly, deps.idempotency, adminOrders.cancelSellerOrder);
 
   const customer = { tags: ['orders'], auth: true } as const;
   docs.add({
@@ -74,7 +82,7 @@ export function orderingRoutes(deps: OrderingRouteDeps): Router {
     method: 'post',
     path: `${basePath}${P.CHECKOUT}`,
     summary:
-      'Place an order from my cart, split per seller; reserves stock and empties the cart. COD: placed at once. Kashier: awaiting payment for KASHIER_PAYMENT_TTL_MINUTES, with the payment page in kashier.checkoutUrl (null when Kashier failed; ask again through kashier-session) (CART_EMPTY 422, CART_HAS_ISSUES 409, ADDRESS_NOT_FOUND 422, GOVERNORATE_NOT_DELIVERABLE 422, ORDER_TOTAL_CHANGED 409, ORDER_PAYMENT_PENDING 409 (Kashier, an unpaid order exists), INSUFFICIENT_STOCK 409)',
+      'Place an order from my cart, split per seller; reserves stock and empties the cart. COD: placed at once. Kashier: awaiting payment for KASHIER_PAYMENT_TTL_MINUTES, with the payment page in kashier.checkoutUrl (null when Kashier failed; ask again through kashier-session) (CART_EMPTY 422, CART_HAS_ISSUES 409, ADDRESS_NOT_FOUND 422, GOVERNORATE_NOT_DELIVERABLE 422, ORDER_TOTAL_CHANGED 409, ORDER_PAYMENT_PENDING 409 (Kashier, an unpaid order exists), INSUFFICIENT_STOCK 409). Optional couponCode: the items are discounted and expectedTotal includes the discount; the coupon codes of POST /cart/coupon-preview answer 422; KASHIER_TOTAL_ZERO 422 when a Kashier order would cost 0.00',
     requestBody: CheckoutDto,
     idempotent: true,
     responses: { 201: { description: 'The placed order', body: CheckoutResultDto } },
@@ -210,5 +218,25 @@ export function orderingRoutes(deps: OrderingRouteDeps): Router {
     responses: { 200: { description: 'The order', body: AdminOrderDetailDto } },
   });
 
+  docs.add({
+    ...admin,
+    method: 'post',
+    path: `${basePath}${P.ADMIN_SELLER_ORDER_CANCEL}`,
+    summary:
+      'Cancel a seller order from placed, accepted or ready_for_pickup; stock released, a Kashier refund flagged, customer and seller notified. The reason is for admins only (SELLER_ORDER_NOT_FOUND 404, SELLER_ORDER_NOT_CANCELLABLE 409)',
+    idempotent: true,
+    requestBody: AdminCancelDto,
+    responses: { 200: { description: 'The order', body: AdminOrderDetailDto } },
+  });
+  docs.add({
+    ...admin,
+    method: 'post',
+    path: `${basePath}${P.ADMIN_ORDER_CANCEL}`,
+    summary:
+      'Cancel every open seller order of the order, all or nothing (ORDER_NOT_FOUND 404, ORDER_NOT_CANCELLABLE 409 with the blocking seller orders in details)',
+    idempotent: true,
+    requestBody: AdminCancelDto,
+    responses: { 200: { description: 'The order', body: AdminOrderDetailDto } },
+  });
   return router;
 }

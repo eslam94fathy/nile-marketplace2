@@ -10,6 +10,8 @@ export const SELLERS_PATHS = {
   REGISTER: '/auth/register/seller',
   PROFILE: '/seller/profile',
   REAPPLY: '/seller/profile/reapply',
+  /** The public seller page (spec 05 §8.2). */
+  PUBLIC: '/sellers/:sellerId',
 } as const;
 
 /** DTO limits = column lengths (02-database.md §4). */
@@ -41,3 +43,6 @@ export const REASON_MAX_LENGTH = 500;
 
 /** The admin detail shows the newest 50 entries of each history (spec 05 §4.4). */
 export const ADMIN_HISTORY_LIMIT = 50;
+
+/** Queue of the rating projection consumer (spec 05 §8.1, spec 02 §6.4). */
+export const SELLERS_RATING_PROJECTION_QUEUE = 'sellers.rating-projection';

@@ -4,6 +4,10 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 export interface ExecutionContext {
   readonly correlationId: string;
   userId?: string;
+  /** Client IP as resolved by `trust proxy` (HTTP requests only); recorded in the audit log. */
+  readonly ip?: string;
+  /** Set by command-line tools (seed-admin): their audit rows have actor type `cli`. */
+  readonly cli?: boolean;
 }
 
 const storage = new AsyncLocalStorage<ExecutionContext>();

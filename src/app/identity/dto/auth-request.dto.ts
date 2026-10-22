@@ -57,9 +57,11 @@ export class LoginDto {
   deviceName?: string;
 }
 
+/** Optional: a web client may send it in the cookie instead (spec 03 §8.1). */
 export class RefreshTokenDto {
+  @Optional()
   @OpaqueTokenField()
-  refreshToken!: string;
+  refreshToken?: string;
 }
 
 export class ResetPasswordDto {
@@ -88,6 +90,8 @@ export class ChangePasswordDto {
   @NewPasswordField()
   newPassword!: string;
 
+  /** The session that is kept; optional when a web client sends it in the cookie (spec 03 §8.1). */
+  @Optional()
   @OpaqueTokenField()
-  refreshToken!: string;
+  refreshToken?: string;
 }

@@ -1,3 +1,4 @@
+import { MinioContainer, type StartedMinioContainer } from '@testcontainers/minio';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { RabbitMQContainer, type StartedRabbitMQContainer } from '@testcontainers/rabbitmq';
 import { RedisContainer, type StartedRedisContainer } from '@testcontainers/redis';
@@ -11,6 +12,7 @@ export const TEST_IMAGES = {
   postgres: 'postgres:18',
   redis: 'redis:7.2-alpine',
   rabbitmq: 'rabbitmq:4.2-management',
+  minio: 'pgsty/minio:RELEASE.2026-08-04T00-00-00Z',
 } as const;
 
 export const TEMPLATE_DB = 'nile_template';
@@ -24,6 +26,9 @@ declare module 'vitest' {
     redisUrl: string;
     amqpBaseUrl: string;
     rabbitManagementUrl: string;
+    storageEndpoint: string;
+    storageAccessKeyId: string;
+    storageSecretAccessKey: string;
   }
 }
 
@@ -38,17 +43,22 @@ function withDatabase(url: string, database: string): string {
  * every test file then clones it (test/helpers/test-resources.ts).
  */
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
-  const [pg, redis, rabbit]: [StartedPostgreSqlContainer, StartedRedisContainer, StartedRabbitMQContainer] =
-    await Promise.all([
-      new PostgreSqlContainer(TEST_IMAGES.postgres)
-        .withUsername('nile')
-        .withPassword('nile')
-        .withDatabase('nile_admin')
-        .start(),
-      new RedisContainer(TEST_IMAGES.redis).start(),
-      // The module's 30 s default is too tight: RabbitMQ alone took ~32 s on a busy Docker host.
-      new RabbitMQContainer(TEST_IMAGES.rabbitmq).withStartupTimeout(RABBIT_STARTUP_TIMEOUT_MS).start(),
-    ]);
+  const [pg, redis, rabbit, minio]: [
+    StartedPostgreSqlContainer,
+    StartedRedisContainer,
+    StartedRabbitMQContainer,
+    StartedMinioContainer,
+  ] = await Promise.all([
+    new PostgreSqlContainer(TEST_IMAGES.postgres)
+      .withUsername('nile')
+      .withPassword('nile')
+      .withDatabase('nile_admin')
+      .start(),
+    new RedisContainer(TEST_IMAGES.redis).start(),
+    // The module's 30 s default is too tight: RabbitMQ alone took ~32 s on a busy Docker host.
+    new RabbitMQContainer(TEST_IMAGES.rabbitmq).withStartupTimeout(RABBIT_STARTUP_TIMEOUT_MS).start(),
+    new MinioContainer(TEST_IMAGES.minio).start(),
+  ]);
 
   const adminUrl = pg.getConnectionUri();
   const templateUrl = withDatabase(adminUrl, TEMPLATE_DB);
@@ -68,7 +78,11 @@ export default async function setup(project: TestProject): Promise<() => Promise
     `http://${rabbit.getHost()}:${rabbit.getMappedPort(RABBIT_MANAGEMENT_PORT)}`,
   );
 
+  project.provide('storageEndpoint', minio.getConnectionUrl());
+  project.provide('storageAccessKeyId', minio.getUsername());
+  project.provide('storageSecretAccessKey', minio.getPassword());
+
   return async () => {
-    await Promise.allSettled([pg.stop(), redis.stop(), rabbit.stop()]);
+    await Promise.allSettled([pg.stop(), redis.stop(), rabbit.stop(), minio.stop()]);
   };
 }

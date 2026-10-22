@@ -4,8 +4,13 @@ import { TOKENS } from '../../../lib/di';
 import { unauthenticated } from '../../../lib/error';
 import { HTTP_STATUS, type HttpStatus, sendNoContent, sendSuccess, validateDto } from '../../../lib/http';
 import { type ICustomerDirectory } from '../../customers';
-import { AddCartItemDto, CartItemIdParamsDto, UpdateCartItemDto } from '../dto/cart-request.dto';
-import { toCartDto } from '../dto/cart-response.dto';
+import {
+  AddCartItemDto,
+  CartItemIdParamsDto,
+  CouponPreviewRequestDto,
+  UpdateCartItemDto,
+} from '../dto/cart-request.dto';
+import { toCartDto, toCouponQuoteDto } from '../dto/cart-response.dto';
 import { customerProfileMissing } from '../errors';
 import { type CartViewService } from '../service/cart-view.service';
 import { type CartService } from '../service/cart.service';
@@ -50,6 +55,12 @@ export class CartController {
   clear = async (req: Request, res: Response): Promise<void> => {
     await this.cart.clear(await this.customerIdOf(req));
     sendNoContent(res);
+  };
+
+  couponPreview = async (req: Request, res: Response): Promise<void> => {
+    const { code } = await validateDto(CouponPreviewRequestDto, req.body);
+    const preview = await this.views.couponPreview(await this.customerIdOf(req), code);
+    sendSuccess(res, HTTP_STATUS.OK, toCouponQuoteDto(preview));
   };
 
   private async sendCart(res: Response, status: HttpStatus, customerId: string): Promise<void> {

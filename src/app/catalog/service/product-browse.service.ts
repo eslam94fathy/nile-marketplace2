@@ -5,9 +5,17 @@ import { type ErrorDetail, invalidQuery } from '../../../lib/error';
 import { type PageMeta, type ParsedFilter, type ParsedListQuery, toPage } from '../../../lib/http';
 import { type IInventoryService } from '../../inventory';
 import { type ISellerDirectory } from '../../sellers';
-import { MAX_AVAILABLE_QUANTITY, SEARCH_MAX_LENGTH, SEARCH_MIN_LENGTH } from '../constants';
+import {
+  MAX_AVAILABLE_QUANTITY,
+  RATING_MAX,
+  RATING_MIN,
+  SEARCH_MAX_LENGTH,
+  SEARCH_MIN_LENGTH,
+} from '../constants';
 import { productNotFound } from '../errors';
+import { type ImageView } from '../../media';
 import { type CategoryTree } from '../model/category-tree.model';
+import { variantImageId } from '../model/product-image.model';
 import { type Product } from '../model/product.model';
 import { type ProductVariantRepository } from '../repository/product-variant.repository';
 import {
@@ -18,21 +26,30 @@ import {
 import { type VariantAttributeValueRepository } from '../repository/variant-attribute-value.repository';
 import { type CategoryTreeService } from './category-tree.service';
 import { type ProductDetailCache, type ProductDetailStatic } from './product-detail-cache.service';
+import { type ProductImageViewService } from './product-image-view.service';
 
 type SearchEnv = Pick<Env, 'SEARCH_WORD_SIMILARITY_THRESHOLD'>;
 
 /** Query param names owned by the products list (spec 06 §4.1). */
-export const PRODUCT_LIST_PARAMS = { Q: 'q', CATEGORY_ID: 'categoryId', ATTR_PREFIX: 'attr.' } as const;
+export const PRODUCT_LIST_PARAMS = {
+  Q: 'q',
+  CATEGORY_ID: 'categoryId',
+  ATTR_PREFIX: 'attr.',
+  RATING: 'rating',
+} as const;
 
 export interface ProductListItem {
   product: Product;
   category: { id: string; name: string; slug: string };
   seller: { id: string; businessName: string };
+  primaryImage: ImageView | null;
 }
 
 export interface PublicProductDetail extends ProductDetailStatic {
   product: Product;
   inStock: boolean;
+  /** Live (never cached): the seller's rating moves with every review (spec 05 §8.1). */
+  sellerRating: { ratingAvg: string | null; ratingCount: number };
   /** Live per variant (never cached): sellable stock. */
   stock: Map<string, { inStock: boolean; availableQuantity: number }>;
 }
@@ -49,6 +66,7 @@ export class ProductBrowseService {
     @inject(TOKENS.ProductDetailCache) private readonly detailCache: ProductDetailCache,
     @inject(TOKENS.SellerDirectory) private readonly sellers: ISellerDirectory,
     @inject(TOKENS.InventoryService) private readonly inventory: IInventoryService,
+    @inject(TOKENS.ProductImageViewService) private readonly images: ProductImageViewService,
     @inject(TOKENS.Env) private readonly env: SearchEnv,
   ) {}
 
@@ -62,6 +80,8 @@ export class ProductBrowseService {
       (row) => {
         if (query.sort.field === RELEVANCE_FIELD) return row.relevance ?? '0';
         if (query.sort.field === 'minPrice') return row.product.minPrice?.toString() ?? '0';
+        // The sort expression is COALESCE(rating_avg, 0) (spec 06 §9.3).
+        if (query.sort.field === PRODUCT_LIST_PARAMS.RATING) return row.product.ratingAvg ?? '0';
         return row.product.publishedAt ?? row.product.createdAt;
       },
     );
@@ -70,12 +90,14 @@ export class ProductBrowseService {
     const names = new Map(
       (await this.sellers.getSummaries(sellerIds)).map((s) => [s.sellerId, s.businessName]),
     );
+    const primaryImages = await this.images.primaryFor(page.items.map((row) => row.product.id));
     const items = page.items.map(({ product }) => {
       const category = tree.get(product.categoryId);
       return {
         product,
         category: { id: product.categoryId, name: category?.name ?? '', slug: category?.slug ?? '' },
         seller: { id: product.sellerId, businessName: names.get(product.sellerId) ?? '' },
+        primaryImage: primaryImages.get(product.id) ?? null,
       };
     });
     return { items, meta: page.meta };
@@ -92,7 +114,10 @@ export class ProductBrowseService {
       await this.detailCache.set(product.id, detail);
     }
 
-    const stock = await this.inventory.getStockByVariantIds(detail.variants.map((v) => v.id));
+    const [stock, [seller]] = await Promise.all([
+      this.inventory.getStockByVariantIds(detail.variants.map((v) => v.id)),
+      this.sellers.getSummaries([product.sellerId]),
+    ]);
     const sellable = new Map(stock.map((s) => [s.variantId, s.sellable]));
     const live = new Map(
       detail.variants.map((variant) => {
@@ -103,7 +128,13 @@ export class ProductBrowseService {
         ];
       }),
     );
-    return { ...detail, product, inStock: [...live.values()].some((s) => s.inStock), stock: live };
+    return {
+      ...detail,
+      product,
+      sellerRating: { ratingAvg: seller?.ratingAvg ?? null, ratingCount: seller?.ratingCount ?? 0 },
+      inStock: [...live.values()].some((s) => s.inStock),
+      stock: live,
+    };
   }
 
   private async buildStatic(product: Product): Promise<ProductDetailStatic> {
@@ -111,6 +142,7 @@ export class ProductBrowseService {
     const active = (await this.variants.findLiveByProductIds([product.id])).filter((v) => v.isActive);
     const options = await this.values.findByVariantIds(active.map((v) => v.id));
     const [seller] = await this.sellers.getSummaries([product.sellerId]);
+    const images = await this.images.forProduct(product.id);
 
     const used = new Set([...options.values()].flat().map((value) => value.optionId));
     const attributes = tree
@@ -140,7 +172,9 @@ export class ProductBrowseService {
           optionCode,
           value,
         })),
+        imageId: variantImageId(images, variant.id),
       })),
+      images,
     };
   }
 
@@ -172,10 +206,20 @@ export class ProductBrowseService {
       categoryId === null
         ? []
         : attrFilters.map((filter) => resolveAttrFilter(tree, categoryId, filter, problems));
+    const ratingFilter = query.filters.find((f) => f.field === PRODUCT_LIST_PARAMS.RATING);
+    const minRating = ratingFilter === undefined ? null : Number(ratingFilter.value);
+    if (minRating !== null && !(minRating >= RATING_MIN && minRating <= RATING_MAX)) {
+      problems.push({
+        field: PRODUCT_LIST_PARAMS.RATING,
+        constraint: 'range',
+        message: `rating must be ${RATING_MIN}..${RATING_MAX}`,
+      });
+    }
     if (problems.length > 0) throw invalidQuery(problems);
     return {
       categoryIds: categoryId === null ? null : tree.subtreeIds(categoryId),
       attributeOptionIds,
+      minRating,
       search:
         search === null
           ? null

@@ -5,6 +5,7 @@ export const CATALOG_TABLES = {
   PRODUCTS: 'products',
   PRODUCT_VARIANTS: 'product_variants',
   VARIANT_ATTRIBUTE_VALUES: 'variant_attribute_values',
+  PRODUCT_IMAGES: 'product_images',
 } as const;
 
 /** Public paths under /api/v1 (spec 06 §4.1). */
@@ -21,7 +22,15 @@ export const CATALOG_ADMIN_PATHS = {
   ATTRIBUTE: '/admin/attributes/:attributeId',
   ATTRIBUTE_OPTIONS: '/admin/attributes/:attributeId/options',
   OPTION: '/admin/options/:optionId',
+  CATEGORY_IMAGE: '/admin/categories/:categoryId/image',
+  PRODUCT: '/admin/products/:productId',
+  PRODUCT_BLOCK: '/admin/products/:productId/block',
+  PRODUCT_UNBLOCK: '/admin/products/:productId/unblock',
 } as const;
+
+/** The block reason is 3..500 characters (spec 20 §3.4). */
+export const BLOCK_REASON_MIN = 3;
+export const BLOCK_REASON_MAX = 500;
 
 /** Limits (spec 06 §1; a change goes through code review). */
 export const CATEGORY_MAX_DEPTH = 3;
@@ -52,7 +61,15 @@ export const CATALOG_SELLER_PATHS = {
   VARIANT: '/seller/products/:productId/variants/:variantId',
   STOCK_ADJUSTMENTS: '/seller/variants/:variantId/stock-adjustments',
   STOCK_MOVEMENTS: '/seller/variants/:variantId/stock-movements',
+  IMAGES: '/seller/products/:productId/images',
+  IMAGES_ORDER: '/seller/products/:productId/images/order',
+  IMAGE: '/seller/products/:productId/images/:imageId',
 } as const;
+
+/** Images per product (spec 06 §8.1, R-2); mirrors chk_product_images_position (0..7). */
+export const PRODUCT_IMAGE_LIMIT = 8;
+/** `product_images.alt_text` / `categories.image_alt_text`. */
+export const IMAGE_ALT_TEXT_MAX_LENGTH = 200;
 
 /** Product and variant DTO limits = column lengths (02-database.md §5, DB-Q4). */
 export const PRODUCT_NAME_MIN_LENGTH = 2;
@@ -88,3 +105,7 @@ export const MAX_AVAILABLE_QUANTITY = 99;
 
 /** Queue = consumer name (spec 02 §2): seller.approved, seller.suspended, inventory.stock_status_changed. */
 export const CATALOG_LISTING_PROJECTIONS_QUEUE = 'catalog.listing-projections';
+
+/** The `rating[gte]` filter's range (spec 06 §9.3): ratings are 1..5. */
+export const RATING_MIN = 1;
+export const RATING_MAX = 5;

@@ -50,7 +50,7 @@ Requirements: Node 24 (`nvm use` reads `.nvmrc`) and Docker.
 ```sh
 npm ci
 npm run dev:env              # creates a git-ignored .env with local values and a dev JWT key pair
-docker compose up --build    # Postgres, Redis, RabbitMQ, Mailpit, then migrate, api and worker
+docker compose up --build    # Postgres, Redis, RabbitMQ, Mailpit, then migrate, api, worker and realtime
 npm run seed:dev             # optional: delivery fees, a demo seller with a catalog, a demo agent
 ```
 
@@ -74,6 +74,7 @@ npm run dev:build     # tsc --watch
 npm run migrate
 npm run dev:api       # node --watch --env-file=.env
 npm run dev:worker
+npm run dev:realtime  # Socket.IO gateway on PORT 3001 (.env.realtime)
 ```
 
 ## Scripts

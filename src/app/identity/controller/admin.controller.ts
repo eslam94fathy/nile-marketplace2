@@ -5,8 +5,19 @@ import { TOKENS } from '../../../lib/di';
 import { unauthenticated } from '../../../lib/error';
 import { HTTP_STATUS, parseListQuery, sendNoContent, sendSuccess, validateDto } from '../../../lib/http';
 import { UserStatus } from '../enums';
-import { ADMIN_LIST_SPEC, InviteAdminDto, SuspendUserDto, UserIdParamsDto } from '../dto/admin-request.dto';
-import { toAdminListItemDto, toInvitedAdminDto, toUserStatusDto } from '../dto/admin-response.dto';
+import {
+  ADMIN_LIST_SPEC,
+  InviteAdminDto,
+  USER_LIST_SPEC,
+  SuspendUserDto,
+  UserIdParamsDto,
+} from '../dto/admin-request.dto';
+import {
+  toAdminListItemDto,
+  toAdminUserListItemDto,
+  toInvitedAdminDto,
+  toUserStatusDto,
+} from '../dto/admin-response.dto';
 import { ADMIN_SUSPENDABLE_ROLES, type UserAdminService } from '../service/user-admin.service';
 
 type ListEnv = Pick<Env, 'PAGINATION_DEFAULT_LIMIT' | 'PAGINATION_MAX_LIMIT'>;
@@ -32,6 +43,15 @@ export class AdminController {
     });
     const page = await this.admin.listAdmins(query);
     sendSuccess(res, HTTP_STATUS.OK, page.items.map(toAdminListItemDto), page.meta);
+  };
+
+  listUsers = async (req: Request, res: Response): Promise<void> => {
+    const query = parseListQuery(req.query, USER_LIST_SPEC, {
+      defaultLimit: this.env.PAGINATION_DEFAULT_LIMIT,
+      maxLimit: this.env.PAGINATION_MAX_LIMIT,
+    });
+    const page = await this.admin.listUsers(query);
+    sendSuccess(res, HTTP_STATUS.OK, page.items.map(toAdminUserListItemDto), page.meta);
   };
 
   resendInvite = async (req: Request, res: Response): Promise<void> => {

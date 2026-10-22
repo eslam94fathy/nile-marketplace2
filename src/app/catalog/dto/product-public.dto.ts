@@ -4,6 +4,9 @@ import { validationFailed } from '../../../lib/error';
 import { FieldType, FilterOp, IsMoney, type ListSpec, SLUG_PATTERN } from '../../../lib/http';
 import { MAX_ATTRIBUTE_FILTERS, MAX_ATTRIBUTE_FILTER_VALUES, PRODUCT_SLUG_MAX_LENGTH } from '../constants';
 import { RELEVANCE_FIELD } from '../repository/product.repository';
+import { ImageDto, toImageDto } from '../../media';
+import { ProductRatingDto } from './product-card.dto';
+import { ProductImageDto, toProductImageDto } from './product-image.dto';
 import {
   type ProductListItem,
   PRODUCT_LIST_PARAMS,
@@ -19,6 +22,8 @@ const BROWSE_FIELDS: ListSpec['fields'] = {
   publishedAt: { column: 'p.published_at', type: FieldType.DATE, ops: [], sortable: true },
   inStock: { column: 'p.in_stock', type: FieldType.BOOLEAN, ops: [FilterOp.EQ] },
   sellerId: { column: 'p.seller_id', type: FieldType.UUID, ops: [FilterOp.EQ] },
+  // Custom (spec 06 §9.3): `rating[gte]` on rating_avg; the sort on COALESCE(rating_avg, 0), unrated last.
+  [PRODUCT_LIST_PARAMS.RATING]: { type: FieldType.NUMBER, ops: [FilterOp.GTE], sortable: true },
 };
 const ATTRIBUTE_FILTERS: ListSpec['prefixFields'] = {
   [PRODUCT_LIST_PARAMS.ATTR_PREFIX]: {
@@ -77,6 +82,16 @@ export class ProductSellerRefDto {
   businessName!: string;
 }
 
+/** The seller on the product page, with its rating (spec 06 §9.3, spec 05 §8.2). */
+export class ProductDetailSellerDto extends ProductSellerRefDto {
+  @IsOptional()
+  @IsString()
+  ratingAvg!: string | null;
+
+  @IsInt()
+  ratingCount!: number;
+}
+
 export class ProductListItemDto {
   @IsUUID()
   id!: string;
@@ -97,12 +112,22 @@ export class ProductListItemDto {
   inStock!: boolean;
 
   @ValidateNested()
+  @Type(() => ProductRatingDto)
+  rating!: ProductRatingDto;
+
+  @ValidateNested()
   @Type(() => ProductCategoryRefDto)
   category!: ProductCategoryRefDto;
 
   @ValidateNested()
   @Type(() => ProductSellerRefDto)
   seller!: ProductSellerRefDto;
+
+  // Nullable: null when the product has no image (spec 06 §8.4).
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ImageDto)
+  primaryImage!: ImageDto | null;
 
   @IsISO8601()
   publishedAt!: string;
@@ -171,6 +196,11 @@ export class ProductVariantDto {
   /** min(sellable, 99). Read live, never cached. */
   @IsInt()
   availableQuantity!: number;
+
+  /** The id within `images` shown for this variant: its own image, else the primary one. */
+  @IsOptional()
+  @IsUUID()
+  imageId!: string | null;
 }
 
 export class ProductDetailDto {
@@ -191,8 +221,8 @@ export class ProductDetailDto {
   category!: ProductCategoryDto;
 
   @ValidateNested()
-  @Type(() => ProductSellerRefDto)
-  seller!: ProductSellerRefDto;
+  @Type(() => ProductDetailSellerDto)
+  seller!: ProductDetailSellerDto;
 
   @IsMoney()
   minPrice!: string;
@@ -203,6 +233,10 @@ export class ProductDetailDto {
   @IsBoolean()
   inStock!: boolean;
 
+  @ValidateNested()
+  @Type(() => ProductRatingDto)
+  rating!: ProductRatingDto;
+
   @ValidateNested({ each: true })
   @Type(() => ProductAttributeDto)
   attributes!: ProductAttributeDto[];
@@ -212,6 +246,11 @@ export class ProductDetailDto {
   @Type(() => ProductVariantDto)
   variants!: ProductVariantDto[];
 
+  /** In position order; the first is the primary image. */
+  @ValidateNested({ each: true })
+  @Type(() => ProductImageDto)
+  images!: ProductImageDto[];
+
   @IsISO8601()
   publishedAt!: string;
 }
@@ -220,7 +259,12 @@ export class ProductDetailDto {
 const visibleMoney = (value: { toString(): string } | null): string => value?.toString() ?? '0.00';
 const visibleDate = (value: Date | null, fallback: Date): string => (value ?? fallback).toISOString();
 
-export function toProductListItemDto({ product, category, seller }: ProductListItem): ProductListItemDto {
+export function toProductListItemDto({
+  product,
+  category,
+  seller,
+  primaryImage,
+}: ProductListItem): ProductListItemDto {
   return {
     id: product.id,
     slug: product.slug,
@@ -228,8 +272,10 @@ export function toProductListItemDto({ product, category, seller }: ProductListI
     minPrice: visibleMoney(product.minPrice),
     maxPrice: visibleMoney(product.maxPrice),
     inStock: product.inStock,
+    rating: { avg: product.ratingAvg, count: product.ratingCount },
     category,
     seller,
+    primaryImage: primaryImage ? toImageDto(primaryImage) : null,
     publishedAt: visibleDate(product.publishedAt, product.createdAt),
   };
 }
@@ -242,15 +288,17 @@ export function toProductDetailDto(detail: PublicProductDetail): ProductDetailDt
     name: product.name,
     description: product.description,
     category: detail.category,
-    seller: detail.seller,
+    seller: { ...detail.seller, ...detail.sellerRating },
     minPrice: visibleMoney(product.minPrice),
     maxPrice: visibleMoney(product.maxPrice),
     inStock: detail.inStock,
+    rating: { avg: product.ratingAvg, count: product.ratingCount },
     attributes: detail.attributes,
     variants: detail.variants.map((variant) => ({
       ...variant,
       ...(detail.stock.get(variant.id) ?? { inStock: false, availableQuantity: 0 }),
     })),
+    images: detail.images.map(toProductImageDto),
     publishedAt: visibleDate(product.publishedAt, product.createdAt),
   };
 }

@@ -8,7 +8,8 @@ import {
   RegisterSellerDto,
   UpdateSellerProfileDto,
 } from '../dto/seller-request.dto';
-import { toRegisteredSellerDto, toSellerProfileDto } from '../dto/seller-response.dto';
+import { toPublicSellerDto, toRegisteredSellerDto, toSellerProfileDto } from '../dto/seller-response.dto';
+import { SellerIdParamsDto } from '../dto/seller-admin-request.dto';
 import { type PickupAddress } from '../model/seller.model';
 import { type SellerService } from '../service/seller.service';
 
@@ -41,6 +42,12 @@ export class SellerController {
       pickup: dto.pickupAddress ? toPickup(dto.pickupAddress) : undefined,
     });
     sendSuccess(res, HTTP_STATUS.OK, toSellerProfileDto(profile));
+  };
+
+  /** Public (spec 05 §8.2). */
+  publicProfile = async (req: Request, res: Response): Promise<void> => {
+    const { sellerId } = await validateDto(SellerIdParamsDto, req.params);
+    sendSuccess(res, HTTP_STATUS.OK, toPublicSellerDto(await this.sellers.getPublic(sellerId)));
   };
 
   reapply = async (req: Request, res: Response): Promise<void> => {

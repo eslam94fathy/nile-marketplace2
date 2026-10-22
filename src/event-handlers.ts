@@ -2,9 +2,13 @@ import { type DependencyContainer } from 'tsyringe';
 import { createCatalogHandlers } from './app/catalog';
 import { createDeliveryHandlers } from './app/delivery';
 import { createFinanceHandlers } from './app/finance';
+import { createMediaHandlers } from './app/media';
 import { createNotificationHandlers } from './app/notifications';
 import { createOrderingHandlers } from './app/ordering';
 import { createPaymentsHandlers } from './app/payments';
+import { createRealtimeHandlers } from './app/realtime';
+import { createReturnsHandlers } from './app/returns';
+import { createSellersHandlers } from './app/sellers';
 import { type EventHandlerDefinition } from './lib/events';
 
 /**
@@ -19,5 +23,9 @@ export function createEventHandlers(container: DependencyContainer): EventHandle
     ...createOrderingHandlers(container),
     ...createDeliveryHandlers(container),
     ...createFinanceHandlers(container),
+    ...createMediaHandlers(container),
+    ...createRealtimeHandlers(container),
+    ...createSellersHandlers(container),
+    ...createReturnsHandlers(container),
   ];
 }

@@ -85,7 +85,10 @@ describe('payments: order-adjustments consumer', () => {
     const chain = await fx.insertOrderChain();
     await knex()('orders').where({ id: chain.orderId }).update({ items_total: '250.00', total: '300.00' });
     const paymentId = await t.infra.db.run((trx) =>
-      directory.createForOrder({ orderId: chain.orderId, method: 'cod', amount: Money.of('300.00') }, trx),
+      directory.createForOrder(
+        { orderId: chain.orderId, customerId: chain.customerId, method: 'cod', amount: Money.of('300.00') },
+        trx,
+      ),
     );
     return { ...chain, paymentId };
   }
@@ -140,7 +143,7 @@ describe('payments: order-adjustments consumer', () => {
     });
     await t.infra.db.run((trx) =>
       directory.createForOrder(
-        { orderId: kashierOrderId, method: 'kashier', amount: Money.of('150.00') },
+        { orderId: kashierOrderId, customerId, method: 'kashier', amount: Money.of('150.00') },
         trx,
       ),
     );
@@ -274,15 +277,15 @@ describe('payments: order-adjustments consumer', () => {
         seller_order_id: order.sellerOrderId,
         amount: '50.00',
         reason: 'items_cancelled',
-        status: 'pending_manual',
+        status: 'pending_auto',
       },
       {
         seller_order_id: order.sellerOrderId,
         amount: '50.00',
         reason: 'delivery_failed',
-        status: 'pending_manual',
+        status: 'pending_auto',
       },
-      { seller_order_id: null, amount: '50.00', reason: 'all_cancelled_fee', status: 'pending_manual' },
+      { seller_order_id: null, amount: '50.00', reason: 'all_cancelled_fee', status: 'pending_auto' },
     ]);
     expect(await paymentOf(order.orderId)).toEqual({
       status: 'paid',

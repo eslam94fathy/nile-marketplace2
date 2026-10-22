@@ -12,6 +12,6 @@ export function correlationId(): RequestHandler {
     const incoming = req.get(HEADER.CORRELATION_ID);
     const id = incoming && UUID_ANY_VERSION.test(incoming) ? incoming.toLowerCase() : randomUUID();
     res.setHeader(HEADER.CORRELATION_ID, id);
-    runWithContext({ correlationId: id }, () => next());
+    runWithContext({ correlationId: id, ...(req.ip ? { ip: req.ip } : {}) }, () => next());
   };
 }

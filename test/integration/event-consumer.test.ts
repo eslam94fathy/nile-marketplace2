@@ -123,4 +123,36 @@ describe('event consumers: dedupe, retry/backoff, DLQ, correlation (architecture
     await waitFor(async () => (await probe.messageCount(deadLetterQueueName(QUEUE))) === before + 3);
     expect(callsFor(event.eventId)).toHaveLength(1);
   });
+
+  it('a stateless handler runs without a transaction or dedupe row: a duplicate runs again, a throw retries', async () => {
+    const STATELESS = 'test.stateless';
+    const seen: string[] = [];
+    let failNext = true;
+    await new EventConsumerHost(t.infra.broker, t.infra.db, t.infra.logger, t.infra.env).start({
+      name: STATELESS,
+      events: [SellerSuspended],
+      stateless: true,
+      handle: (event: EventEnvelope) => {
+        seen.push(event.eventId);
+        if (failNext) {
+          failNext = false;
+          return Promise.reject(new Error('redis blip'));
+        }
+        return Promise.resolve();
+      },
+    });
+    const event = envelope({
+      eventType: 'seller.suspended',
+      payload: { sellerId: randomUUID(), userId: randomUUID(), reason: 'x' },
+    });
+    publish(event, 'seller.suspended');
+    // The first try fails and is retried after the backoff.
+    await waitFor(() => seen.length === 2);
+    publish(event, 'seller.suspended');
+    await waitFor(() => seen.length === 3);
+    expect(seen).toEqual([event.eventId, event.eventId, event.eventId]);
+    expect(
+      await t.infra.db.knex(PROCESSED_EVENTS_TABLE).where({ consumer: STATELESS }).select('event_id'),
+    ).toEqual([]);
+  });
 });

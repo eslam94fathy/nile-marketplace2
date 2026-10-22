@@ -10,10 +10,17 @@ import {
   IsBoolean,
 } from 'class-validator';
 import { IsMoney, IsRate } from '../../../lib/http';
+import { ImageDto, toImageDto } from '../../media';
 import { PaymentMethod, PaymentStatus } from '../../payments';
+import { CouponFunding } from '../../promotions';
 import { ActorRole, OrderStatus, SellerOrderCancelReason, SellerOrderStatus } from '../enums';
-import { type OrderDetail, type SellerOrderDetail, type SellerOrderView } from '../model/order-view.model';
-import { type OrderItem, type OrderListEntry, type StatusHistoryEntry } from '../model/order.model';
+import {
+  type OrderDetail,
+  type OrderItemView,
+  type SellerOrderDetail,
+  type SellerOrderView,
+} from '../model/order-view.model';
+import { type OrderListEntry, type SellerOrder, type StatusHistoryEntry } from '../model/order.model';
 
 /* Response DTOs for spec 09 §4 (decorators describe the OpenAPI shape only). */
 
@@ -55,9 +62,27 @@ export class OrderItemDto {
   @IsInt()
   cancelledQuantity!: number;
 
+  /** Units returned (spec 09 §8.7); lineTotal still counts them, the returned sums sit beside it. */
+  @IsInt()
+  returnedQuantity!: number;
+
   /** unitPrice × (quantity − cancelledQuantity). */
   @IsMoney()
   lineTotal!: string;
+
+  /** The coupon share the kept units carry (spec 09 §8.8); "0.00" without a coupon. */
+  @IsMoney()
+  discountAmount!: string;
+
+  /** lineTotal − discountAmount: what the customer pays for the line. */
+  @IsMoney()
+  paidTotal!: string;
+
+  // Nullable: the variant's image at checkout, null when it had none.
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ImageDto)
+  image!: ImageDto | null;
 }
 
 export class ShippingAddressDto {
@@ -122,9 +147,26 @@ export class CustomerSellerOrderDto {
   @IsMoney()
   subtotal!: string;
 
+  /** Its coupon share (spec 09 §8.8); the customer pays subtotal − discountAmount. */
+  @IsMoney()
+  discountAmount!: string;
+
+  @IsOptional()
+  @IsIn(Object.values(CouponFunding))
+  discountFunding!: CouponFunding | null;
+
+  /** What its completed returns paid back for items (spec 09 §8.7); "0.00" without one. */
+  @IsMoney()
+  returnedPaid!: string;
+
   /** Only while `placed` (Q-31). */
   @IsBoolean()
   canCancel!: boolean;
+
+  /** Why it was cancelled, e.g. `admin_cancelled` (spec 09 §8.4); never an admin's text (OR-19). */
+  @IsOptional()
+  @IsIn(Object.values(SellerOrderCancelReason))
+  cancelReason!: SellerOrderCancelReason | null;
 
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)
@@ -162,6 +204,16 @@ export class OrderSummaryDto {
   createdAt!: string;
 }
 
+/** The checkout's coupon (spec 09 §8.8). */
+export class OrderCouponDto {
+  @IsString()
+  code!: string;
+
+  /** The discount the billed seller orders still carry. */
+  @IsMoney()
+  discountTotal!: string;
+}
+
 export class OrderDetailDto {
   @IsUUID()
   id!: string;
@@ -178,6 +230,7 @@ export class OrderDetailDto {
   @IsIn(Object.values(PaymentStatus))
   paymentStatus!: PaymentStatus;
 
+  /** What the customer pays for the items, after the coupon. */
   @IsMoney()
   itemsTotal!: string;
 
@@ -186,6 +239,12 @@ export class OrderDetailDto {
 
   @IsMoney()
   total!: string;
+
+  // Nullable: no coupon at checkout.
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => OrderCouponDto)
+  coupon!: OrderCouponDto | null;
 
   @ValidateNested()
   @Type(() => ShippingAddressDto)
@@ -273,6 +332,14 @@ export class SellerOrderDto {
   @IsMoney()
   subtotal!: string;
 
+  /** Its coupon share and who funds it (PR-7): a seller coupon lowers the commission base and the net. */
+  @IsMoney()
+  discountAmount!: string;
+
+  @IsOptional()
+  @IsIn(Object.values(CouponFunding))
+  discountFunding!: CouponFunding | null;
+
   @IsRate()
   commissionRate!: string;
 
@@ -281,6 +348,16 @@ export class SellerOrderDto {
 
   @IsMoney()
   sellerNet!: string;
+
+  /** Sums of its completed returns (spec 09 §8.7), next to the delivered amounts above. */
+  @IsMoney()
+  returnedSubtotal!: string;
+
+  @IsMoney()
+  returnedCommission!: string;
+
+  @IsMoney()
+  returnedSellerNet!: string;
 
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)
@@ -359,9 +436,15 @@ export class AdminSellerOrderDto extends CustomerSellerOrderDto {
   @IsMoney()
   sellerNet!: string;
 
-  @IsOptional()
-  @IsIn(Object.values(SellerOrderCancelReason))
-  cancelReason!: SellerOrderCancelReason | null;
+  /** Sums of its completed returns (spec 09 §8.7), next to the delivered amounts above. */
+  @IsMoney()
+  returnedSubtotal!: string;
+
+  @IsMoney()
+  returnedCommission!: string;
+
+  @IsMoney()
+  returnedSellerNet!: string;
 
   @ValidateNested({ each: true })
   @Type(() => AdminHistoryEntryDto)
@@ -389,7 +472,14 @@ export class AdminOrderDetailDto extends OrderDetailDto {
 
 const iso = (date: Date | null): string | null => date?.toISOString() ?? null;
 
-function toOrderItemDto(item: OrderItem): OrderItemDto {
+/** The seller and admin views of the returned sums (spec 09 §8.7). */
+const returnedSums = (s: SellerOrder) => ({
+  returnedSubtotal: s.returnedSubtotal.toString(),
+  returnedCommission: s.returnedCommission.toString(),
+  returnedSellerNet: s.returnedSellerNet.toString(),
+});
+
+function toOrderItemDto(item: OrderItemView): OrderItemDto {
   return {
     id: item.id,
     productId: item.productId,
@@ -400,7 +490,11 @@ function toOrderItemDto(item: OrderItem): OrderItemDto {
     unitPrice: item.unitPrice.toString(),
     quantity: item.quantity,
     cancelledQuantity: item.cancelledQuantity,
+    returnedQuantity: item.returnedQuantity,
     lineTotal: item.lineTotal.toString(),
+    discountAmount: item.discountAmount.toString(),
+    paidTotal: item.lineTotal.minus(item.discountAmount).toString(),
+    image: item.image ? toImageDto(item.image) : null,
   };
 }
 
@@ -415,7 +509,11 @@ function toCustomerSellerOrderDto(
     businessName: detail.businessName,
     status: sellerOrder.status,
     subtotal: sellerOrder.subtotal.toString(),
+    discountAmount: sellerOrder.discountAmount.toString(),
+    discountFunding: sellerOrder.discountFunding,
+    returnedPaid: sellerOrder.returnedPaid.toString(),
     canCancel: !orderAwaitsPayment && sellerOrder.status === SellerOrderStatus.PLACED,
+    cancelReason: sellerOrder.cancelReason,
     items: detail.items.map(toOrderItemDto),
     timeline: detail.history.map((entry) => ({ status: entry.toStatus, at: entry.createdAt.toISOString() })),
   };
@@ -434,6 +532,10 @@ export function toOrderDetailDto(detail: OrderDetail): OrderDetailDto {
     itemsTotal: order.itemsTotal.toString(),
     deliveryFee: order.deliveryFee.toString(),
     total: order.total.toString(),
+    coupon:
+      order.couponCode === null
+        ? null
+        : { code: order.couponCode, discountTotal: order.discountTotal.toString() },
     shippingAddress: { ...order.shipping },
     sellerOrders: detail.sellerOrders.map((s) => toCustomerSellerOrderDto(s, awaitsPayment)),
     paymentExpiresAt: iso(order.paymentExpiresAt),
@@ -469,7 +571,7 @@ export function toAdminOrderDetailDto(detail: OrderDetail): AdminOrderDetailDto 
         commissionRate: s.sellerOrder.commissionRate.toString(),
         commission: s.sellerOrder.commission.toString(),
         sellerNet: s.sellerOrder.sellerNet.toString(),
-        cancelReason: s.sellerOrder.cancelReason,
+        ...returnedSums(s.sellerOrder),
         statusHistory: s.history.map(toAdminHistoryDto),
       };
     }),
@@ -503,9 +605,12 @@ export function toSellerOrderDto(view: SellerOrderView): SellerOrderDto {
     status: s.status,
     paymentMethod: order.paymentMethod,
     subtotal: s.subtotal.toString(),
+    discountAmount: s.discountAmount.toString(),
+    discountFunding: s.discountFunding,
     commissionRate: s.commissionRate.toString(),
     commission: s.commission.toString(),
     sellerNet: s.sellerNet.toString(),
+    ...returnedSums(s),
     items: view.items.map(toOrderItemDto),
     dropoffGovernorate: order.dropoffGovernorate,
     acceptDeadlineAt: iso(s.acceptDeadlineAt),

@@ -8,6 +8,7 @@ export const PaymentsErrorCode = {
   PAYMENT_NOT_FOUND: 'PAYMENT_NOT_FOUND',
   REFUND_NOT_FOUND: 'REFUND_NOT_FOUND',
   REFUND_ALREADY_RECORDED: 'REFUND_ALREADY_RECORDED',
+  REFUND_NOT_RETRYABLE: 'REFUND_NOT_RETRYABLE',
 } as const;
 export type PaymentsErrorCode = (typeof PaymentsErrorCode)[keyof typeof PaymentsErrorCode];
 
@@ -35,3 +36,7 @@ export const refundNotFound = () => new AppError(C.REFUND_NOT_FOUND, 'Refund not
 
 export const refundAlreadyRecorded = () =>
   new AppError(C.REFUND_ALREADY_RECORDED, 'This refund was already recorded', S.CONFLICT);
+
+/** Retry is only for a `pending_manual` Kashier refund (spec 10 §8.4). */
+export const refundNotRetryable = () =>
+  new AppError(C.REFUND_NOT_RETRYABLE, 'Only a pending manual Kashier refund can be retried', S.CONFLICT);

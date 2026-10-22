@@ -21,6 +21,9 @@ export interface SellerProps {
   commissionRate: Rate;
   rejectionReason: string | null;
   approvedAt: Date | null;
+  /** The rating projection (spec 05 §8.1): published reviews of its products, average as a 2-decimal string. */
+  ratingCount: number;
+  ratingAvg: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +57,12 @@ export class Seller {
   }
   get approvedAt(): Date | null {
     return this.props.approvedAt;
+  }
+  get ratingCount(): number {
+    return this.props.ratingCount;
+  }
+  get ratingAvg(): string | null {
+    return this.props.ratingAvg;
   }
   get createdAt(): Date {
     return this.props.createdAt;

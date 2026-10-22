@@ -166,9 +166,10 @@ async function main() {
         );
         await db.raw(
           `INSERT INTO sellers (id, user_id, business_name, contact_phone, pickup_governorate_id, pickup_city, pickup_area,
-           pickup_street, pickup_building, pickup_landmark, status, commission_rate, rejection_reason, approved_at, created_at)
+           pickup_street, pickup_building, pickup_landmark, status, commission_rate, rejection_reason, approved_at,
+           rating_count, rating_avg, rating_version, created_at)
          SELECT id, user_id, 'Perf Shop ' || n, '+20122' || lpad(n::text, 7, '0'), ?, 'Cairo', 'Nasr City',
-           'Street ' || n, '5', NULL, 'approved', 0.1000, NULL, now(), now() - n * interval '1 minute'
+           'Street ' || n, '5', NULL, 'approved', 0.1000, NULL, now(), 0, NULL, 0, now() - n * interval '1 minute'
          FROM ps`,
           [cairo.id],
         );
@@ -188,10 +189,11 @@ async function main() {
         );
         await db.raw(
           `INSERT INTO products (id, seller_id, category_id, name, slug, description, status, seller_active,
-           min_price, max_price, in_stock, published_at, created_at)
+           min_price, max_price, in_stock, published_at, rating_count, rating_avg, rating_version, created_at)
          SELECT pp.id, pp.seller_id, lo.leaf_id, pp.name, 'perf-product-' || pp.n,
            'Load-test product ' || pp.n || ': ' || pp.name || ', made for everyday use.', 'active', true,
-           pp.base_price, pp.base_price + 20, true, now() - pp.n * interval '30 seconds', now() - pp.n * interval '30 seconds'
+           pp.base_price, pp.base_price + 20, true, now() - pp.n * interval '30 seconds', 0, NULL, 0,
+           now() - pp.n * interval '30 seconds'
          FROM pp JOIN perf_leaf_options lo ON lo.leaf_n = pp.leaf_n AND lo.idx = 0`,
         );
       });

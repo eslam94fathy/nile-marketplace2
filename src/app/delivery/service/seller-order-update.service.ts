@@ -87,12 +87,19 @@ export class SellerOrderUpdateService {
     await this.assignment.autoAssign(shipment, trx);
   }
 
-  /** DE-15: the COD amount follows the seller order's subtotal, which only goes down. */
+  /**
+   * DE-15: the COD amount follows what the customer still pays for the seller order's items, which only
+   * goes down: `newPaidSubtotal` (after its coupon share, spec 09 §8.8). An event from before coupons has
+   * only `newSubtotal`, which is the same amount without a coupon.
+   */
   private async itemsCancelled(envelope: EventEnvelope, trx: DbTransaction): Promise<void> {
     const read = new PayloadReader(envelope);
     const sellerOrderId = read.uuid(envelope.payload, 'sellerOrderId');
     const previousStatus = read.string(envelope.payload, 'previousStatus');
-    const newSubtotal = read.money(envelope.payload, 'newSubtotal');
+    const newSubtotal = read.money(
+      envelope.payload,
+      envelope.payload.newPaidSubtotal === undefined ? 'newSubtotal' : 'newPaidSubtotal',
+    );
     const shipment = await this.shipments.lockBySellerOrderId(sellerOrderId, trx);
     if (!shipment) return this.noShipmentYet(envelope, sellerOrderId, previousStatus);
     if (shipment.paymentMethod !== 'cod') return;

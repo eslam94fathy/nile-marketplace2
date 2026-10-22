@@ -3,6 +3,7 @@ export const ORDERING_TABLES = {
   SELLER_ORDERS: 'seller_orders',
   ORDER_ITEMS: 'order_items',
   ORDER_ITEM_CANCELLATIONS: 'order_item_cancellations',
+  ORDER_ITEM_RETURNS: 'order_item_returns',
   ORDER_STATUS_HISTORY: 'order_status_history',
   SELLER_ORDER_STATUS_HISTORY: 'seller_order_status_history',
 } as const;
@@ -28,10 +29,15 @@ export const ORDERING_PATHS = {
   SELLER_RETURN_RECEIVED: '/seller/orders/:sellerOrderId/return-received',
   ADMIN_ORDERS: '/admin/orders',
   ADMIN_ORDER: '/admin/orders/:orderId',
+  ADMIN_ORDER_CANCEL: '/admin/orders/:orderId/cancel',
+  ADMIN_SELLER_ORDER_CANCEL: '/admin/seller-orders/:sellerOrderId/cancel',
 } as const;
 
 /** `order_status_history.reason` / `order_item_cancellations.note` are VARCHAR(500). */
 export const NOTE_MAX_LENGTH = 500;
+
+/** An admin cancel reason is 3..500 characters (spec 09 §8.4, OR-18). */
+export const ADMIN_CANCEL_REASON_MIN = 3;
 
 /** Mirrors `chk_order_items_quantity` (the cart's per-line limit, DB-Q3). */
 export const ORDER_LINE_MAX_QUANTITY = 99;

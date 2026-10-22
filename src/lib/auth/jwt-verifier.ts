@@ -1,4 +1,5 @@
 import { importSPKI, jwtVerify, type CryptoKey, type JWTHeaderParameters } from 'jose';
+import { TimeUnit, toMs } from '../../pkg/time';
 import { type Env } from '../config';
 import { unauthenticated } from '../error/common-errors';
 import { isUserRole, type UserRole } from './roles';
@@ -11,6 +12,11 @@ export interface AuthContext {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type JwtEnv = Pick<Env, 'JWT_ALGORITHM' | 'JWT_ISSUER' | 'JWT_AUDIENCE' | 'JWT_PUBLIC_KEYS'>;
+
+/** A verified token with its expiry, for a long-lived connection (the realtime socket, spec 15 RT-2). */
+export interface AuthSession extends AuthContext {
+  expiresAt: Date;
+}
 
 export interface JwtVerifierOptions {
   /** A user whose valid tokens must still be refused (a suspension, spec 03 I-11). */
@@ -42,12 +48,18 @@ export class JwtVerifier {
   }
 
   async verify(token: string): Promise<AuthContext> {
-    const context = await this.verifySignature(token);
-    if (await this.blocked(context.userId)) throw unauthenticated();
-    return context;
+    const { userId, role } = await this.verifySession(token);
+    return { userId, role };
   }
 
-  private async verifySignature(token: string): Promise<AuthContext> {
+  /** As `verify`, plus the token's `exp`. */
+  async verifySession(token: string): Promise<AuthSession> {
+    const session = await this.verifySignature(token);
+    if (await this.blocked(session.userId)) throw unauthenticated();
+    return session;
+  }
+
+  private async verifySignature(token: string): Promise<AuthSession> {
     try {
       const { payload } = await jwtVerify(token, (header: JWTHeaderParameters) => this.keyFor(header), {
         algorithms: [this.env.JWT_ALGORITHM],
@@ -55,9 +67,16 @@ export class JwtVerifier {
         audience: this.env.JWT_AUDIENCE,
         requiredClaims: ['sub', 'exp', 'iat'],
       });
-      const { sub, role } = payload as { sub?: unknown; role?: unknown };
-      if (typeof sub !== 'string' || !UUID_PATTERN.test(sub) || !isUserRole(role)) throw unauthenticated();
-      return { userId: sub, role };
+      const { sub, role, exp } = payload as { sub?: unknown; role?: unknown; exp?: unknown };
+      if (
+        typeof sub !== 'string' ||
+        !UUID_PATTERN.test(sub) ||
+        !isUserRole(role) ||
+        typeof exp !== 'number'
+      ) {
+        throw unauthenticated();
+      }
+      return { userId: sub, role, expiresAt: new Date(toMs(exp, TimeUnit.SECOND)) };
     } catch {
       throw unauthenticated();
     }

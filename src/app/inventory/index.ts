@@ -1,6 +1,7 @@
 /**
  * inventory module (docs/spec/07-inventory.md): stock per variant and the audit trail of every
- * movement, and the reservations ordering holds for order lines (reserve / release / commit, IN-5).
+ * movement, and the reservations ordering holds for order lines (reserve / release / commit, IN-5),
+ * plus the restock of returned units (spec 07 §8, called by returns).
  * Owns tables: inventory_items, inventory_movements, inventory_reservations.
  * No other module reads or writes them. May call: nobody. No HTTP routes: the seller stock
  * endpoints live in catalog, which knows the variant's owner. This file is its only public surface.
@@ -18,7 +19,7 @@ export type { ShortLine } from './errors';
 export { INVENTORY_MOVEMENT_LIST_SPEC } from './constants';
 export type { StockDto } from './model/inventory-item.model';
 export type { InventoryMovement } from './model/inventory-movement.model';
-export type { ReleaseLine, ReserveLine } from './model/inventory-reservation.model';
+export type { ReleaseLine, ReserveLine, RestockLine } from './model/inventory-reservation.model';
 /** Inject with `TOKENS.InventoryService`. */
 export type { IInventoryService } from './service/inventory.service';
 

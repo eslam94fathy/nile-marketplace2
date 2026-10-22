@@ -1,10 +1,12 @@
 import { inject, injectable } from 'tsyringe';
+import { type IClock } from '../../../lib/clock';
 import { type DbTransaction } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import {
   type EventEnvelope,
   OrderClosed,
   PermanentEventError,
+  ReturnCompleted,
   SellerOrderCancelled,
   SellerOrderDelivered,
   SellerOrderItemsCancelled,
@@ -12,15 +14,16 @@ import {
 } from '../../../lib/events';
 import { type ILogger } from '../../../lib/logger';
 import { Money } from '../../../lib/money';
-import { PaymentStatus, RefundReason } from '../enums';
+import { PaymentMethod, PaymentStatus, RefundReason } from '../enums';
 import { isOpenCod, isRefundableKashier, type Payment } from '../model/payment.model';
 import { type PaymentRefundRepository } from '../repository/payment-refund.repository';
 import { type PaymentRepository } from '../repository/payment.repository';
 
 /**
- * The `payments.order-adjustments` consumer (spec 10 UC-PA-3), inside the host's transaction
+ * The `payments.order-adjustments` consumer (spec 10 UC-PA-3, UC-PA-5), inside the host's transaction
  * (architecture §3.2). Kashier: a refund row per cancelled or returned amount, only once money was
- * taken. COD: the amount still to collect shrinks, collections add up, and the close step settles it.
+ * taken. COD: the amount still to collect shrinks, collections add up, and the close step settles it;
+ * a completed return owes the customer a refund paid by an admin.
  * Every handler locks the payment row first, and payments is last in the lock order (spec 10 PA-2).
  */
 @injectable()
@@ -29,6 +32,7 @@ export class OrderAdjustmentService {
     @inject(TOKENS.PaymentRepository) private readonly payments: PaymentRepository,
     @inject(TOKENS.PaymentRefundRepository) private readonly refunds: PaymentRefundRepository,
     @inject(TOKENS.Logger) private readonly logger: ILogger,
+    @inject(TOKENS.Clock) private readonly clock: IClock,
   ) {}
 
   async handle(envelope: EventEnvelope, trx: DbTransaction): Promise<void> {
@@ -62,6 +66,8 @@ export class OrderAdjustmentService {
         return this.collect(envelope, orderId, trx);
       case OrderClosed.type:
         return this.close(envelope, orderId, trx);
+      case ReturnCompleted.type:
+        return this.returned(envelope, orderId, trx);
       default:
         throw new PermanentEventError(`payments.order-adjustments does not handle ${envelope.eventType}`);
     }
@@ -116,6 +122,40 @@ export class OrderAdjustmentService {
       },
       trx,
     );
+  }
+
+  /**
+   * UC-PA-5 `return.completed`: a refund row for what the return gives back. A Kashier refund goes to
+   * the refund job (UC-PA-6); a COD refund carries the sealed payout details for the admin (RE-8). Both
+   * stay within what was collected (PA-20).
+   */
+  private async returned(envelope: EventEnvelope, orderId: string, trx: DbTransaction): Promise<void> {
+    const refundAmount = moneyField(envelope, 'refundAmount');
+    if (!refundAmount.greaterThan(Money.zero())) return;
+    const payment = await this.lock(orderId, trx);
+    const returnId = uuidField(envelope, 'returnId');
+    const sellerOrderId = uuidField(envelope, 'sellerOrderId');
+    const cod = payment.method === PaymentMethod.COD;
+    if (!cod && !isRefundableKashier(payment)) {
+      // A delivered Kashier order was paid; anything else is a defect worth looking at.
+      this.logger.error('return completed on a payment that took no money', {
+        event: 'RETURN_REFUND_UNPAYABLE',
+        paymentId: payment.id,
+        returnId,
+        status: payment.status,
+      });
+      return;
+    }
+    const sealed = envelope.payload.refundPayoutEncrypted;
+    if (cod && typeof sealed !== 'string') {
+      throw new PermanentEventError(
+        `${envelope.eventType}: payload.refundPayoutEncrypted is required for a COD return`,
+      );
+    }
+    await this.flagRefund(payment, sellerOrderId, refundAmount, RefundReason.RETURN, trx, {
+      returnId,
+      payoutDetailsEncrypted: cod ? (sealed as string) : null,
+    });
   }
 
   /** Every seller order is terminal (spec 10 UC-PA-3 `order.closed`). */
@@ -182,6 +222,7 @@ export class OrderAdjustmentService {
     amount: Money,
     reason: RefundReason,
     trx: DbTransaction,
+    extra: { returnId: string; payoutDetailsEncrypted: string | null } | null = null,
   ): Promise<void> {
     const room = payment.collectedAmount.minus(await this.refunds.sumForPayment(payment.id, trx));
     const refund = amount.greaterThan(room) ? room : amount;
@@ -204,7 +245,18 @@ export class OrderAdjustmentService {
         flagged: refund.toString(),
       });
     }
-    await this.refunds.insertPending({ paymentId: payment.id, sellerOrderId, amount: refund, reason }, trx);
+    await this.refunds.insertPending(
+      {
+        paymentId: payment.id,
+        sellerOrderId,
+        amount: refund,
+        reason,
+        ...(extra ? { returnId: extra.returnId, payoutDetailsEncrypted: extra.payoutDetailsEncrypted } : {}),
+        // Kashier refunds go to the job at once (K-12); COD refunds are paid by an admin.
+        ...(payment.method === PaymentMethod.KASHIER ? { autoAt: this.clock.now() } : {}),
+      },
+      trx,
+    );
     this.logger.info('refund due recorded', { event: 'REFUND_DUE', ...fields, flagged: refund.toString() });
   }
 

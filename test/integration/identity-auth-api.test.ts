@@ -29,7 +29,8 @@ describe('identity auth endpoints', () => {
 
   const login = (email: string, password = PASSWORD, deviceName?: string) =>
     post('/auth/login', deviceName === undefined ? { email, password } : { email, password, deviceName });
-  const refresh = (refreshToken: string) => post('/auth/refresh', { refreshToken });
+  // Native transport: the body always carries the token (a null here fails validation loudly).
+  const refresh = (refreshToken: string | null) => post('/auth/refresh', { refreshToken });
   const wrongOtp = (otp: string) => (otp === '000000' ? '111111' : '000000');
   const setStatus = (userId: string, status: string) =>
     t.infra.db.knex('users').where({ id: userId }).update({ status });

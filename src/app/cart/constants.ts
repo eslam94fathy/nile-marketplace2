@@ -11,4 +11,5 @@ export const CART_PATHS = {
   CART: '/cart',
   ITEMS: '/cart/items',
   ITEM: '/cart/items/:itemId',
+  COUPON_PREVIEW: '/cart/coupon-preview',
 } as const;

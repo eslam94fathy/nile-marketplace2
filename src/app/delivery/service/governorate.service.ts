@@ -1,5 +1,7 @@
 import { inject, injectable } from 'tsyringe';
+import { type IAuditRecorder } from '../../../lib/audit';
 import { type Env } from '../../../lib/config';
+import { type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import { governorateNotFound } from '../../../lib/error';
 import { type ILogger } from '../../../lib/logger';
@@ -22,6 +24,8 @@ export class GovernorateService {
     @inject(TOKENS.Cache) private readonly cache: ICache,
     @inject(TOKENS.Env) private readonly env: CacheEnv,
     @inject(TOKENS.Logger) private readonly logger: ILogger,
+    @inject(TOKENS.TransactionRunner) private readonly tx: ITransactionRunner,
+    @inject(TOKENS.AuditRecorder) private readonly audit: IAuditRecorder,
   ) {}
 
   /** All 27, ordered by name. */
@@ -35,9 +39,23 @@ export class GovernorateService {
 
   /** `null` = not deliverable (Q-26). Affects new checkouts only: orders keep a snapshot. */
   async updateDeliveryFee(id: string, deliveryFee: Money | null, actorUserId: string): Promise<Governorate> {
-    const updated = await this.governorates.updateDeliveryFee(id, deliveryFee);
-    if (!updated) throw governorateNotFound();
-    // After the (single-statement) write has committed; a failed delete is bounded by the TTL.
+    const updated = await this.tx.run(async (trx) => {
+      const current = await this.governorates.findById(id, trx, { forUpdate: true });
+      if (!current) throw governorateNotFound();
+      const next = await this.governorates.updateDeliveryFee(id, deliveryFee, trx);
+      if (!next) throw governorateNotFound();
+      await this.audit.record(
+        {
+          action: 'governorate.updated',
+          targetId: id,
+          before: { deliveryFee: current.deliveryFee?.toString() ?? null },
+          after: { deliveryFee: next.deliveryFee?.toString() ?? null },
+        },
+        trx,
+      );
+      return next;
+    });
+    // After the write has committed; a failed delete is bounded by the TTL.
     await this.invalidate();
     this.logger.info('governorate delivery fee changed', {
       event: 'GOVERNORATE_FEE_CHANGED',

@@ -1,7 +1,10 @@
 import { inject, injectable } from 'tsyringe';
+import { type IAuditRecorder } from '../../../lib/audit';
 import { type ISuspendedUsers, UserRole } from '../../../lib/auth';
+import { type IClock } from '../../../lib/clock';
 import { afterCommit, type DbTransaction, type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
+import { type IOutbox, UserSuspended } from '../../../lib/events';
 import { type PageMeta, type ParsedListQuery, toPage } from '../../../lib/http';
 import { type ILogger } from '../../../lib/logger';
 import { UserStatus } from '../enums';
@@ -42,11 +45,25 @@ export class UserAdminService {
     @inject(TOKENS.TransactionRunner) private readonly transactions: ITransactionRunner,
     @inject(TOKENS.Logger) private readonly logger: ILogger,
     @inject(TOKENS.SuspendedUsers) private readonly suspendedUsers: ISuspendedUsers,
+    @inject(TOKENS.Outbox) private readonly outbox: IOutbox,
+    @inject(TOKENS.Clock) private readonly clock: IClock,
+    @inject(TOKENS.AuditRecorder) private readonly audit: IAuditRecorder,
   ) {}
 
   /** §4.10. EMAIL_ALREADY_REGISTERED comes from the `uq_users_email` mapping. */
   async inviteAdmin(email: string, actorUserId: string): Promise<User> {
-    const user = await this.transactions.run((trx) => this.invitations.invite(email, UserRole.ADMIN, trx));
+    const user = await this.transactions.run(async (trx) => {
+      const invited = await this.invitations.invite(email, UserRole.ADMIN, trx);
+      await this.audit.record(
+        {
+          action: 'admin.invited',
+          targetId: invited.id,
+          after: { email: invited.email, role: invited.role },
+        },
+        trx,
+      );
+      return invited;
+    });
     this.logger.info('admin invited', { event: 'ADMIN_INVITED', userId: user.id, actorUserId });
     return user;
   }
@@ -57,14 +74,38 @@ export class UserAdminService {
     return toPage(rows, query, (user) => user.createdAt);
   }
 
+  /** Spec 20 §3.3: every role. */
+  async listUsers(query: ParsedListQuery): Promise<{ items: User[]; meta: PageMeta }> {
+    const rows = await this.users.list(query);
+    return toPage(rows, query, (user) => user.createdAt);
+  }
+
   /** §4.12. */
   resendInvite(userId: string): Promise<void> {
-    return this.transactions.run((trx) => this.invitations.resendInvite(userId, trx));
+    return this.transactions.run(async (trx) => {
+      await this.invitations.resendInvite(userId, trx);
+      await this.audit.record({ action: 'user.invite_resent', targetId: userId }, trx);
+    });
   }
 
   /** §4.13 (admin endpoints): in its own transaction; the deny entry is in place before it answers. */
   async setStatus(userId: string, to: TargetStatus, change: StatusChange): Promise<User> {
-    const user = await this.transactions.run((trx) => this.changeStatus(userId, to, change, trx));
+    const user = await this.transactions.run(async (trx) => {
+      const changed = await this.changeStatus(userId, to, change, trx);
+      // Audited here, not in changeStatus: setUserStatus is also called by other modules' admin
+      // writes (agent deactivation), which record their own action.
+      await this.audit.record(
+        {
+          action: to === UserStatus.SUSPENDED ? 'user.suspended' : 'user.reactivated',
+          targetId: changed.id,
+          before: { status: TRANSITION_FROM[to][0] ?? null },
+          after: { status: changed.status },
+          reason: change.reason ?? null,
+        },
+        trx,
+      );
+      return changed;
+    });
     await this.syncDenyEntry(user.id, to);
     return user;
   }
@@ -92,7 +133,10 @@ export class UserAdminService {
     }
   }
 
-  /** Suspending revokes every session (spec 03 §2). Conditional update: no read-then-write race. */
+  /**
+   * Suspending revokes every session (spec 03 §2) and publishes `user.suspended` (§8.2), for the admin
+   * endpoint and `setUserStatus` alike. Conditional update: no read-then-write race.
+   */
   async changeStatus(
     userId: string,
     to: TargetStatus,
@@ -106,7 +150,14 @@ export class UserAdminService {
 
     const updated = await this.users.transitionStatus(user.id, TRANSITION_FROM[to], to, trx);
     if (!updated) throw userInvalidStatusTransition();
-    if (to === UserStatus.SUSPENDED) await this.tokens.revokeAllSessions(user.id, trx);
+    if (to === UserStatus.SUSPENDED) {
+      await this.tokens.revokeAllSessions(user.id, trx);
+      await this.outbox.add(trx, {
+        contract: UserSuspended,
+        aggregateId: user.id,
+        payload: { userId: user.id, role: user.role, suspendedAt: this.clock.now().toISOString() },
+      });
+    }
 
     this.logger.info(to === UserStatus.SUSPENDED ? 'user suspended' : 'user reactivated', {
       event: to === UserStatus.SUSPENDED ? 'USER_SUSPENDED' : 'USER_REACTIVATED',

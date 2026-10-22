@@ -4,6 +4,7 @@ import { TOKENS } from '../../../lib/di';
 import { type ILogger } from '../../../lib/logger';
 import { type ICache } from '../../../pkg/cache';
 import { productDetailCacheKey } from '../constants';
+import { type ProductImageView } from '../model/product-image.model';
 
 type CacheEnv = Pick<Env, 'PRODUCT_DETAIL_CACHE_TTL_SECONDS'>;
 
@@ -23,7 +24,11 @@ export interface ProductDetailStatic {
     price: string;
     compareAtPrice: string | null;
     options: { attributeCode: string; optionCode: string; value: string }[];
+    /** The media id within `images` shown for this variant (spec 06 §8.1). */
+    imageId: string | null;
   }[];
+  /** In position order. CDN URLs never change, so caching them is safe (spec 06 §8.5). */
+  images: ProductImageView[];
 }
 
 /**
@@ -45,7 +50,13 @@ export class ProductDetailCache {
       const raw = await this.cache.get(key);
       if (raw === null) return undefined;
       const parsed = JSON.parse(raw) as Partial<ProductDetailStatic> | null;
-      if (!Array.isArray(parsed?.variants) || !Array.isArray(parsed.attributes) || !parsed.category) {
+      // An entry from before images (R2) has no `images`: a miss, rebuilt once.
+      if (
+        !Array.isArray(parsed?.variants) ||
+        !Array.isArray(parsed.attributes) ||
+        !Array.isArray(parsed.images) ||
+        !parsed.category
+      ) {
         throw new TypeError('cached product detail has an unexpected shape');
       }
       return parsed as ProductDetailStatic;

@@ -176,6 +176,10 @@ describe('ordering: shipment-updates consumer', () => {
         commissionRate: '0.1000',
         commission: '10.00',
         sellerNet: '90.00',
+        // Without a coupon (spec 02 §6.5): the R1 amounts, and zero coupon fields.
+        discountAmount: '0.00',
+        discountFunding: null,
+        platformDiscount: '0.00',
         agentId,
         // round(50.00 × 0.7) = 35.00 over 2 seller orders; the other one is still open.
         agentFeeShare: '17.50',

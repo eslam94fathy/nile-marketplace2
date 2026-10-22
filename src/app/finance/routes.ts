@@ -18,6 +18,7 @@ import {
   ReferenceEntryDto,
   RemittanceDto,
   SellerBalanceDto,
+  SellerHoldDto,
 } from './dto/finance-response.dto';
 import { AccountType, EntryType, PayeeType, ReferenceType } from './enums';
 
@@ -54,6 +55,7 @@ export function financeRoutes(deps: FinanceRouteDeps): Router {
   router.get(S.BALANCE, ...sellerOnly, deps.seller.balance);
   router.get(S.ENTRIES, ...sellerOnly, deps.seller.entries);
   router.get(S.PAYOUTS, ...sellerOnly, deps.seller.listPayouts);
+  router.get(S.HOLDS, ...sellerOnly, deps.seller.holds);
   const agentOnly = [authenticate(deps.jwtVerifier), requireRole(UserRole.DELIVERY_AGENT)];
   router.get(AG.BALANCES, ...agentOnly, deps.agent.balances);
   router.get(AG.ENTRIES, ...agentOnly, deps.agent.entries);
@@ -205,7 +207,8 @@ function documentSelfRoutes(docs: OpenApiRegistry, basePath: string): void {
     ...seller,
     method: 'get',
     path: `${basePath}${S.BALANCE}`,
-    summary: 'What the platform owes me; 0.00 and no updatedAt before my first delivery',
+    summary:
+      'What the platform owes me: available now (may be negative after a seller-fault return fee; no payout while it is) and pending (held while return windows run). 0.00 and no updatedAt before my first delivery',
     responses: { 200: { description: 'My balance', body: SellerBalanceDto } },
   });
   docs.add({
@@ -227,6 +230,18 @@ function documentSelfRoutes(docs: OpenApiRegistry, basePath: string): void {
     query: own,
     responses: {
       200: { description: 'One page of my payouts', body: PayoutDto, isArray: true, paginated: true },
+    },
+  });
+
+  docs.add({
+    ...seller,
+    method: 'get',
+    path: `${basePath}${S.HOLDS}`,
+    summary:
+      'My earnings still held, oldest release first; blockedByReturn = an open return keeps the hold past releaseAfter. Sort: releaseAfter (default)',
+    query: [...page, { name: 'sort', in: 'query', schema: { enum: ['releaseAfter', '-releaseAfter'] } }],
+    responses: {
+      200: { description: 'One page of my holds', body: SellerHoldDto, isArray: true, paginated: true },
     },
   });
 

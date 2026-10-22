@@ -1,4 +1,4 @@
-import { IsIn, IsString, ValidateIf } from 'class-validator';
+import { IsIn, IsString, Length, ValidateIf } from 'class-validator';
 import {
   FieldType,
   FilterOp,
@@ -10,7 +10,7 @@ import {
   UuidField,
 } from '../../../lib/http';
 import { PaymentMethod } from '../../payments';
-import { NOTE_MAX_LENGTH, ORDER_LINE_MAX_QUANTITY } from '../constants';
+import { ADMIN_CANCEL_REASON_MIN, NOTE_MAX_LENGTH, ORDER_LINE_MAX_QUANTITY } from '../constants';
 import { ItemCancelReason, OrderStatus, SellerOrderStatus } from '../enums';
 
 /** Request DTOs for spec 09 §4. Notation: docs/spec/01-api-conventions.md §1.1. */
@@ -27,6 +27,12 @@ export class CheckoutDto {
   @IsString()
   @IsMoney()
   expectedTotal!: string;
+
+  /** A coupon (spec 09 §8.8): upper-cased by promotions, never trimmed (spec 19 PR-12). */
+  @Optional()
+  @IsString()
+  @Length(4, 32)
+  couponCode?: string;
 }
 
 export class OrderIdParamsDto {
@@ -99,6 +105,12 @@ export class SellerOrderItemParamsDto {
 
   @UuidField()
   itemId!: string;
+}
+
+/** Admin cancellation (spec 09 §8.4): the reason is for admins only (OR-18, OR-19). */
+export class AdminCancelDto {
+  @StrField(ADMIN_CANCEL_REASON_MIN, NOTE_MAX_LENGTH)
+  reason!: string;
 }
 
 /** Customer and seller cancellation of a whole seller order (spec 09 §4.1.4, §4.2). */

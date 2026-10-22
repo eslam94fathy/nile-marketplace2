@@ -27,7 +27,8 @@ describe('identity admin endpoints', () => {
   const asAdmin = () => as(admin.accessToken);
   const uuidv7 = async () =>
     (await t.infra.db.knex.raw<{ rows: { id: string }[] }>('SELECT uuidv7() AS id')).rows[0]?.id ?? '';
-  const refresh = (refreshToken: string) => request(t.app).post(`${API}/auth/refresh`).send({ refreshToken });
+  const refresh = (refreshToken: string | null) =>
+    request(t.app).post(`${API}/auth/refresh`).send({ refreshToken });
   const login = (email: string) =>
     request(t.app).post(`${API}/auth/login`).send({ email, password: PASSWORD });
 

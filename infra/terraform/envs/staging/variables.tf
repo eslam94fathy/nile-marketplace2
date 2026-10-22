@@ -30,6 +30,11 @@ variable "invite_url_base" {
   type        = string
 }
 
+variable "media_public_base_url" {
+  description = "https://media.<domain> of staging (the CDN, A-8); set when the cdn module lands (R2-P1). No trailing slash."
+  type        = string
+}
+
 variable "kashier_redirect_url" {
   description = "https app link Kashier sends the customer back to (P5-Q14)."
   type        = string
@@ -47,5 +52,15 @@ variable "jwt_active_kid" {
 
 variable "secrets_encryption_active_key_id" {
   description = "Active key id of the SECRETS_ENCRYPTION_KEYS secret."
+  type        = string
+}
+
+variable "vapid_public_key" {
+  description = "Web Push VAPID public key (base64url, 87 chars) of staging; its private key goes into the VAPID_PRIVATE_KEY secret by hand (docs/runbooks/secrets.md, R2-Q7)."
+  type        = string
+}
+
+variable "vapid_subject" {
+  description = "Web Push contact the push services may use: mailto:<ops address> or an https URL (RFC 8292)."
   type        = string
 }

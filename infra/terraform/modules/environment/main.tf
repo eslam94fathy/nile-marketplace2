@@ -15,37 +15,51 @@ terraform {
 }
 
 locals {
-  name      = "nile-${var.environment_name}"
-  node_env  = var.environment_name == "prod" ? "production" : "staging"
-  api_port  = 3000
-  image     = "${module.ecr.repository_url}:${var.image_tag}"
-  log_days  = var.sizes.log_retention_days
-  api_url   = "https://${var.domain_name}"
+  name     = "nile-${var.environment_name}"
+  node_env = var.environment_name == "prod" ? "production" : "staging"
+  api_port = 3000
+  image    = "${module.ecr.repository_url}:${var.image_tag}"
+  log_days = var.sizes.log_retention_days
+  api_url  = "https://${var.domain_name}"
+  # The Socket.IO gateway (spec 15, RT-1); its ECS service and ALB rule come with R2-P2 step 7.
+  realtime_port = 3001
+  # The media bucket's name (the s3-media module creates it, architecture §14.9).
+  media_bucket = "${local.name}-media"
+  # S3 through the task role; MinIO is refused once deployed (spec 14 §6).
+  storage   = { STORAGE_PROVIDER = "s3", STORAGE_BUCKET = local.media_bucket, STORAGE_REGION = var.region }
   key_lists = jsondecode(file("${path.module}/env-keys.json"))
 
   # Fixed once deployed: the env schema refuses the alternatives (review F-3, PA-5, P1-Q2).
   derived = {
     common   = { NODE_ENV = local.node_env }
     database = { DB_SSL = "true" }
-    api = {
+    api = merge(local.storage, {
       SERVICE_NAME        = "nile-api"
       PORT                = tostring(local.api_port)
       TRUST_PROXY_HOPS    = "1" # the ALB (P8-Q11)
       JWT_ALGORITHM       = "RS256"
       PAYMENT_GATEWAY     = "kashier"
       KASHIER_WEBHOOK_URL = "${local.api_url}/api/v1/webhooks/kashier"
+    })
+    worker = merge(local.storage, {
+      SERVICE_NAME = "nile-worker", PAYMENT_GATEWAY = "kashier", EMAIL_PROVIDER = "mailjet"
+    })
+    realtime = {
+      SERVICE_NAME     = "nile-realtime"
+      PORT             = tostring(local.realtime_port)
+      TRUST_PROXY_HOPS = "1" # the ALB, as the api
+      JWT_ALGORITHM    = "RS256"
     }
-    worker  = { SERVICE_NAME = "nile-worker", PAYMENT_GATEWAY = "kashier", EMAIL_PROVIDER = "mailjet" }
     migrate = { SERVICE_NAME = "nile-migrate" }
   }
 
   # Every key the processes read from `settings` (the derived ones excluded).
   settings_keys = toset(distinct(concat(
     local.key_lists.common, local.key_lists.database, local.key_lists.api,
-    local.key_lists.worker, local.key_lists.migrate,
+    local.key_lists.worker, local.key_lists.realtime, local.key_lists.migrate,
   )))
 
-  pick = { for process in ["api", "worker", "migrate"] : process => merge(
+  pick = { for process in ["api", "worker", "realtime", "migrate"] : process => merge(
     # lookup: a missing key is reported by settings_check below, not as an index error.
     { for key in concat(local.key_lists.common, local.key_lists.database, local.key_lists[process]) : key => lookup(var.settings, key, "") },
     local.derived.common, local.derived.database, local.derived[process],

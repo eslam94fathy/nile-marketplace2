@@ -1,4 +1,5 @@
 import { inject, injectable } from 'tsyringe';
+import { type AuditAction, type IAuditRecorder } from '../../../lib/audit';
 import { type DbTransaction, type ITransactionRunner } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import { type IOutbox, type OutboxEvent, SellerApproved, SellerSuspended } from '../../../lib/events';
@@ -38,6 +39,7 @@ export interface AdminSellerDetail extends AdminSellerListItem {
 }
 
 interface Transition {
+  auditAction: AuditAction;
   from: SellerStatus;
   to: SellerStatus;
   actorUserId: string;
@@ -61,6 +63,7 @@ export class SellerAdminService {
     @inject(TOKENS.Outbox) private readonly outbox: IOutbox,
     @inject(TOKENS.TransactionRunner) private readonly transactions: ITransactionRunner,
     @inject(TOKENS.Logger) private readonly logger: ILogger,
+    @inject(TOKENS.AuditRecorder) private readonly audit: IAuditRecorder,
   ) {}
 
   /** The emails come from one batched identity call (G20). */
@@ -98,6 +101,7 @@ export class SellerAdminService {
     if ((await this.userOf(seller)).emailVerifiedAt === null) throw sellerEmailNotVerified();
 
     await this.transition(sellerId, {
+      auditAction: 'seller.approved',
       from: SellerStatus.PENDING_APPROVAL,
       to: SellerStatus.APPROVED,
       actorUserId,
@@ -116,6 +120,7 @@ export class SellerAdminService {
   /** `pending_approval → rejected`. The reason is shown to the seller until the next decision. */
   async reject(sellerId: string, reason: string, actorUserId: string): Promise<AdminSellerDetail> {
     await this.transition(sellerId, {
+      auditAction: 'seller.rejected',
       from: SellerStatus.PENDING_APPROVAL,
       to: SellerStatus.REJECTED,
       actorUserId,
@@ -128,6 +133,7 @@ export class SellerAdminService {
   /** `approved → suspended`. Catalog hides the products; open orders continue (Q-36). */
   async suspend(sellerId: string, reason: string, actorUserId: string): Promise<AdminSellerDetail> {
     await this.transition(sellerId, {
+      auditAction: 'seller.suspended',
       from: SellerStatus.APPROVED,
       to: SellerStatus.SUSPENDED,
       actorUserId,
@@ -144,6 +150,7 @@ export class SellerAdminService {
   /** `suspended → approved`, published as `seller.approved` with `previousStatus = suspended`. */
   async reinstate(sellerId: string, reason: string | null, actorUserId: string): Promise<AdminSellerDetail> {
     await this.transition(sellerId, {
+      auditAction: 'seller.reinstated',
       from: SellerStatus.SUSPENDED,
       to: SellerStatus.APPROVED,
       actorUserId,
@@ -170,6 +177,15 @@ export class SellerAdminService {
         { oldRate: seller.commissionRate, newRate: rate, changedByUserId: actorUserId },
         trx,
       );
+      await this.audit.record(
+        {
+          action: 'seller.commission_changed',
+          targetId: sellerId,
+          before: { commissionRate: seller.commissionRate.toString() },
+          after: { commissionRate: rate.toString() },
+        },
+        trx,
+      );
       return seller.commissionRate;
     });
     this.logger.info('seller commission rate changed', {
@@ -188,7 +204,20 @@ export class SellerAdminService {
 
   /** Applies to sellers who register afterwards; existing sellers keep their own rate (UC-SE-3). */
   async updateDefaultCommissionRate(rate: Rate, actorUserId: string): Promise<SellerSettings> {
-    const updated = await this.settings.updateDefaultCommissionRate(rate);
+    const updated = await this.transactions.run(async (trx) => {
+      const current = await this.settings.get(trx, { forUpdate: true });
+      const next = await this.settings.updateDefaultCommissionRate(rate, trx);
+      await this.audit.record(
+        {
+          action: 'setting.default_commission_changed',
+          targetId: null,
+          before: { defaultCommissionRate: current.defaultCommissionRate.toString() },
+          after: { defaultCommissionRate: next.defaultCommissionRate.toString() },
+        },
+        trx,
+      );
+      return next;
+    });
     this.logger.info('default commission rate changed', {
       event: 'DEFAULT_COMMISSION_RATE_CHANGED',
       defaultCommissionRate: updated.defaultCommissionRate.toString(),
@@ -219,6 +248,16 @@ export class SellerAdminService {
         trx,
       );
       if (change.event) await this.outbox.add(trx, change.event(updated));
+      await this.audit.record(
+        {
+          action: change.auditAction,
+          targetId: sellerId,
+          before: { status: change.from },
+          after: { status: change.to },
+          reason: change.reason,
+        },
+        trx,
+      );
       return updated;
     });
     this.logger.info('seller status changed', {

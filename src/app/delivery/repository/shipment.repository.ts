@@ -4,7 +4,7 @@ import { TOKENS } from '../../../lib/di';
 import { applyListQuery, type ParsedListQuery } from '../../../lib/http';
 import { Money } from '../../../lib/money';
 import { DELIVERY_TABLES } from '../constants';
-import { ACTIVE_SHIPMENT_STATUSES, ShipmentStatus } from '../enums';
+import { ACTIVE_SHIPMENT_STATUSES, ShipmentKind, ShipmentStatus } from '../enums';
 import {
   type Shipment,
   type ShipmentDropoff,
@@ -15,6 +15,8 @@ import {
 const T = DELIVERY_TABLES.SHIPMENTS;
 const COLUMNS = [
   'id',
+  'kind',
+  'return_id',
   'seller_order_id',
   'order_id',
   'agent_id',
@@ -92,6 +94,8 @@ interface ShipmentTable {
   delivered_at: Date | null;
   returned_at: Date | null;
   seller_order_cancelled_at: Date | null;
+  kind: ShipmentKind;
+  return_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -101,6 +105,8 @@ type ShipmentRow = Pick<ShipmentTable, (typeof COLUMNS)[number]>;
 function toModel(row: ShipmentRow): Shipment {
   return {
     id: row.id,
+    kind: row.kind,
+    returnId: row.return_id,
     sellerOrderId: row.seller_order_id,
     orderId: row.order_id,
     agentId: row.agent_id,
@@ -157,6 +163,20 @@ export interface NewShipment {
   dropoff: ShipmentDropoff;
 }
 
+/**
+ * A return shipment from `return.approved` (spec 11 UC-DE-8): by party (DE-21), `pickup` is the seller and
+ * `dropoff` the customer; nothing to collect (DE-22).
+ */
+export interface NewReturnShipment {
+  returnId: string;
+  sellerOrderId: string;
+  orderId: string;
+  orderNumber: string;
+  paymentMethod: ShipmentPaymentMethod;
+  pickup: ShipmentPickup;
+  dropoff: ShipmentDropoff;
+}
+
 /** What a transition writes besides the status (only the fields it sets). */
 export interface ShipmentChange {
   status: ShipmentStatus;
@@ -182,12 +202,14 @@ export class ShipmentRepository {
   }
 
   /**
-   * Creates the shipment `unassigned` unless the seller order already has one (replay-safe,
-   * uq_shipments_seller_order_id). Returns it, or null when it existed.
+   * Creates the delivery `unassigned` unless the seller order already has one (replay-safe,
+   * uq_shipments_seller_order_id_delivery). Returns it, or null when it existed.
    */
   async insertIfNew(shipment: NewShipment, trx: DbTransaction): Promise<Shipment | null> {
     const [row] = await trx<ShipmentTable>(T)
       .insert({
+        kind: ShipmentKind.DELIVERY,
+        return_id: null,
         seller_order_id: shipment.sellerOrderId,
         order_id: shipment.orderId,
         agent_id: null,
@@ -225,10 +247,80 @@ export class ShipmentRepository {
         returned_at: null,
         seller_order_cancelled_at: null,
       })
-      .onConflict('seller_order_id')
+      // The conflict target names the partial index's predicate, so Postgres can infer it.
+      .onConflict(trx.raw('(seller_order_id) WHERE kind = ?', [ShipmentKind.DELIVERY]))
       .ignore()
       .returning<ShipmentRow[]>(COLUMNS);
     return row ? toModel(row) : null;
+  }
+
+  /** UC-DE-8: replay-safe on uq_shipments_return_id. Returns the new shipment, or null when it existed. */
+  async insertReturnIfNew(shipment: NewReturnShipment, trx: DbTransaction): Promise<Shipment | null> {
+    const [row] = await trx<ShipmentTable>(T)
+      .insert({
+        kind: ShipmentKind.RETURN,
+        return_id: shipment.returnId,
+        seller_order_id: shipment.sellerOrderId,
+        order_id: shipment.orderId,
+        agent_id: null,
+        status: ShipmentStatus.UNASSIGNED,
+        order_number: shipment.orderNumber,
+        payment_method: shipment.paymentMethod,
+        order_delivery_fee: Money.zero().toString(),
+        pickup_business_name: shipment.pickup.businessName,
+        pickup_governorate_id: shipment.pickup.governorateId,
+        pickup_phone: shipment.pickup.phone,
+        pickup_city: shipment.pickup.city,
+        pickup_area: shipment.pickup.area,
+        pickup_street: shipment.pickup.street,
+        pickup_building: shipment.pickup.building,
+        pickup_landmark: shipment.pickup.landmark,
+        dropoff_recipient_name: shipment.dropoff.recipientName,
+        dropoff_recipient_phone: shipment.dropoff.recipientPhone,
+        dropoff_governorate_id: shipment.dropoff.governorateId,
+        dropoff_governorate_name: shipment.dropoff.governorateName,
+        dropoff_city: shipment.dropoff.city,
+        dropoff_area: shipment.dropoff.area,
+        dropoff_street: shipment.dropoff.street,
+        dropoff_building: shipment.dropoff.building,
+        dropoff_floor: shipment.dropoff.floor,
+        dropoff_apartment: shipment.dropoff.apartment,
+        dropoff_landmark: shipment.dropoff.landmark,
+        cod_items_amount: Money.zero().toString(),
+        carries_delivery_fee: false,
+        cod_fee_amount: Money.zero().toString(),
+        cod_collected_amount: null,
+        attempt_count: 0,
+        assigned_at: null,
+        picked_up_at: null,
+        delivered_at: null,
+        returned_at: null,
+        seller_order_cancelled_at: null,
+      })
+      .onConflict('return_id')
+      .ignore()
+      .returning<ShipmentRow[]>(COLUMNS);
+    return row ? toModel(row) : null;
+  }
+
+  /** The return's shipment, locked, if it exists yet (uq_shipments_return_id). */
+  async lockByReturnId(returnId: string, trx: DbTransaction): Promise<Shipment | null> {
+    const row = await trx<ShipmentTable>(T)
+      .select(...COLUMNS)
+      .where({ return_id: returnId })
+      .forUpdate()
+      .first<ShipmentRow | undefined>();
+    return row ? toModel(row) : null;
+  }
+
+  /** DE-23: the return's shipment status, unlocked; null when there is none (yet). */
+  async findStatusByReturnId(returnId: string): Promise<ShipmentStatus | null> {
+    const row = await this.db
+      .knex<ShipmentTable>(T)
+      .select('status')
+      .where({ return_id: returnId })
+      .first<{ status: ShipmentStatus } | undefined>();
+    return row?.status ?? null;
   }
 
   async findById(id: string, trx?: DbTransaction): Promise<Shipment | null> {
@@ -253,30 +345,36 @@ export class ShipmentRepository {
     return row ? toModel(row) : null;
   }
 
-  /** The seller order's shipment, unlocked: finds the checkout to lock (uq_shipments_seller_order_id). */
+  /**
+   * The seller order's delivery, unlocked: finds the checkout to lock
+   * (uq_shipments_seller_order_id_delivery). Return shipments of the seller order are left out.
+   */
   async findBySellerOrderId(sellerOrderId: string, trx?: DbTransaction): Promise<Shipment | null> {
     const row = await this.exec(trx)<ShipmentTable>(T)
       .select(...COLUMNS)
-      .where({ seller_order_id: sellerOrderId })
+      .where({ seller_order_id: sellerOrderId, kind: ShipmentKind.DELIVERY })
       .first<ShipmentRow | undefined>();
     return row ? toModel(row) : null;
   }
 
-  /** Locks the seller order's shipment, if it exists yet (the seller-order consumer). */
+  /** Locks the seller order's delivery, if it exists yet (the seller-order consumer). */
   async lockBySellerOrderId(sellerOrderId: string, trx: DbTransaction): Promise<Shipment | null> {
     const row = await trx<ShipmentTable>(T)
       .select(...COLUMNS)
-      .where({ seller_order_id: sellerOrderId })
+      .where({ seller_order_id: sellerOrderId, kind: ShipmentKind.DELIVERY })
       .forUpdate()
       .first<ShipmentRow | undefined>();
     return row ? toModel(row) : null;
   }
 
-  /** Locks every shipment of a checkout, in id order (the fee carrier, DE-7, DE-8). */
+  /**
+   * Locks every delivery of a checkout, in id order (the fee carrier, DE-7, DE-8). Return shipments never
+   * carry the fee and are locked one by one (DE-25).
+   */
   async lockByOrderId(orderId: string, trx: DbTransaction): Promise<Shipment[]> {
     const rows = await trx<ShipmentTable>(T)
       .select(...COLUMNS)
-      .where({ order_id: orderId })
+      .where({ order_id: orderId, kind: ShipmentKind.DELIVERY })
       .orderBy('id')
       .forUpdate();
     return rows.map(toModel);
@@ -351,5 +449,26 @@ export class ShipmentRepository {
     const qb = this.exec(trx)<ShipmentTable>(T).select(...COLUMNS);
     const rows = (await applyListQuery(qb, query, 'id')) as ShipmentRow[];
     return rows.map(toModel);
+  }
+
+  /** Dashboard counts (spec 20 §3.2), served by `idx_shipments_status_created_at_id`. Absent statuses are left out. */
+  async countByStatuses(statuses: readonly ShipmentStatus[]): Promise<Map<ShipmentStatus, number>> {
+    const rows = await this.db
+      .knex(T)
+      .select('status')
+      .count<{ status: ShipmentStatus; count: string }[]>('* as count')
+      .whereIn('status', statuses)
+      .groupBy('status');
+    return new Map(rows.map((row) => [row.status, Number(row.count)]));
+  }
+
+  /** BO-24: return shipments still under way. */
+  async countReturnsInProgress(): Promise<number> {
+    const row = await this.db
+      .knex(T)
+      .where({ kind: ShipmentKind.RETURN })
+      .whereNotIn('status', [ShipmentStatus.DELIVERED, ShipmentStatus.CANCELLED])
+      .first<{ count: string }>(this.db.knex.raw('count(*) AS count'));
+    return Number(row.count);
   }
 }

@@ -1,6 +1,7 @@
 # Spec 07 — inventory
 
 Status: **v1.3 APPROVED (2026-10-12).** v1.0: approved by the user with the Phase 3 clarifications in §7.1. v1.1: `INSUFFICIENT_STOCK` is exported from Phase 4 for cart (IN-4). v1.2: reservations land in Phase 5, and `payments` comes after inventory in the lock order (IN-5). v1.3: `release` takes no reason; movement deltas are the change in sellable stock (IN-6). Changes from now on need explicit approval and a version bump.
+**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 restock of returned items (spec 18). Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -73,3 +74,11 @@ None.
 | IN-4 | `INSUFFICIENT_STOCK` and its factory `insufficientStock(shortLines)` (details shape in §2 `reserve` step 3) are added and exported in Phase 4, because cart's add/change check uses the same code; `reserve` reuses them in Phase 5 (P4-Q4, v1.1) | §6 |
 | IN-5 | Phase 5 adds `inventory_reservations` (FK to `order_items`, `ON DELETE RESTRICT`, no index on `inventory_item_id`: nothing looks reservations up by item) and `reserve` / `release` / `commit`. Callers lock in the order `orders` → `seller_orders` → `inventory_items` (by id) → `payments` (spec 09 OR-3, P5-Q3, P5-Q4, v1.2) | §1, §2 |
 | IN-6 | (a) `release` has no `reason` parameter: no table stores one, and ordering's seller-order history records why. (b) A movement's `quantity_delta` is the change in **sellable** stock: seller adjustment ±on_hand change, reserve −q, release +q, commit 0 (the drop shows in `on_hand_after`), so the deltas of an item always sum to its sellable stock. Reservation movements carry `reference_type = 'order_item'`, `reference_id` = the order line, and no actor. (c) Releasing more than is reserved, a line without a reservation, or the same line twice are invariant violations (500), not client errors (Phase 5 step 3, v1.3) | §2, UC-IN-2, UC-IN-3 |
+
+---
+
+## 8. Release 2: restock of returned items [v2.0, approved 2026-10-20]
+
+- New public method `restock(lines: { variantId, quantity, returnId }[], actorUserId | null, trx)` (returns, spec 18 UC-RE-7). Items are locked in `inventory_items.id` order (the existing lock rule), then `on_hand += quantity` per item, one `return_restock` movement per item (`reference_type = 'return'`, `reference_id = returnId`, `quantity_delta` = the change in sellable stock, IN-6).
+- `MovementType` gains `return_restock` (the `CHECK` gains the value). Emits `inventory.stock_status_changed` when sellable crosses 0 (IN-2 rule).
+- Deleted variants are restocked too (the row exists; it simply isn't sold). Items the seller chooses not to restock (damaged goods) get no movement: their reservations were committed at delivery, so stock already reflects that they left.

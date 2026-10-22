@@ -49,6 +49,9 @@ export function catalogFixtures(db: Knex) {
           status,
           commission_rate: '0.1000',
           approved_at: status === 'approved' ? new Date() : null,
+          rating_count: 0,
+          rating_avg: null,
+          rating_version: 0,
         })
         .returning('id'),
     );
@@ -91,6 +94,9 @@ export function catalogFixtures(db: Knex) {
           min_price: null,
           max_price: null,
           in_stock: false,
+          rating_count: 0,
+          rating_avg: null,
+          rating_version: 0,
           ...overrides,
         })
         .returning('id'),

@@ -17,11 +17,13 @@ import {
   AGENT_ENTRY_LIST_SPEC,
   AgentStatementAccount,
   ENTRY_LIST_SPEC,
+  HOLD_LIST_SPEC,
   OWN_SETTLEMENT_LIST_SPEC,
 } from '../dto/finance-request.dto';
 import {
   type AgentBalancesDto,
   type SellerBalanceDto,
+  type SellerHoldDto,
   toLedgerEntryDto,
   toPayoutDto,
   toRemittanceDto,
@@ -74,13 +76,34 @@ export class SellerFinanceController {
     ownerId: sellerId,
   });
 
+  /** Spec 12 §8.6: available (`seller_payable`, may be negative) and pending (`seller_pending`). */
   balance = async (req: Request, res: Response): Promise<void> => {
-    const [account] = await this.views.ownAccounts([this.accountOf(await this.sellerIdOf(req))]);
+    const sellerId = await this.sellerIdOf(req);
+    const accounts = await this.views.ownAccounts([
+      this.accountOf(sellerId),
+      { accountType: AccountType.SELLER_PENDING, ownerId: sellerId },
+    ]);
+    const of = (type: AccountType) => accounts.find((a) => a.accountType === type);
+    const changed = accounts.map((a) => a.updatedAt.getTime());
     const body: SellerBalanceDto = {
-      balance: balanceOrZero(account?.balance),
-      updatedAt: account?.updatedAt.toISOString() ?? null,
+      available: balanceOrZero(of(AccountType.SELLER_PAYABLE)?.balance),
+      pending: balanceOrZero(of(AccountType.SELLER_PENDING)?.balance),
+      updatedAt: changed.length > 0 ? new Date(Math.max(...changed)).toISOString() : null,
     };
     sendSuccess(res, HTTP_STATUS.OK, body);
+  };
+
+  holds = async (req: Request, res: Response): Promise<void> => {
+    const sellerId = await this.sellerIdOf(req);
+    const page = await this.views.sellerHolds(sellerId, listQuery(req, HOLD_LIST_SPEC, this.env));
+    const body: SellerHoldDto[] = page.items.map(({ hold, orderNumber, blockedByReturn }) => ({
+      sellerOrderId: hold.sellerOrderId,
+      orderNumber,
+      heldAmount: hold.heldAmount.toString(),
+      releaseAfter: hold.releaseAfter.toISOString(),
+      blockedByReturn,
+    }));
+    sendSuccess(res, HTTP_STATUS.OK, body, page.meta);
   };
 
   entries = async (req: Request, res: Response): Promise<void> => {

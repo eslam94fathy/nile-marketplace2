@@ -9,9 +9,11 @@ import { type DependencyContainer } from 'tsyringe';
 import { type JwtVerifier } from '../../lib/auth';
 import { TOKENS } from '../../lib/di';
 import { type PgErrorMapper } from '../../lib/error';
+import { type EventHandlerDefinition, readRatingProjection, ReviewRatingChanged } from '../../lib/events';
 import { type OpenApiRegistry } from '../../lib/http';
 import { type RateLimiters } from '../../lib/middleware';
 import { SellerAdminController } from './controller/seller-admin.controller';
+import { SELLERS_RATING_PROJECTION_QUEUE } from './constants';
 import { SellerController } from './controller/seller.controller';
 import { registerSellersConstraintErrors } from './errors';
 import { SellerCommissionHistoryRepository } from './repository/seller-commission-history.repository';
@@ -21,6 +23,7 @@ import { SellerRepository } from './repository/seller.repository';
 import { sellersRoutes } from './routes';
 import { SellerAdminService } from './service/seller-admin.service';
 import { SellerDirectory } from './service/seller-directory.service';
+import { SellerRatingProjectionService } from './service/seller-rating-projection.service';
 import { SellerService } from './service/seller.service';
 
 export { SellerStatus } from './enums';
@@ -32,9 +35,22 @@ export type {
   SellerCheckoutSnapshot,
   SellerLookupOptions,
   SellerStatusSummary,
+  SellerSummary,
 } from './service/seller-directory.service';
 
 /** api process. Needs identity's AccountService registered first. */
+/** worker process: the rating projection (spec 05 §8.1) and the public lookups. */
+export function registerSellersWorker(container: DependencyContainer): void {
+  container.registerSingleton(TOKENS.SellerRepository, SellerRepository);
+  container.registerSingleton(TOKENS.SellerRatingProjectionService, SellerRatingProjectionService);
+}
+
+/** The public lookups only (`ISellerDirectory`), for the realtime gateway. */
+export function registerSellersLookups(container: DependencyContainer): void {
+  container.registerSingleton(TOKENS.SellerRepository, SellerRepository);
+  container.registerSingleton(TOKENS.SellerDirectory, SellerDirectory);
+}
+
 export function registerSellersModule(container: DependencyContainer): void {
   container.registerSingleton(TOKENS.SellerRepository, SellerRepository);
   container.registerSingleton(TOKENS.SellerStatusHistoryRepository, SellerStatusHistoryRepository);
@@ -58,4 +74,22 @@ export function createSellersRouter(container: DependencyContainer, basePath: st
     docs: container.resolve<OpenApiRegistry>(TOKENS.OpenApiRegistry),
     basePath,
   });
+}
+
+/**
+ * Consumer `sellers.rating-projection` ← `review.rating_changed` (spec 05 §8.1): the seller part of the
+ * aggregate, applied only when newer. Dedupe through `processed_events` as every consumer.
+ */
+export function createSellersHandlers(container: DependencyContainer): EventHandlerDefinition[] {
+  const ratings = container.resolve<SellerRatingProjectionService>(TOKENS.SellerRatingProjectionService);
+  return [
+    {
+      name: SELLERS_RATING_PROJECTION_QUEUE,
+      events: [ReviewRatingChanged],
+      handle: (envelope, trx) => {
+        const { subjectId, projection } = readRatingProjection(envelope, 'seller');
+        return ratings.apply(subjectId, projection, trx);
+      },
+    },
+  ];
 }

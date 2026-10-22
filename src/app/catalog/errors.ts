@@ -22,6 +22,8 @@ export const CatalogErrorCode = {
   OPTION_IN_USE: 'OPTION_IN_USE',
   PRODUCT_NOT_FOUND: 'PRODUCT_NOT_FOUND',
   PRODUCT_INVALID_STATUS_TRANSITION: 'PRODUCT_INVALID_STATUS_TRANSITION',
+  PRODUCT_BLOCKED: 'PRODUCT_BLOCKED',
+  PRODUCT_BLOCK_INVALID_STATUS: 'PRODUCT_BLOCK_INVALID_STATUS',
   PRODUCT_HAS_NO_ACTIVE_VARIANT: 'PRODUCT_HAS_NO_ACTIVE_VARIANT',
   PRODUCT_CATEGORY_LOCKED: 'PRODUCT_CATEGORY_LOCKED',
   VARIANT_NOT_FOUND: 'VARIANT_NOT_FOUND',
@@ -31,6 +33,10 @@ export const CatalogErrorCode = {
   VARIANT_LIMIT_REACHED: 'VARIANT_LIMIT_REACHED',
   SKU_TAKEN: 'SKU_TAKEN',
   COMPARE_AT_PRICE_INVALID: 'COMPARE_AT_PRICE_INVALID',
+  // R2 (spec 06 §8.6)
+  PRODUCT_IMAGE_NOT_FOUND: 'PRODUCT_IMAGE_NOT_FOUND',
+  PRODUCT_IMAGE_LIMIT_REACHED: 'PRODUCT_IMAGE_LIMIT_REACHED',
+  PRODUCT_IMAGE_ORDER_INVALID: 'PRODUCT_IMAGE_ORDER_INVALID',
   // STOCK_ADJUSTMENT_INVALID (spec 06 §6) is raised by inventory: InventoryErrorCode.
 } as const;
 
@@ -157,6 +163,25 @@ export const compareAtPriceInvalid = (cause?: unknown) =>
     { cause },
   );
 
+/** A `variantId` in a body that isn't a live variant of the product (spec 06 §8.4). */
+export const variantReferenceNotFound = () =>
+  new AppError(C.VARIANT_NOT_FOUND, 'Variant not found', S.UNPROCESSABLE_ENTITY);
+
+export const productImageNotFound = () =>
+  new AppError(C.PRODUCT_IMAGE_NOT_FOUND, 'Product image not found', S.NOT_FOUND);
+export const productImageLimitReached = (max: number) =>
+  new AppError(
+    C.PRODUCT_IMAGE_LIMIT_REACHED,
+    `A product can have at most ${max} images`,
+    S.UNPROCESSABLE_ENTITY,
+  );
+export const productImageOrderInvalid = () =>
+  new AppError(
+    C.PRODUCT_IMAGE_ORDER_INVALID,
+    'List every image of the product exactly once',
+    S.UNPROCESSABLE_ENTITY,
+  );
+
 /** Constraints that race with app-level checks (CLAUDE.md §6.4, spec 06 CA-11). */
 export function registerCatalogConstraintErrors(mapper: PgErrorMapper): void {
   mapper.register('fk_products_category_id', categoryReferenceNotFound);
@@ -171,3 +196,11 @@ export function registerCatalogConstraintErrors(mapper: PgErrorMapper): void {
   mapper.register('fk_variant_attribute_values_attribute_id', attributeInUse);
   mapper.register('fk_variant_attribute_values_option_id', optionInUse);
 }
+
+/** Activation of a product an admin blocked (spec 20 §3.4, BO-15). */
+export const productBlocked = () =>
+  new AppError(C.PRODUCT_BLOCKED, 'This product was blocked by the platform', S.CONFLICT);
+
+/** Block a blocked product, unblock one that isn't (spec 20 §6). */
+export const productBlockInvalidStatus = () =>
+  new AppError(C.PRODUCT_BLOCK_INVALID_STATUS, 'The product is already in that block state', S.CONFLICT);

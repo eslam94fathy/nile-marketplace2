@@ -45,6 +45,92 @@ import * as m20261013120002 from './20261013120002_create_ledger_entries';
 import * as m20261013120003 from './20261013120003_create_cod_remittances';
 import * as m20261013120004 from './20261013120004_create_payouts';
 import * as m20261013150001 from './20261013150001_add_products_min_price_id_index';
+import * as m20261020120001 from './20261020120001_create_admin_audit_log';
+import * as m20261020130001 from './20261020130001_create_media_objects';
+import * as m20261020140001 from './20261020140001_add_categories_image';
+import * as m20261020140002 from './20261020140002_create_product_images';
+import * as m20261020170202 from './20261020170202_add_order_items_image_media_id';
+import * as m20261020170204 from './20261020170204_validate_order_items_image_media_id_fk';
+import * as m20261020170206 from './20261020170206_add_order_items_image_media_id_index';
+import * as m20261020194936 from './20261020194936_create_user_notifications';
+import * as m20261020194938 from './20261020194938_create_notification_preferences';
+import * as m20261020203245 from './20261020203245_create_push_subscriptions';
+import * as m20261021100001 from './20261021100001_create_support_tickets';
+import * as m20261021100002 from './20261021100002_create_support_messages';
+import * as m20261021100003 from './20261021100003_create_support_message_attachments';
+import * as m20261021100004 from './20261021100004_create_support_ticket_reads';
+import * as m20261021100005 from './20261021100005_add_support_audit_actions';
+import * as m20261021120001 from './20261021120001_add_products_rating';
+import * as m20261021120002 from './20261021120002_validate_products_rating_checks';
+import * as m20261021120003 from './20261021120003_add_products_rating_index';
+import * as m20261021120004 from './20261021120004_add_sellers_rating';
+import * as m20261021120005 from './20261021120005_create_product_reviews';
+import * as m20261021120006 from './20261021120006_create_review_images';
+import * as m20261021120007 from './20261021120007_create_review_replies';
+import * as m20261021120008 from './20261021120008_create_review_rating_stats';
+import * as m20261021120009 from './20261021120009_create_wishlist_items';
+import * as m20261021120010 from './20261021120010_add_review_audit_actions';
+import * as m20261021140001 from './20261021140001_add_products_admin_block';
+import * as m20261021140002 from './20261021140002_validate_products_admin_block';
+import * as m20261021140003 from './20261021140003_add_seller_orders_admin_cancelled';
+import * as m20261021140004 from './20261021140004_validate_seller_orders_cancel_reason';
+import * as m20261021140005 from './20261021140005_add_orders_placed_at_index';
+import * as m20261021140006 from './20261021140006_add_seller_orders_delivered_at_index';
+import * as m20261021140007 from './20261021140007_add_users_email_pattern_index';
+import * as m20261021140008 from './20261021140008_add_customers_name_trgm_index';
+import * as m20261021140009 from './20261021140009_add_customers_phone_index';
+import * as m20261021140010 from './20261021140010_add_backoffice_audit_actions';
+import * as m20261021150001 from './20261021150001_customers_created_at_millisecond_precision';
+import * as m20261021150002 from './20261021150002_add_users_created_at_id_index';
+import * as m20261021150003 from './20261021150003_add_customers_created_at_id_index';
+import * as m20261021150004 from './20261021150004_add_seller_orders_open_status_index';
+import * as m20261022100001 from './20261022100001_create_return_requests';
+import * as m20261022100002 from './20261022100002_create_return_items';
+import * as m20261022100003 from './20261022100003_create_return_photos';
+import * as m20261022100004 from './20261022100004_create_return_status_history';
+import * as m20261022100005 from './20261022100005_add_order_items_returned_quantity';
+import * as m20261022100006 from './20261022100006_validate_order_items_quantities';
+import * as m20261022100007 from './20261022100007_add_seller_orders_returned_amounts';
+import * as m20261022100008 from './20261022100008_validate_seller_orders_returned_amounts';
+import * as m20261022100009 from './20261022100009_create_order_item_returns';
+import * as m20261022100010 from './20261022100010_add_inventory_movements_return_restock';
+import * as m20261022100011 from './20261022100011_validate_inventory_movements_type';
+import * as m20261022100012 from './20261022100012_convert_payments_refunded_statuses';
+import * as m20261022100013 from './20261022100013_validate_payments_status';
+import * as m20261022100014 from './20261022100014_add_payment_refunds_automation';
+import * as m20261022100015 from './20261022100015_validate_payment_refunds_automation';
+import * as m20261022100016 from './20261022100016_add_payment_refunds_next_attempt_index';
+import * as m20261022100017 from './20261022100017_add_payment_refunds_processing_index';
+import * as m20261022100018 from './20261022100018_add_payment_refunds_return_id_index';
+import * as m20261022100019 from './20261022100019_add_payment_refunds_status_created_at_index';
+import * as m20261022100020 from './20261022100020_add_shipments_return_kind';
+import * as m20261022100021 from './20261022100021_validate_shipments_return_kind';
+import * as m20261022100022 from './20261022100022_add_shipment_status_history_pickup_failed';
+import * as m20261022100023 from './20261022100023_validate_shipment_status_history_statuses';
+import * as m20261022100024 from './20261022100024_add_shipments_return_id_unique_index';
+import * as m20261022100025 from './20261022100025_add_shipments_seller_order_id_delivery_index';
+import * as m20261022100026 from './20261022100026_drop_shipments_seller_order_id_unique';
+import * as m20261022100027 from './20261022100027_add_finance_return_accounts';
+import * as m20261022100028 from './20261022100028_add_ledger_entries_return_types';
+import * as m20261022100029 from './20261022100029_validate_ledger_entries_types';
+import * as m20261022100030 from './20261022100030_create_seller_order_holds';
+import * as m20261022100031 from './20261022100031_add_return_audit_actions';
+import * as m20261022120001 from './20261022120001_add_payments_customer_id';
+import * as m20261022140001 from './20261022140001_create_coupons';
+import * as m20261022140002 from './20261022140002_create_coupon_redemptions';
+import * as m20261022140003 from './20261022140003_add_orders_coupon';
+import * as m20261022140004 from './20261022140004_validate_orders_coupon';
+import * as m20261022140005 from './20261022140005_add_seller_orders_discount';
+import * as m20261022140006 from './20261022140006_validate_seller_orders_discount';
+import * as m20261022140007 from './20261022140007_add_order_items_discount';
+import * as m20261022140008 from './20261022140008_validate_order_items_discount';
+import * as m20261022140009 from './20261022140009_add_finance_promotions_account';
+import * as m20261022140010 from './20261022140010_add_ledger_entries_promotion_types';
+import * as m20261022140011 from './20261022140011_validate_ledger_entries_promotion_types';
+import * as m20261022140012 from './20261022140012_add_coupon_blocked_notification_type';
+import * as m20261022140013 from './20261022140013_add_coupon_audit_actions';
+import * as m20261022140014 from './20261022140014_replace_seller_orders_net_check';
+import * as m20261022140015 from './20261022140015_validate_seller_orders_net_check';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -95,5 +181,91 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261013120003_create_cod_remittances', module: m20261013120003 },
   { name: '20261013120004_create_payouts', module: m20261013120004 },
   { name: '20261013150001_add_products_min_price_id_index', module: m20261013150001 },
+  { name: '20261020120001_create_admin_audit_log', module: m20261020120001 },
+  { name: '20261020130001_create_media_objects', module: m20261020130001 },
+  { name: '20261020140001_add_categories_image', module: m20261020140001 },
+  { name: '20261020140002_create_product_images', module: m20261020140002 },
+  { name: '20261020170202_add_order_items_image_media_id', module: m20261020170202 },
+  { name: '20261020170204_validate_order_items_image_media_id_fk', module: m20261020170204 },
+  { name: '20261020170206_add_order_items_image_media_id_index', module: m20261020170206 },
+  { name: '20261020194936_create_user_notifications', module: m20261020194936 },
+  { name: '20261020194938_create_notification_preferences', module: m20261020194938 },
+  { name: '20261020203245_create_push_subscriptions', module: m20261020203245 },
+  { name: '20261021100001_create_support_tickets', module: m20261021100001 },
+  { name: '20261021100002_create_support_messages', module: m20261021100002 },
+  { name: '20261021100003_create_support_message_attachments', module: m20261021100003 },
+  { name: '20261021100004_create_support_ticket_reads', module: m20261021100004 },
+  { name: '20261021100005_add_support_audit_actions', module: m20261021100005 },
+  { name: '20261021120001_add_products_rating', module: m20261021120001 },
+  { name: '20261021120002_validate_products_rating_checks', module: m20261021120002 },
+  { name: '20261021120003_add_products_rating_index', module: m20261021120003 },
+  { name: '20261021120004_add_sellers_rating', module: m20261021120004 },
+  { name: '20261021120005_create_product_reviews', module: m20261021120005 },
+  { name: '20261021120006_create_review_images', module: m20261021120006 },
+  { name: '20261021120007_create_review_replies', module: m20261021120007 },
+  { name: '20261021120008_create_review_rating_stats', module: m20261021120008 },
+  { name: '20261021120009_create_wishlist_items', module: m20261021120009 },
+  { name: '20261021120010_add_review_audit_actions', module: m20261021120010 },
+  { name: '20261021140001_add_products_admin_block', module: m20261021140001 },
+  { name: '20261021140002_validate_products_admin_block', module: m20261021140002 },
+  { name: '20261021140003_add_seller_orders_admin_cancelled', module: m20261021140003 },
+  { name: '20261021140004_validate_seller_orders_cancel_reason', module: m20261021140004 },
+  { name: '20261021140005_add_orders_placed_at_index', module: m20261021140005 },
+  { name: '20261021140006_add_seller_orders_delivered_at_index', module: m20261021140006 },
+  { name: '20261021140007_add_users_email_pattern_index', module: m20261021140007 },
+  { name: '20261021140008_add_customers_name_trgm_index', module: m20261021140008 },
+  { name: '20261021140009_add_customers_phone_index', module: m20261021140009 },
+  { name: '20261021140010_add_backoffice_audit_actions', module: m20261021140010 },
+  { name: '20261021150001_customers_created_at_millisecond_precision', module: m20261021150001 },
+  { name: '20261021150002_add_users_created_at_id_index', module: m20261021150002 },
+  { name: '20261021150003_add_customers_created_at_id_index', module: m20261021150003 },
+  { name: '20261021150004_add_seller_orders_open_status_index', module: m20261021150004 },
+  { name: '20261022100001_create_return_requests', module: m20261022100001 },
+  { name: '20261022100002_create_return_items', module: m20261022100002 },
+  { name: '20261022100003_create_return_photos', module: m20261022100003 },
+  { name: '20261022100004_create_return_status_history', module: m20261022100004 },
+  { name: '20261022100005_add_order_items_returned_quantity', module: m20261022100005 },
+  { name: '20261022100006_validate_order_items_quantities', module: m20261022100006 },
+  { name: '20261022100007_add_seller_orders_returned_amounts', module: m20261022100007 },
+  { name: '20261022100008_validate_seller_orders_returned_amounts', module: m20261022100008 },
+  { name: '20261022100009_create_order_item_returns', module: m20261022100009 },
+  { name: '20261022100010_add_inventory_movements_return_restock', module: m20261022100010 },
+  { name: '20261022100011_validate_inventory_movements_type', module: m20261022100011 },
+  { name: '20261022100012_convert_payments_refunded_statuses', module: m20261022100012 },
+  { name: '20261022100013_validate_payments_status', module: m20261022100013 },
+  { name: '20261022100014_add_payment_refunds_automation', module: m20261022100014 },
+  { name: '20261022100015_validate_payment_refunds_automation', module: m20261022100015 },
+  { name: '20261022100016_add_payment_refunds_next_attempt_index', module: m20261022100016 },
+  { name: '20261022100017_add_payment_refunds_processing_index', module: m20261022100017 },
+  { name: '20261022100018_add_payment_refunds_return_id_index', module: m20261022100018 },
+  { name: '20261022100019_add_payment_refunds_status_created_at_index', module: m20261022100019 },
+  { name: '20261022100020_add_shipments_return_kind', module: m20261022100020 },
+  { name: '20261022100021_validate_shipments_return_kind', module: m20261022100021 },
+  { name: '20261022100022_add_shipment_status_history_pickup_failed', module: m20261022100022 },
+  { name: '20261022100023_validate_shipment_status_history_statuses', module: m20261022100023 },
+  { name: '20261022100024_add_shipments_return_id_unique_index', module: m20261022100024 },
+  { name: '20261022100025_add_shipments_seller_order_id_delivery_index', module: m20261022100025 },
+  { name: '20261022100026_drop_shipments_seller_order_id_unique', module: m20261022100026 },
+  { name: '20261022100027_add_finance_return_accounts', module: m20261022100027 },
+  { name: '20261022100028_add_ledger_entries_return_types', module: m20261022100028 },
+  { name: '20261022100029_validate_ledger_entries_types', module: m20261022100029 },
+  { name: '20261022100030_create_seller_order_holds', module: m20261022100030 },
+  { name: '20261022100031_add_return_audit_actions', module: m20261022100031 },
+  { name: '20261022120001_add_payments_customer_id', module: m20261022120001 },
+  { name: '20261022140001_create_coupons', module: m20261022140001 },
+  { name: '20261022140002_create_coupon_redemptions', module: m20261022140002 },
+  { name: '20261022140003_add_orders_coupon', module: m20261022140003 },
+  { name: '20261022140004_validate_orders_coupon', module: m20261022140004 },
+  { name: '20261022140005_add_seller_orders_discount', module: m20261022140005 },
+  { name: '20261022140006_validate_seller_orders_discount', module: m20261022140006 },
+  { name: '20261022140007_add_order_items_discount', module: m20261022140007 },
+  { name: '20261022140008_validate_order_items_discount', module: m20261022140008 },
+  { name: '20261022140009_add_finance_promotions_account', module: m20261022140009 },
+  { name: '20261022140010_add_ledger_entries_promotion_types', module: m20261022140010 },
+  { name: '20261022140011_validate_ledger_entries_promotion_types', module: m20261022140011 },
+  { name: '20261022140012_add_coupon_blocked_notification_type', module: m20261022140012 },
+  { name: '20261022140013_add_coupon_audit_actions', module: m20261022140013 },
+  { name: '20261022140014_replace_seller_orders_net_check', module: m20261022140014 },
+  { name: '20261022140015_validate_seller_orders_net_check', module: m20261022140015 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

@@ -5,7 +5,10 @@ import {
   type CategoryAttributeOption,
   type CategoryTree,
 } from '../model/category-tree.model';
+import { toImageDto } from '../../media';
 import { type ActiveCategoryNode, type EffectiveAttribute } from '../service/category.service';
+import { CategoryImageDto } from './product-image.dto';
+import { type CategoryImage } from '../model/category-tree.model';
 
 /* Response DTOs for spec 06 §4.1–§4.2 (decorators describe the OpenAPI shape only). */
 
@@ -21,6 +24,12 @@ export class CategoryNodeDto {
 
   @IsInt()
   sortOrder!: number;
+
+  // Nullable: null when the category has no image (spec 06 §8.4).
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CategoryImageDto)
+  image!: CategoryImageDto | null;
 
   @ValidateNested({ each: true })
   @Type(() => CategoryNodeDto)
@@ -106,6 +115,11 @@ export class AdminCategoryNodeDto {
   @IsBoolean()
   isActive!: boolean;
 
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CategoryImageDto)
+  image!: CategoryImageDto | null;
+
   @ValidateNested({ each: true })
   @Type(() => AdminAttributeDto)
   attributes!: AdminAttributeDto[];
@@ -133,9 +147,20 @@ export function toEffectiveAttributeDto(attribute: EffectiveAttribute): Effectiv
   return { ...toAdminAttributeDto(attribute), definedOnCategoryId: attribute.definedOnCategoryId };
 }
 
+export function toCategoryImageDto(image: CategoryImage | null | undefined): CategoryImageDto | null {
+  return image?.image ? { ...toImageDto(image.image), altText: image.altText } : null;
+}
+
 export function toCategoryNodeDto(node: ActiveCategoryNode): CategoryNodeDto {
   const { id, name, slug, sortOrder } = node.category;
-  return { id, name, slug, sortOrder, children: node.children.map(toCategoryNodeDto) };
+  return {
+    id,
+    name,
+    slug,
+    sortOrder,
+    image: toCategoryImageDto(node.image),
+    children: node.children.map(toCategoryNodeDto),
+  };
 }
 
 /** The admin node of `categoryId` with its whole subtree (inactive categories included). */
@@ -150,6 +175,7 @@ export function toAdminCategoryNodeDto(tree: CategoryTree, categoryId: string): 
     depth: category.depth,
     sortOrder: category.sortOrder,
     isActive: category.isActive,
+    image: toCategoryImageDto(tree.imageOf(category.id)),
     attributes: tree.ownAttributes(category.id).map(toAdminAttributeDto),
     children: tree.children(category.id).map((child) => toAdminCategoryNodeDto(tree, child.id)),
   };

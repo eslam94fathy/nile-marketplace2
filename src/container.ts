@@ -1,19 +1,33 @@
 import { container as rootContainer, type DependencyContainer } from 'tsyringe';
+import { registerAuditModule, registerAuditRecorder, registerAuditWorker } from './app/audit';
 import { registerCartModule } from './app/cart';
 import { registerCatalogModule, registerCatalogProjections } from './app/catalog';
-import { registerCustomersModule } from './app/customers';
-import { registerDeliveryModule, registerDeliveryWorker } from './app/delivery';
+import { registerCustomersLookups, registerCustomersModule } from './app/customers';
+import { registerDeliveryAgentLookups, registerDeliveryModule, registerDeliveryWorker } from './app/delivery';
 import { registerFinanceModule, registerFinanceWorker } from './app/finance';
-import { registerSellersModule } from './app/sellers';
-import { registerHealthModule } from './app/health';
+import { registerReturnsModule, registerReturnsWorker } from './app/returns';
+import { registerPromotionsModule, registerPromotionsWorker } from './app/promotions';
+import { registerReviewsModule } from './app/reviews';
+import { registerBackofficeModule } from './app/backoffice';
+import { registerSellersLookups, registerSellersModule, registerSellersWorker } from './app/sellers';
+import { registerSupportLookups, registerSupportModule, registerSupportWorker } from './app/support';
+import { Dependency, registerHealthModule } from './app/health';
 import { registerIdentityModule } from './app/identity';
 import { registerInventoryModule } from './app/inventory';
-import { registerNotificationsModule } from './app/notifications';
+import { registerMediaModule, registerMediaWorker } from './app/media';
+import { registerNotificationsHttp, registerNotificationsModule } from './app/notifications';
 import { registerOrderingModule, registerOrderingWorker } from './app/ordering';
 import { registerPaymentsHttp, registerPaymentsModule } from './app/payments';
+import { registerRealtimeGateway, registerRealtimeWorker } from './app/realtime';
 import { TOKENS } from './lib/di';
 import { Outbox } from './lib/events';
-import { type ApiInfrastructure, type CoreInfrastructure, type WorkerInfrastructure } from './infrastructure';
+import { OpenApiRegistry } from './lib/http';
+import {
+  type ApiInfrastructure,
+  type CoreInfrastructure,
+  type RealtimeInfrastructure,
+  type WorkerInfrastructure,
+} from './infrastructure';
 
 /**
  * Composition root: one child container per process (and per test app), so tests never share state.
@@ -30,6 +44,8 @@ function createCoreContainer<E>(infra: CoreInfrastructure<E>): DependencyContain
   container.register(TOKENS.MessageBroker, { useValue: infra.broker });
   container.register(TOKENS.SecretBox, { useValue: infra.secretBox });
   container.register(TOKENS.Outbox, { useValue: new Outbox(infra.clock) });
+  // Every admin write records its audit row through this (spec 20 §2.2), in either process.
+  registerAuditRecorder(container);
   return container;
 }
 
@@ -44,20 +60,45 @@ export function createApiContainer(infra: ApiInfrastructure): DependencyContaine
   container.register(TOKENS.RateLimiters, { useValue: infra.rateLimiters });
   container.register(TOKENS.OpenApiRegistry, { useValue: infra.openApi });
   container.register(TOKENS.PaymentGateway, { useValue: infra.paymentGateway });
+  container.register(TOKENS.ObjectStorage, { useValue: infra.objectStorage });
 
-  registerHealthModule(container);
+  registerHealthModule(container, [
+    { dependency: Dependency.POSTGRES, check: () => infra.db.ping() },
+    { dependency: Dependency.REDIS, check: () => infra.cache.ping() },
+    {
+      dependency: Dependency.RABBITMQ,
+      check: () =>
+        infra.broker.isConnected() ? Promise.resolve() : Promise.reject(new Error('broker not connected')),
+    },
+    { dependency: Dependency.STORAGE, check: () => infra.objectStorage.ping() },
+  ]);
   registerIdentityModule(container);
+  // After identity: the audit-log views resolve actor emails through AccountService.
+  registerAuditModule(container);
+  registerMediaModule(container);
   registerCustomersModule(container);
   registerSellersModule(container);
   registerDeliveryModule(container);
   registerInventoryModule(container);
   registerCatalogModule(container);
+  // After sellers and catalog (spec 19 §1); before cart and ordering, which call it.
+  registerPromotionsModule(container);
   registerCartModule(container);
   registerPaymentsModule(container);
   registerPaymentsHttp(container);
   registerOrderingModule(container);
   // After sellers and delivery: finance resolves owners through their public APIs (FI-11).
   registerFinanceModule(container);
+  // The notification centre endpoints (spec 13 §8.4).
+  registerNotificationsHttp(container);
+  // After ordering, media, customers and sellers: support reads them (spec 16 §1).
+  registerSupportModule(container);
+  // After ordering, catalog, customers, sellers and media: reviews reads them (spec 17 §1).
+  registerReviewsModule(container);
+  // After ordering, inventory, payments, delivery, media, customers and sellers (spec 18 §1, A-11).
+  registerReturnsModule(container);
+  // After ordering, sellers, support, finance and delivery: the dashboard reads them (spec 20 §3.2).
+  registerBackofficeModule(container);
   return container;
 }
 
@@ -65,18 +106,64 @@ export function createWorkerContainer(infra: WorkerInfrastructure): DependencyCo
   const container = createCoreContainer(infra);
   container.register(TOKENS.EmailSender, { useValue: infra.emailSender });
   container.register(TOKENS.PaymentGateway, { useValue: infra.paymentGateway });
+  container.register(TOKENS.ObjectStorage, { useValue: infra.objectStorage });
+  container.register(TOKENS.ImageProcessor, { useValue: infra.imageProcessor });
 
+  // notifications.user-events resolves recipients through customers, sellers, delivery, ordering.
   registerNotificationsModule(container);
+  registerCustomersLookups(container);
+  registerDeliveryAgentLookups(container);
   // catalog.listing-projections reads seller statuses and stock (spec 06 UC-CA-7).
   registerSellersModule(container);
+  // sellers.rating-projection (spec 05 §8.1).
+  registerSellersWorker(container);
   registerInventoryModule(container);
   registerCatalogProjections(container);
   registerPaymentsModule(container);
+  // The close step releases coupon redemptions (spec 19 UC-PR-3).
+  registerPromotionsWorker(container);
   // ordering.shipment-updates and the order jobs (spec 09 §3.6–§3.10).
   registerOrderingWorker(container);
   // delivery.seller-order-updates and the assignment retry job (spec 11 DE-13).
   registerDeliveryWorker(container);
   // finance.ledger (spec 12 §1.2, FI-10).
   registerFinanceWorker(container);
+  // audit-retention (spec 20 §2.4).
+  registerAuditWorker(container);
+  // media.processing and media-cleanup (spec 14 UC-ME-3, UC-ME-4).
+  registerMediaWorker(container);
+  // realtime.fanout (spec 15 UC-RT-2): ordering's directory is registered with the ordering worker.
+  container.register(TOKENS.RealtimeEmitter, { useValue: infra.realtimeEmitter });
+  container.register(TOKENS.PushSender, { useValue: infra.pushSender });
+  registerRealtimeWorker(container);
+  // support-jobs (spec 16 UC-SU-5).
+  registerSupportWorker(container);
+  // returns.shipment-updates and returns-jobs (spec 18 UC-RE-6, UC-RE-9); after ordering and inventory.
+  registerReturnsWorker(container);
+  return container;
+}
+
+/** The Socket.IO gateway (spec 15): health, the profile lookups and the gateway's rooms service. */
+export function createRealtimeContainer(infra: RealtimeInfrastructure): DependencyContainer {
+  const container = rootContainer.createChildContainer();
+  container.register(TOKENS.Env, { useValue: infra.env });
+  container.register(TOKENS.Logger, { useValue: infra.logger });
+  container.register(TOKENS.Clock, { useValue: infra.clock });
+  container.register(TOKENS.Database, { useValue: infra.db });
+  container.register(TOKENS.TransactionRunner, { useValue: infra.db });
+  container.register(TOKENS.Cache, { useValue: infra.cache });
+  // The health router documents itself; the gateway serves no API docs.
+  container.register(TOKENS.OpenApiRegistry, { useValue: new OpenApiRegistry() });
+
+  registerHealthModule(container, [
+    { dependency: Dependency.POSTGRES, check: () => infra.db.ping() },
+    { dependency: Dependency.REDIS, check: () => infra.cache.ping() },
+  ]);
+  registerCustomersLookups(container);
+  registerSellersLookups(container);
+  registerDeliveryAgentLookups(container);
+  // ticket.subscribe checks access through support (spec 15 §3.3).
+  registerSupportLookups(container);
+  registerRealtimeGateway(container);
   return container;
 }

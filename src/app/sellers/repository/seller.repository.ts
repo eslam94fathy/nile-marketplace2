@@ -23,6 +23,8 @@ const COLUMNS = [
   'commission_rate',
   'rejection_reason',
   'approved_at',
+  'rating_count',
+  'rating_avg',
   'created_at',
   'updated_at',
 ] as const;
@@ -43,6 +45,11 @@ interface SellerRow {
   commission_rate: string;
   rejection_reason: string | null;
   approved_at: Date | null;
+  rating_count: number;
+  /** NUMERIC comes back from pg as a string; null until the first published review. */
+  rating_avg: string | null;
+  /** BIGINT comes back from pg as a string. */
+  rating_version: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -63,7 +70,7 @@ export interface FindOptions {
   forUpdate?: boolean;
 }
 
-function toModel(row: SellerRow): Seller {
+function toModel(row: Pick<SellerRow, (typeof COLUMNS)[number]>): Seller {
   return new Seller({
     id: row.id,
     userId: row.user_id,
@@ -81,6 +88,8 @@ function toModel(row: SellerRow): Seller {
     commissionRate: Rate.of(row.commission_rate),
     rejectionReason: row.rejection_reason,
     approvedAt: row.approved_at,
+    ratingCount: row.rating_count,
+    ratingAvg: row.rating_avg,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   });
@@ -130,6 +139,26 @@ export class SellerRepository {
   }
 
   /** Batched lookup for other modules (no N+1, G20). Unknown ids are left out. */
+  /** Profile id → user id, one batched query on the primary key; unknown ids are left out. */
+  async findUserIds(ids: readonly string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.db
+      .knex<{ id: string; user_id: string }>(T)
+      .select('id', 'user_id')
+      .whereIn('id', [...new Set(ids)]);
+    return new Map(rows.map((row) => [row.id, row.user_id]));
+  }
+
+  /** Batched lookup by user id (support admin views, spec 05 §8.3); unknown ids are left out. */
+  async findByUserIds(userIds: readonly string[]): Promise<Seller[]> {
+    if (userIds.length === 0) return [];
+    const rows = await this.db
+      .knex<SellerRow>(T)
+      .select(...COLUMNS)
+      .whereIn('user_id', [...new Set(userIds)]);
+    return rows.map(toModel);
+  }
+
   async findByIds(ids: readonly string[], trx?: DbTransaction): Promise<Seller[]> {
     if (ids.length === 0) return [];
     const rows = await this.exec(trx)<SellerRow>(T)
@@ -147,6 +176,10 @@ export class SellerRepository {
         ...pickupColumns(seller.pickup),
         status: seller.status,
         commission_rate: seller.commissionRate.toString(),
+        // No reviews yet; the rating projection fills them (spec 05 §8.1, no DB defaults, G13).
+        rating_count: 0,
+        rating_avg: null,
+        rating_version: '0',
       })
       .returning(COLUMNS);
     if (!row) throw new Error('sellers insert returned no row');
@@ -212,5 +245,35 @@ export class SellerRepository {
     const qb = this.exec(trx)<SellerRow>(T).select(...COLUMNS);
     const rows = (await applyListQuery(qb, query, 'id')) as SellerRow[];
     return rows.map(toModel);
+  }
+
+  /**
+   * The rating projection (spec 05 §8.1): applied only when newer than the stored version, so an older
+   * or duplicate `review.rating_changed` changes nothing. False when it was not newer.
+   */
+  async applyRating(
+    id: string,
+    rating: { ratingCount: number; ratingAvg: string | null; version: number },
+    trx: DbTransaction,
+  ): Promise<boolean> {
+    const updated = await trx<SellerRow>(T)
+      .where({ id })
+      .andWhere('rating_version', '<', rating.version)
+      .update({
+        rating_count: rating.ratingCount,
+        rating_avg: rating.ratingAvg,
+        rating_version: String(rating.version),
+        updated_at: trx.fn.now(),
+      });
+    return updated > 0;
+  }
+
+  /** Dashboard count (spec 20 §3.2), served by `idx_sellers_status_created_at_id`. */
+  async countByStatus(status: SellerStatus): Promise<number> {
+    const row = await this.db
+      .knex(T)
+      .where({ status })
+      .first<{ count: string }>(this.db.knex.raw('count(*) AS count'));
+    return Number(row.count);
   }
 }

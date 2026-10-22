@@ -5,6 +5,7 @@
  */
 import { type Router } from 'express';
 import { type DependencyContainer } from 'tsyringe';
+import { type IAuditRecorder } from '../../lib/audit';
 import { type JwtVerifier } from '../../lib/auth';
 import { type Env } from '../../lib/config';
 import { type ITransactionRunner } from '../../lib/db';
@@ -108,6 +109,14 @@ export async function inviteFirstAdmin(
 
   const invitations = container.resolve<InvitationService>(TOKENS.InvitationService);
   const transactions = container.resolve<ITransactionRunner>(TOKENS.TransactionRunner);
-  const user = await transactions.run((trx) => invitations.invite(email, 'admin', trx));
+  const audit = container.resolve<IAuditRecorder>(TOKENS.AuditRecorder);
+  const user = await transactions.run(async (trx) => {
+    const invited = await invitations.invite(email, 'admin', trx);
+    await audit.record(
+      { action: 'admin.seeded', targetId: invited.id, after: { email: invited.email, role: invited.role } },
+      trx,
+    );
+    return invited;
+  });
   return { userId: user.id };
 }

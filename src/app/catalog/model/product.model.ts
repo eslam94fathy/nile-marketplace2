@@ -15,6 +15,12 @@ export interface ProductProps {
   maxPrice: Money | null;
   inStock: boolean;
   publishedAt: Date | null;
+  /** The rating projection (spec 06 §9.1): published reviews, and their average as a 2-decimal string. */
+  ratingCount: number;
+  ratingAvg: string | null;
+  /** The admin block (spec 20 §3.4): both set while blocked. */
+  adminBlockedAt: Date | null;
+  adminBlockReason: string | null;
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -65,6 +71,18 @@ export class Product {
   }
   get publishedAt(): Date | null {
     return this.props.publishedAt;
+  }
+  get ratingCount(): number {
+    return this.props.ratingCount;
+  }
+  get ratingAvg(): string | null {
+    return this.props.ratingAvg;
+  }
+  get adminBlockedAt(): Date | null {
+    return this.props.adminBlockedAt;
+  }
+  get adminBlockReason(): string | null {
+    return this.props.adminBlockReason;
   }
   get deletedAt(): Date | null {
     return this.props.deletedAt;

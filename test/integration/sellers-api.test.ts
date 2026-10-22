@@ -277,7 +277,8 @@ describe('sellers endpoints (registration and self-service)', () => {
         [a.sellerId, b.sellerId].sort(),
       );
       expect(await api.getSummaries([a.sellerId])).toEqual([
-        { sellerId: a.sellerId, businessName: a.businessName },
+        // No reviews yet: no average (spec 05 §8.2).
+        { sellerId: a.sellerId, businessName: a.businessName, ratingAvg: null, ratingCount: 0 },
       ]);
 
       const [snapshot] = await t.infra.db.run((trx) => api.getCheckoutSnapshots([a.sellerId], trx));

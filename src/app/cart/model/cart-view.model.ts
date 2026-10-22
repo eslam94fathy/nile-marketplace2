@@ -1,6 +1,7 @@
 import { Money } from '../../../lib/money';
 import { type PurchasableVariant } from '../../catalog';
 import { type StockDto } from '../../inventory';
+import { type ImageView } from '../../media';
 import { CART_MAX_LINE_QUANTITY } from '../constants';
 import { CartItemIssue } from '../enums';
 import { type CartItem } from './cart-item.model';
@@ -12,6 +13,8 @@ export interface CartLineView {
   productId: string;
   productName: string;
   productSlug: string;
+  /** The product's category: the coupon scope (spec 19 PR-11). */
+  categoryId: string;
   sku: string;
   attributes: { attribute: string; value: string }[];
   unitPrice: Money;
@@ -19,6 +22,8 @@ export interface CartLineView {
   lineTotal: Money;
   issue: CartItemIssue | null;
   availableQuantity: number;
+  /** The variant's image (spec 08 §8); null when it has none. */
+  image: ImageView | null;
 }
 
 export interface CartSellerGroupView {
@@ -36,11 +41,13 @@ export interface CartView {
   hasIssues: boolean;
 }
 
-/** What the three batched lookups returned, keyed for the in-memory join (G20). */
+/** What the batched lookups returned, keyed for the in-memory join (G20). */
 export interface CartLookups {
   variants: ReadonlyMap<string, PurchasableVariant>;
   stock: ReadonlyMap<string, StockDto>;
   businessNames: ReadonlyMap<string, string>;
+  /** By media id. */
+  images: ReadonlyMap<string, ImageView>;
 }
 
 export const emptyCartView = (id: string | null): CartView => ({
@@ -98,6 +105,7 @@ export function assembleCartView(
       productId: variant.productId,
       productName: variant.productName,
       productSlug: variant.productSlug,
+      categoryId: variant.categoryId,
       sku: variant.sku,
       attributes: variant.attributes,
       unitPrice,
@@ -105,6 +113,7 @@ export function assembleCartView(
       lineTotal: unitPrice.timesQuantity(item.quantity),
       issue,
       availableQuantity: availableQuantityOf(issue, sellable),
+      image: variant.imageMediaId === null ? null : (lookups.images.get(variant.imageMediaId) ?? null),
     };
     let group = groups.get(variant.sellerId);
     if (!group) {

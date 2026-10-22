@@ -14,6 +14,7 @@ const SELLER_ORDER_ID = '0192f5e0-0000-7000-8000-000000000002';
 const payment = (overrides: Partial<Payment> = {}): Payment => ({
   id: 'payment-1',
   orderId: ORDER_ID,
+  customerId: 'customer-1',
   method: 'cod',
   status: 'pending',
   amount: Money.of('300.00'),
@@ -59,6 +60,7 @@ function setup(current: Payment | null, alreadyFlagged = '0.00') {
   container.register(TOKENS.PaymentRepository, { useValue: payments });
   container.register(TOKENS.PaymentRefundRepository, { useValue: refunds });
   container.register(TOKENS.Logger, { useValue: logger });
+  container.register(TOKENS.Clock, { useValue: { now: () => new Date('2026-10-22T10:00:00.000Z') } });
   return { payments, refunds, logger, service: container.resolve(OrderAdjustmentService) };
 }
 
@@ -89,7 +91,7 @@ describe('OrderAdjustmentService (spec 10 UC-PA-3)', () => {
 
   it('a fully refunded Kashier payment and a settled COD payment are left alone', async () => {
     for (const settled of [
-      payment({ method: 'kashier', status: 'refunded_manually' }),
+      payment({ method: 'kashier', status: 'refunded' }),
       payment({ status: 'collected' }),
     ]) {
       const { service, payments, refunds } = setup(settled);

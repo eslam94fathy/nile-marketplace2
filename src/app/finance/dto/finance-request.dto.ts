@@ -135,6 +135,12 @@ export const OWN_SETTLEMENT_LIST_SPEC: ListSpec = {
   defaultSort: '-createdAt',
 };
 
+/** `GET /seller/finance/holds` (spec 12 §8.6): unreleased holds, oldest first. */
+export const HOLD_LIST_SPEC: ListSpec = {
+  fields: { releaseAfter: { column: 'release_after', type: FieldType.DATE, ops: [], sortable: true } },
+  defaultSort: 'releaseAfter',
+};
+
 /** `GET /agent/finance/entries?account=fee|cod` (spec 12 §4.3). */
 export const AgentStatementAccount = {
   FEE: 'fee',

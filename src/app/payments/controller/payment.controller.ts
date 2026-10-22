@@ -12,6 +12,7 @@ import {
   REFUND_LIST_SPEC,
   RefundIdParamsDto,
   toAdminPaymentDto,
+  toRefundDetailDto,
   toRefundDto,
   type WebhookReceivedDto,
 } from '../dto/payment-admin.dto';
@@ -58,6 +59,16 @@ export class PaymentAdminController {
   getOrderPayment = async (req: Request, res: Response): Promise<void> => {
     const { orderId } = await validateDto(OrderPaymentParamsDto, req.params);
     sendSuccess(res, HTTP_STATUS.OK, toAdminPaymentDto(await this.admin.getPaymentOfOrder(orderId)));
+  };
+
+  getRefund = async (req: Request, res: Response): Promise<void> => {
+    const { refundId } = await validateDto(RefundIdParamsDto, req.params);
+    sendSuccess(res, HTTP_STATUS.OK, toRefundDetailDto(await this.admin.getRefund(refundId)));
+  };
+
+  retryRefund = async (req: Request, res: Response): Promise<void> => {
+    const { refundId } = await validateDto(RefundIdParamsDto, req.params);
+    sendSuccess(res, HTTP_STATUS.OK, toRefundDto(await this.admin.retryRefund(refundId)));
   };
 
   recordRefund = async (req: Request, res: Response): Promise<void> => {

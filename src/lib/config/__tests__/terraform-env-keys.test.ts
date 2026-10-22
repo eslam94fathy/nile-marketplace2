@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { apiEnvSchema, seedAdminEnvSchema, workerEnvSchema } from '..';
+import { apiEnvSchema, realtimeEnvSchema, seedAdminEnvSchema, workerEnvSchema } from '..';
+
+type Process = 'api' | 'worker' | 'realtime' | 'migrate';
 
 /** infra/terraform/modules/environment/env-keys.json (plan §10, P8-Q10). */
 interface EnvKeys {
@@ -9,9 +11,10 @@ interface EnvKeys {
   database: string[];
   api: string[];
   worker: string[];
+  realtime: string[];
   migrate: string[];
-  derived: Record<'common' | 'database' | 'api' | 'worker' | 'migrate', string[]>;
-  secrets: Record<'api' | 'worker' | 'migrate', string[]>;
+  derived: Record<'common' | 'database' | Process, string[]>;
+  secrets: Record<Process, string[]>;
   manual_secrets: string[];
 }
 
@@ -20,9 +23,15 @@ const envKeys = JSON.parse(
 ) as EnvKeys;
 
 /** Keys a deployed environment never sets: local development only (refused in staging / production). */
-const DEV_ONLY = new Set(['MAILPIT_URL']);
+const DEV_ONLY = new Set([
+  'MAILPIT_URL',
+  'STORAGE_ENDPOINT',
+  'STORAGE_PUBLIC_ENDPOINT',
+  'STORAGE_ACCESS_KEY_ID',
+  'STORAGE_SECRET_ACCESS_KEY',
+]);
 
-function deployedKeys(process: 'api' | 'worker' | 'migrate'): string[] {
+function deployedKeys(process: Process): string[] {
   const { derived, secrets } = envKeys;
   return [
     ...envKeys.common,
@@ -48,6 +57,7 @@ describe('Terraform env keys match the env schemas', () => {
   it.each([
     ['api', apiEnvSchema],
     ['worker', workerEnvSchema],
+    ['realtime', realtimeEnvSchema],
     // The migrate task also runs seed-admin, whose schema is a superset of migrate's.
     ['migrate', seedAdminEnvSchema],
   ] as const)('%s: every key exactly once, nothing extra', (process, schema) => {

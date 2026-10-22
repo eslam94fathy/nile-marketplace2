@@ -139,23 +139,29 @@ describe('identity AuthService', () => {
   });
 
   describe('resetPassword (UC-ID-6)', () => {
-    it('stores the new hash and revokes every session', async () => {
-      const { service, users, tokens } = setup();
+    it('stores the new hash, revokes every session and writes user.sessions_revoked', async () => {
+      const { service, users, tokens, outbox } = setup();
       const user = makeUser();
       users.findByEmail.mockResolvedValue(user);
       await service.resetPassword('a@x.io', '123456', 'new password');
       expect(users.updatePasswordHash).toHaveBeenCalledWith(user.id, 'hash:new password', FAKE_TRX);
       expect(tokens.revokeAllSessions).toHaveBeenCalledWith(user.id, FAKE_TRX);
+      expect(outbox.add).toHaveBeenCalledExactlyOnceWith(FAKE_TRX, {
+        contract: expect.objectContaining({ type: 'user.sessions_revoked', version: 1 }) as unknown,
+        aggregateId: user.id,
+        payload: { userId: user.id, reason: 'password_reset', revokedAt: NOW.toISOString() },
+      });
     });
 
     it('INVALID_OTP for an inactive account or a consumed code', async () => {
-      const { service, users, codeService } = setup();
+      const { service, users, codeService, outbox } = setup();
       users.findByEmail.mockResolvedValue(makeUser({ status: UserStatus.SUSPENDED }));
       expect(await errorCode(service.resetPassword('a@x.io', '123456', 'new password'))).toBe('INVALID_OTP');
       users.findByEmail.mockResolvedValue(makeUser());
       codeService.consume.mockResolvedValue(false);
       expect(await errorCode(service.resetPassword('a@x.io', '123456', 'new password'))).toBe('INVALID_OTP');
       expect(users.updatePasswordHash).not.toHaveBeenCalled();
+      expect(outbox.add).not.toHaveBeenCalled();
     });
   });
 

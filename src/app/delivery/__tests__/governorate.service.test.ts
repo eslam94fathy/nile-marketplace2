@@ -26,8 +26,11 @@ class SpyLogger implements ILogger {
 function setup() {
   const repository = {
     findAll: vi.fn(() => Promise.resolve([ASWAN, CAIRO])),
+    findById: vi.fn((): Promise<Governorate | undefined> => Promise.resolve(CAIRO)),
     updateDeliveryFee: vi.fn((): Promise<Governorate | undefined> => Promise.resolve(CAIRO)),
   };
+  const audit = { record: vi.fn(() => Promise.resolve()) };
+  const trx = { isTransaction: true };
   const store = new Map<string, string>();
   const cache = {
     get: vi.fn((key: string) => Promise.resolve(store.get(key) ?? null)),
@@ -48,9 +51,15 @@ function setup() {
   container.register(TOKENS.Env, { useValue: { GOVERNORATES_CACHE_TTL_SECONDS: TTL } });
   container.register(TOKENS.Logger, { useValue: logger });
   container.register(TOKENS.DeliverySettingsService, { useValue: settings });
+  container.register(TOKENS.AuditRecorder, { useValue: audit });
+  container.register(TOKENS.TransactionRunner, {
+    useValue: { run: <T>(work: (t: typeof trx) => Promise<T>) => work(trx) },
+  });
   container.registerSingleton(TOKENS.GovernorateService, GovernorateService);
   return {
     repository,
+    audit,
+    trx,
     cache,
     store,
     logger,
@@ -109,13 +118,23 @@ describe('delivery GovernorateService (cache-aside, spec 11 DE-3)', () => {
   });
 
   it('updateDeliveryFee deletes the cached list after the write', async () => {
-    const { service, repository, store } = setup();
+    const { service, repository, store, audit, trx } = setup();
     await service.list();
 
     await service.updateDeliveryFee('g-cairo', Money.of('60'), 'admin-1');
 
-    expect(repository.updateDeliveryFee).toHaveBeenCalledWith('g-cairo', Money.of('60'));
+    expect(repository.updateDeliveryFee).toHaveBeenCalledWith('g-cairo', Money.of('60'), trx);
     expect(store.has(GOVERNORATES_CACHE_KEY)).toBe(false);
+    // Audited in the same transaction, with the old and new fee (spec 20 §2.3).
+    expect(audit.record).toHaveBeenCalledWith(
+      {
+        action: 'governorate.updated',
+        targetId: 'g-cairo',
+        before: { deliveryFee: '50.00' },
+        after: { deliveryFee: '50.00' },
+      },
+      trx,
+    );
   });
 
   it('updateDeliveryFee still succeeds when the invalidation fails (bounded by the TTL)', async () => {
@@ -127,14 +146,15 @@ describe('delivery GovernorateService (cache-aside, spec 11 DE-3)', () => {
   });
 
   it('updateDeliveryFee on an unknown id → 404 GOVERNORATE_NOT_FOUND, cache untouched', async () => {
-    const { service, repository, cache } = setup();
-    repository.updateDeliveryFee.mockResolvedValueOnce(undefined);
+    const { service, repository, cache, audit } = setup();
+    repository.findById.mockResolvedValueOnce(undefined);
 
     await expect(service.updateDeliveryFee('missing', null, 'admin-1')).rejects.toMatchObject({
       code: 'GOVERNORATE_NOT_FOUND',
       httpStatus: 404,
     });
     expect(cache.delete).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
   });
 });
 

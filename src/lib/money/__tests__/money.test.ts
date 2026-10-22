@@ -45,6 +45,59 @@ describe('lib/money Money', () => {
     expect(() => m('1.00').splitEvenly(0)).toThrow(RangeError);
   });
 
+  it('allocates in proportion with largest-remainder rounding (coupon shares, spec 19 §1.2)', () => {
+    const strings = (shares: Money[]) => shares.map((share) => share.toString());
+    expect(strings(m('10.00').allocate([m('100.00'), m('100.00'), m('100.00')]))).toEqual([
+      '3.34',
+      '3.33',
+      '3.33',
+    ]);
+    // Exact shares 1.428…, 2.857…, 5.714…: floors 1.42, 2.85, 5.71; the 2 leftover piastres go to the
+    // largest remainders (0.857… and 0.714…).
+    expect(strings(m('10.00').allocate([m('25.00'), m('50.00'), m('100.00')]))).toEqual([
+      '1.43',
+      '2.86',
+      '5.71',
+    ]);
+    expect(strings(m('30.00').allocate([m('10.00'), m('20.00')]))).toEqual(['10.00', '20.00']);
+    expect(strings(m('0.00').allocate([m('5.00')]))).toEqual(['0.00']);
+    expect(strings(Money.zero().allocate([Money.zero()]))).toEqual(['0.00']);
+    expect(() => m('1.00').allocate([Money.zero()])).toThrow(RangeError);
+    expect(() => m('1.00').allocate([m('1.00').minus(m('2.00'))])).toThrow(RangeError);
+  });
+
+  it('allocation always adds up and never exceeds a weight (random carts)', () => {
+    let seed = 7;
+    const random = (max: number) => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+      return seed % max;
+    };
+    for (let run = 0; run < 500; run += 1) {
+      const weights = Array.from({ length: 1 + random(8) }, () =>
+        m(`${1 + random(5000)}.${String(random(100)).padStart(2, '0')}`),
+      );
+      const total = Money.sum(weights);
+      const amount = m(
+        `${random(Number(total.toString().split('.')[0]) + 1)}.${String(random(100)).padStart(2, '0')}`,
+      );
+      const target = amount.greaterThan(total) ? total : amount;
+      const shares = target.allocate(weights);
+      expect(Money.sum(shares).equals(target)).toBe(true);
+      shares.forEach((share, i) => {
+        expect(share.isNegative()).toBe(false);
+        expect(share.greaterThan(weights[i] ?? Money.zero())).toBe(false);
+      });
+    }
+  });
+
+  it('multiplies by a ratio, rounded half-up (kept coupon shares, spec 09 §8.7)', () => {
+    expect(m('10.00').timesRatio(1, 3).toString()).toBe('3.33');
+    expect(m('10.00').timesRatio(2, 3).toString()).toBe('6.67');
+    expect(m('0.05').timesRatio(1, 2).toString()).toBe('0.03'); // 0.025 → 0.03
+    expect(m('7.00').timesRatio(0, 4).toString()).toBe('0.00');
+    expect(() => m('1.00').timesRatio(1, 0)).toThrow(RangeError);
+  });
+
   it('compares values', () => {
     expect(m('1.00').equals(m('1'))).toBe(true);
     expect(m('2.00').greaterThan(m('1.99'))).toBe(true);

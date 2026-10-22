@@ -193,6 +193,39 @@ describe('delivery: seller-order updates', () => {
     expect((await flow.act(agent, shipmentId, 'out-for-delivery')).amountToCollect).toBe('150.00');
   });
 
+  it('the COD amount follows newPaidSubtotal; an event from before coupons falls back to newSubtotal (R2-P7)', async () => {
+    const agent = await flow.soleAgent();
+    const { orderId, sellerOrders } = await flow.order([{ price: '100.00', quantity: 3 }]);
+    const a = must(sellerOrders[0]);
+    await flow.readyAndAssigned(a, agent);
+    // A coupon share on the kept units: the customer pays less than the subtotal.
+    const paid = {
+      ...(await envelopeOf('seller_order.ready_for_pickup', a.sellerOrderId)),
+      eventId: randomUUID(),
+      eventType: 'seller_order.items_cancelled',
+      payload: {
+        sellerOrderId: a.sellerOrderId,
+        orderId,
+        sellerId: a.sellerId,
+        paymentMethod: 'cod',
+        previousStatus: 'ready_for_pickup',
+        lines: [],
+        amountCancelled: '90.00',
+        newSubtotal: '200.00',
+        newPaidSubtotal: '180.00',
+        newCommission: '20.00',
+        newSellerNet: '180.00',
+        reason: 'out_of_stock',
+      },
+    } as EventEnvelope;
+    await consume(paid);
+    expect(must(await shipmentOf(a.sellerOrderId)).cod_items_amount).toBe('180.00');
+
+    const { newPaidSubtotal: _dropped, ...older } = paid.payload;
+    await consume({ ...paid, eventId: randomUUID(), payload: { ...older, newSubtotal: '100.00' } });
+    expect(must(await shipmentOf(a.sellerOrderId)).cod_items_amount).toBe('100.00');
+  });
+
   it('an event that overtakes ready_for_pickup is retried, then applied; one with no shipment coming is acked (DE-10, DE-15)', async () => {
     await flow.soleAgent();
     const { sellerOrders } = await flow.order([{ price: '50.00', quantity: 2 }, '30.00']);

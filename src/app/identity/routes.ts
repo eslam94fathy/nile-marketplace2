@@ -1,5 +1,6 @@
 import { type Request, Router } from 'express';
-import { type JwtVerifier, UserRole } from '../../lib/auth';
+import { type ParameterObject } from 'openapi3-ts/oas31';
+import { type JwtVerifier, REFRESH_COOKIE, UserRole, WEB_CLIENT } from '../../lib/auth';
 import { type OpenApiRegistry, type RouteDoc } from '../../lib/http';
 import {
   authenticate,
@@ -7,12 +8,14 @@ import {
   byIp,
   byIpAndEmail,
   emailRateKey,
+  HEADER,
   RateLimitClass,
   type RateLimiters,
 } from '../../lib/middleware';
 import { ADMIN_PATHS as A, IDENTITY_PATHS as P } from './constants';
 import { type AdminController } from './controller/admin.controller';
 import { type AuthController } from './controller/auth.controller';
+import { clearRefreshCookieOnInvalidToken } from './controller/refresh-token-transport';
 import {
   AcceptInviteDto,
   ChangePasswordDto,
@@ -24,7 +27,12 @@ import {
 } from './dto/auth-request.dto';
 import { AuthTokensDto, MessageDto } from './dto/auth-response.dto';
 import { InviteAdminDto, SuspendUserDto } from './dto/admin-request.dto';
-import { AdminListItemDto, InvitedAdminDto, UserStatusDto } from './dto/admin-response.dto';
+import {
+  AdminListItemDto,
+  AdminUserListItemDto,
+  InvitedAdminDto,
+  UserStatusDto,
+} from './dto/admin-response.dto';
 
 const TAGS = ['auth'] as const;
 const ADMIN_TAGS = ['admin: users'] as const;
@@ -55,43 +63,91 @@ export function identityRoutes(deps: IdentityRouteDeps): Router {
   router.post(P.VERIFY_EMAIL, strictAuth, auth.verifyEmail);
   router.post(P.RESEND_OTP, strictAuth, auth.resendOtp);
   router.post(P.LOGIN, strictAuth, auth.login);
-  router.post(P.REFRESH, refreshLimit, auth.refresh);
+  router.post(P.REFRESH, refreshLimit, auth.refresh, clearRefreshCookieOnInvalidToken);
   router.post(P.LOGOUT, refreshLimit, auth.logout);
   router.post(P.FORGOT_PASSWORD, strictAuth, auth.forgotPassword);
   router.post(P.RESET_PASSWORD, strictAuth, auth.resetPassword);
   router.post(P.ACCEPT_INVITE, strictAuth, auth.acceptInvite);
-  router.post(P.CHANGE_PASSWORD, authenticate(deps.jwtVerifier), strictAuthByAccount, auth.changePassword);
+  router.post(
+    P.CHANGE_PASSWORD,
+    authenticate(deps.jwtVerifier),
+    strictAuthByAccount,
+    auth.changePassword,
+    clearRefreshCookieOnInvalidToken,
+  );
 
+  // Spec 03 §8.1: the web client's opt-in header, and the cookie it sends back.
+  const webHeader: ParameterObject = {
+    name: HEADER.NILE_CLIENT,
+    in: 'header',
+    required: false,
+    schema: { enum: [WEB_CLIENT] },
+    description: `${WEB_CLIENT}: the refresh token travels in the HttpOnly cookie ${REFRESH_COOKIE.NAME} (Path ${REFRESH_COOKIE.PATH}) instead of the body`,
+  };
+  const refreshCookie: ParameterObject = {
+    name: REFRESH_COOKIE.NAME,
+    in: 'cookie',
+    required: false,
+    schema: { type: 'string' },
+    description: `Instead of the body refreshToken; needs ${HEADER.NILE_CLIENT}: ${WEB_CLIENT}. Both at once → 400`,
+  };
   const doc = (
     path: string,
     summary: string,
     requestBody: NonNullable<RouteDoc['requestBody']>,
     responses: RouteDoc['responses'],
-    authRequired = false,
+    options: { authRequired?: boolean; parameters?: readonly ParameterObject[] } = {},
   ) =>
     docs.add({
       method: 'post',
       path: `${deps.basePath}${path}`,
       summary,
       tags: TAGS,
-      auth: authRequired,
+      auth: options.authRequired ?? false,
       requestBody,
+      query: options.parameters,
       responses,
     });
-  const tokens = { 200: { description: 'Logged in: a new token pair', body: AuthTokensDto } };
+  const issuesTokens = { parameters: [webHeader] };
+  const readsToken = { parameters: [webHeader, refreshCookie] };
+  const tokens = {
+    200: {
+      description: `Logged in: a new token pair (refreshToken null with ${HEADER.NILE_CLIENT}: ${WEB_CLIENT}, which sets the cookie)`,
+      body: AuthTokensDto,
+    },
+  };
   const noContent = { 204: { description: 'Done' } };
   const message = { 200: { description: 'Generic answer, the same for every outcome', body: MessageDto } };
 
-  doc(P.VERIFY_EMAIL, 'Verify the email with the OTP and log in (INVALID_OTP)', VerifyEmailDto, tokens);
+  doc(
+    P.VERIFY_EMAIL,
+    'Verify the email with the OTP and log in (INVALID_OTP)',
+    VerifyEmailDto,
+    tokens,
+    issuesTokens,
+  );
   doc(P.RESEND_OTP, 'Send a new email-verification OTP (cooldown applies)', EmailOnlyDto, message);
-  doc(P.LOGIN, 'Log in (INVALID_CREDENTIALS, EMAIL_NOT_VERIFIED, ACCOUNT_SUSPENDED)', LoginDto, tokens);
+  doc(
+    P.LOGIN,
+    'Log in (INVALID_CREDENTIALS, EMAIL_NOT_VERIFIED, ACCOUNT_SUSPENDED)',
+    LoginDto,
+    tokens,
+    issuesTokens,
+  );
   doc(
     P.REFRESH,
-    'Rotate the refresh token; reusing an old one revokes the session (INVALID_REFRESH_TOKEN)',
+    'Rotate the refresh token; reusing an old one revokes the session (INVALID_REFRESH_TOKEN, which clears the cookie)',
     RefreshTokenDto,
-    { 200: { description: 'A new token pair', body: AuthTokensDto } },
+    tokens,
+    readsToken,
   );
-  doc(P.LOGOUT, "End this device's session (always 204)", RefreshTokenDto, noContent);
+  doc(
+    P.LOGOUT,
+    "End this device's session (always 204; clears the cookie)",
+    RefreshTokenDto,
+    noContent,
+    readsToken,
+  );
   doc(P.FORGOT_PASSWORD, 'Send a password-reset OTP to an active account', EmailOnlyDto, message);
   doc(
     P.RESET_PASSWORD,
@@ -104,13 +160,14 @@ export function identityRoutes(deps: IdentityRouteDeps): Router {
     'Accept an invite: set the password and log in (INVALID_INVITE_TOKEN)',
     AcceptInviteDto,
     tokens,
+    issuesTokens,
   );
   doc(
     P.CHANGE_PASSWORD,
     'Change the password; other sessions are revoked (INVALID_CURRENT_PASSWORD, PASSWORD_UNCHANGED, INVALID_REFRESH_TOKEN)',
     ChangePasswordDto,
     noContent,
-    true,
+    { authRequired: true, parameters: readsToken.parameters },
   );
 
   mountAdminRoutes(router, deps);
@@ -124,6 +181,7 @@ function mountAdminRoutes(router: Router, deps: IdentityRouteDeps): void {
 
   router.post(A.ADMINS, ...adminOnly, admin.inviteAdmin);
   router.get(A.ADMINS, ...adminOnly, admin.listAdmins);
+  router.get(A.USERS, ...adminOnly, admin.listUsers);
   router.post(A.RESEND_INVITE, ...adminOnly, admin.resendInvite);
   router.post(A.SUSPEND, ...adminOnly, admin.suspend);
   router.post(A.REACTIVATE, ...adminOnly, admin.reactivate);
@@ -154,6 +212,27 @@ function mountAdminRoutes(router: Router, deps: IdentityRouteDeps): void {
     ],
     responses: {
       200: { description: 'One page of admins', body: AdminListItemDto, isArray: true, paginated: true },
+    },
+  });
+  docs.add({
+    ...common,
+    method: 'get',
+    path: `${basePath}${A.USERS}`,
+    summary:
+      'List users of every role (spec 20 §3.3). Filters: role[eq], status[eq|in], email[like] (prefix, case-insensitive), createdAt[gte|lte]. Sort: createdAt (default -createdAt)',
+    query: [
+      { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1 } },
+      { name: 'cursor', in: 'query', schema: { type: 'string' } },
+      { name: 'sort', in: 'query', schema: { enum: ['createdAt', '-createdAt'] } },
+      { name: 'role[eq]', in: 'query', schema: { enum: Object.values(UserRole) } },
+      { name: 'status[eq]', in: 'query', schema: { type: 'string' } },
+      { name: 'status[in]', in: 'query', schema: { type: 'string' }, description: 'comma-separated' },
+      { name: 'email[like]', in: 'query', schema: { type: 'string' }, description: 'email prefix' },
+      { name: 'createdAt[gte]', in: 'query', schema: { type: 'string', format: 'date-time' } },
+      { name: 'createdAt[lte]', in: 'query', schema: { type: 'string', format: 'date-time' } },
+    ],
+    responses: {
+      200: { description: 'One page of users', body: AdminUserListItemDto, isArray: true, paginated: true },
     },
   });
   docs.add({

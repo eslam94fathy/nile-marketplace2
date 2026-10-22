@@ -163,7 +163,7 @@ describe('ordering: cancellations, seller actions and the acceptance timeout', (
 
   describe('seller accepts and marks ready (UC-OR-3)', () => {
     it('placed → accepted → ready_for_pickup, with the pickup snapshot event; wrong order of steps is 409', async () => {
-      const { a, result, soA } = await twoSellerOrder();
+      const { buyer, a, result, soA } = await twoSellerOrder();
       const seller = api.as(a.sellerToken);
       const early = await seller.post(`/seller/orders/${soA.id}/ready`);
       expect([early.status, errorBody(early).error.code]).toEqual([
@@ -176,7 +176,19 @@ describe('ordering: cancellations, seller actions and the acceptance timeout', (
       expect(successBody<SellerOrderDto>(accepted).data).toMatchObject({ status: 'accepted' });
       expect(successBody<SellerOrderDto>(accepted).data.acceptedAt).not.toBeNull();
       expect((await orderRow(result.order.id))?.status).toBe('in_progress');
+      // Spec 09 §8.2: one event per acceptance, nothing for the refused repeat below.
+      expect(await api.eventsOf('seller_order.accepted', soA.id)).toEqual([
+        {
+          sellerOrderId: soA.id,
+          orderId: result.order.id,
+          orderNumber: result.order.orderNumber,
+          sellerId: a.sellerId,
+          customerId: buyer.customerId,
+          acceptedAt: successBody<SellerOrderDto>(accepted).data.acceptedAt,
+        },
+      ]);
       expect((await seller.post(`/seller/orders/${soA.id}/accept`)).status).toBe(409);
+      expect(await api.eventsOf('seller_order.accepted', soA.id)).toHaveLength(1);
 
       const ready = await seller.post(`/seller/orders/${soA.id}/ready`);
       expect(successBody<SellerOrderDto>(ready).data).toMatchObject({ status: 'ready_for_pickup' });

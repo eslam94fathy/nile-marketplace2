@@ -4,6 +4,7 @@ import {
   IsBoolean,
   IsEmail,
   IsIn,
+  IsInt,
   IsISO8601,
   IsOptional,
   IsString,
@@ -47,6 +48,13 @@ export class AdminSellerListItemDto {
   @IsOptional()
   @IsISO8601()
   approvedAt!: string | null;
+
+  @IsOptional()
+  @IsString()
+  ratingAvg!: string | null;
+
+  @IsInt()
+  ratingCount!: number;
 }
 
 export class SellerStatusHistoryEntryDto {
@@ -129,6 +137,8 @@ export function toAdminSellerListItemDto({ seller, email }: AdminSellerListItem)
     pickupGovernorateId: seller.pickup.governorateId,
     createdAt: seller.createdAt.toISOString(),
     approvedAt: seller.approvedAt?.toISOString() ?? null,
+    ratingAvg: seller.ratingAvg,
+    ratingCount: seller.ratingCount,
   };
 }
 

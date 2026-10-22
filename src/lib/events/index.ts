@@ -1,4 +1,5 @@
 export * from './contracts';
+export { readRatingProjection, type RatingProjection } from './rating-projection';
 export { Outbox, OUTBOX_TABLE, type IOutbox, type OutboxEvent } from './outbox';
 export {
   OutboxDrainer,
