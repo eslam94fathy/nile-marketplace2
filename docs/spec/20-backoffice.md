@@ -1,6 +1,6 @@
 # Spec 20 — back-office and audit
 
-Status: **v1.4 APPROVED (2026-10-21).** v1.4: BO-20…BO-23 the dashboard windows, status index, placed GMV and module edges (§7.2). v1.3: BO-18, BO-19 the directory cursors (§7.2). v1.2: R2-P5 clarifications BO-12…BO-17 (§7.2, every recommendation accepted). v1.1: R2-P1 implementation clarifications BO-9…BO-11 (§7.1, confirmed 2026-10-20). Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (admin back-office and audit), R-19, S-9 (answered for R2), spec 09 v2.0 §8.4 (admin cancellation), spec 16 SU-5. §7 BO-1…BO-8 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.5 APPROVED (2026-10-21).** v1.5: BO-24 the return figures (§7.2, R2-P6). v1.4: BO-20…BO-23 the dashboard windows, status index, placed GMV and module edges (§7.2). v1.3: BO-18, BO-19 the directory cursors (§7.2). v1.2: R2-P5 clarifications BO-12…BO-17 (§7.2, every recommendation accepted). v1.1: R2-P1 implementation clarifications BO-9…BO-11 (§7.1, confirmed 2026-10-20). Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (admin back-office and audit), R-19, S-9 (answered for R2), spec 09 v2.0 §8.4 (admin cancellation), spec 16 SU-5. §7 BO-1…BO-8 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -133,8 +133,9 @@ interface DashboardDto {
   topSellers: { sellerId: string; businessName: string; deliveredGmv: string }[];
   sellers: { pendingApproval: number };
   support: { open: number; awaitingAdmin: number; slaBreached: number };
-  finance: { codOutstanding: string; sellerPayable: string; agentFeePayable: string };
-  delivery: { awaitingAssignment: number; outForDelivery: number };
+  finance: { codOutstanding: string; sellerPayable: string; sellerPending: string; agentFeePayable: string; customerRefundPayable: string };  // v1.5
+  delivery: { awaitingAssignment: number; outForDelivery: number; returnsInProgress: number };                                                  // v1.5
+  returns: { byStatus: Record<open ReturnStatus, number> };                                                                                     // v1.5
 }
 ```
 - Cached in Redis as one value `v1:backoffice:dashboard` for `DASHBOARD_CACHE_TTL_SECONDS` (60). No invalidation: the figures are allowed to be up to a minute old, and `generatedAt` says how old. Redis down → computed fresh (cache-aside, architecture §8).
@@ -217,3 +218,4 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | BO-21 | `orders.byStatus` is served by `idx_seller_orders_open_status (status) WHERE status IN (<the 8 open statuses>)`, concurrently (database D-22) | §3.2 |
 | BO-22 | Placed GMV counts every seller order of an order placed that day except `cancelled` ones (a failed delivery returned to the seller still counts); orders awaiting payment have no `placed_at` and count nowhere | §3.2 |
 | BO-23 | `backoffice` imports only the modules the dashboard reads: ordering, sellers, support, finance, delivery (returns joins in R2-P6); the user directory lives in identity and customers (architecture v2.4) | §3.2 |
+| BO-24 | R2-P6 adds `returns.byStatus` (spec 18 §2), `finance.sellerPending` and `finance.customerRefundPayable` (spec 12 §8.6), and `delivery.returnsInProgress` (spec 11 §8.4: return shipments not yet `delivered` or `cancelled`), with the edge `backoffice → returns` (spec 18 RE-15) | §3.2 |

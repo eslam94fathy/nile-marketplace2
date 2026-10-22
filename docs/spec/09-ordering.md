@@ -1,7 +1,7 @@
 # Spec 09 — ordering
 
 Status: **v1.5 APPROVED (2026-10-13).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: `amountCancelled` when the last units are cancelled (OR-12); what the order totals count (OR-13). v1.2: shipment events that overtake their predecessor are retried (OR-14). v1.3: the expiry job abandons nothing and waits on a payment in flight (OR-6 as amended by spec 10 PA-11, PA-13). v1.4: `seller_order.items_cancelled` carries `previousStatus` (OR-15). v1.5: one open Kashier payment per customer (OR-16, Phase 8 security review F-2). Changes from now on need explicit approval and a version bump.
-**v2.2 APPROVED (2026-10-21):** §8.11 OR-26 reviewable-item lookups for spec 17 (R2-P4). **v2.1 APPROVED (2026-10-20):** §8.10 R2-P2 implementation clarifications OR-23…OR-25 (every recommendation accepted). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 pieces other R2 specs rely on: a public API (ordering is now called by other modules), `seller_order.accepted`, the order-item image snapshot and admin cancellation (S-9 for R2). §8.7 (returns, spec 18) and §8.8 (coupons, spec 19) added 2026-10-20. Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.6 OR-17…OR-19 answered 2026-10-20. §8.9 OR-20…OR-22 answered 2026-10-20.
+**v2.3 APPROVED (2026-10-21):** §8.12 OR-27 return amounts before coupons (R2-P6). **v2.2 APPROVED (2026-10-21):** §8.11 OR-26 reviewable-item lookups for spec 17 (R2-P4). **v2.1 APPROVED (2026-10-20):** §8.10 R2-P2 implementation clarifications OR-23…OR-25 (every recommendation accepted). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 pieces other R2 specs rely on: a public API (ordering is now called by other modules), `seller_order.accepted`, the order-item image snapshot and admin cancellation (S-9 for R2). §8.7 (returns, spec 18) and §8.8 (coupons, spec 19) added 2026-10-20. Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.6 OR-17…OR-19 answered 2026-10-20. §8.9 OR-20…OR-22 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -396,3 +396,9 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | # | Clarification | Where |
 |---|---|---|
 | OR-26 | `getReviewableItem` also returns the item's `attributes` (the snapshot, spec 17 RV-10). `listDeliveredItems(customerId, { deliveredAfter, excludeProductIds, cursor, limit })` leaves out items of `excludeProductIds` (spec 17 RV-12) and pages on `date_trunc('milliseconds', delivered_at)` then the order item id (database D-19), newest first; `primaryImage` comes from the item's `image_media_id` snapshot | §8.1 |
+
+### 8.12 Clarifications (R2-P6 returns, approved 2026-10-21)
+
+| # | Clarification | Where |
+|---|---|---|
+| OR-27 | Until R2-P7 adds coupons, the §8.7 amount rule runs with every discount at zero: `paid` share = subtotal share, commission base = kept subtotal, `platformDiscountReversed` = `"0.00"`. R2-P7 adds the discount columns and terms (spec 18 RE-11) | §8.7 |

@@ -1,7 +1,7 @@
 # Spec 12 — finance
 
 Status: **v1.0 APPROVED (2026-10-13)**, with the Phase 7 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
-**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 holding period (Q-25, R-16), coupon funding (R-17) and return / refund entries (spec 18). Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.7 FI-12…FI-15 answered 2026-10-20.
+**v2.1 APPROVED (2026-10-21):** §8.8 FI-16 coupons in R2-P7 (R2-P6). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 holding period (Q-25, R-16), coupon funding (R-17) and return / refund entries (spec 18). Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.7 FI-12…FI-15 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -205,3 +205,9 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | FI-13 | Holds for seller orders delivered before R2 | **Rec:** none: they are already available · or move them back to pending until their window ends |
 | FI-14 | Coupon cost account | **Rec:** a platform account `platform_promotions` that only goes negative, so commission revenue stays the gross commission · or net the discount out of `platform_commission_revenue` (can drive it below 0) |
 | FI-15 | Refund event before the return booking | **Rec:** retry until the booking exists · or allow `customer_refund_payable` to dip below 0 like delivery revenue |
+
+### 8.8 Clarifications (R2-P6 returns, approved 2026-10-21)
+
+| # | Clarification | Where |
+|---|---|---|
+| FI-16 | R2-P6 adds `seller_pending`, `customer_refund_payable`, the holds and the return / refund bookings. `platform_promotions`, row 8 (`promotion_funded`) and row 11 (`promotion_reversed`) come with coupons in R2-P7 (spec 18 RE-11) | §8.1, §8.2, §8.4 |

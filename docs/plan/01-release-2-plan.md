@@ -276,6 +276,21 @@ First task: verify Kashier's refund API on the test environment (request, respon
 Tests: the whole return lifecycle incl. auto-approve, escalation, dispute, pickup failure; one open return under two parallel requests; amounts exact over several partial returns (with and without coupon data once P7 lands); refund job success / transient / permanent / unknown outcome (no blind resend); ledger balances for the spec 12 §8.4 example; hold released only without an open return; payout blocked while `seller_payable` is negative.
 Done when: CI green; on staging a Kashier test order is returned and refunded automatically, and a COD return reaches the admin refund queue with decrypted payout details.
 
+Clarifications RE-11…RE-20 (spec 18 §7.1, approved 2026-10-21): coupon terms at zero until R2-P7; Kashier refund verification at step 7; the `_manually` statuses dropped now; seller dispute photos; the return dashboard figures, notifications and realtime messages in this phase. Branch `r2-p6-returns` stacked on `r2-p5-backoffice`.
+
+### 9.1 Order of work (one commit each)
+1. Spec and design bumps (spec 18 v1.1, 10 v2.1, 14 v1.2, 20 v1.5, 13 v2.6, 15 v1.3, 09 v2.3, 12 v2.1, database v2.10), this section.
+2. Migrations: returns tables, ordering's returned columns and `order_item_returns`, `payment_refunds` columns and statuses with the status contract, `shipments.kind`, finance accounts and `seller_order_holds`, `return_restock`, audit actions.
+3. Ordering's returns API (`getReturnableItems`, `quoteReturn`, `getReturnLogistics`, `recordReturn`, read changes) and `inventory.restock`.
+4. Returns module: request, seller decision, escalation, admin decision, cancel, customer / seller / admin views.
+5. Delivery return shipments, `returns.shipment-updates`, completion (UC-RE-7), dispute, returns jobs.
+6. Payments: `return.completed` flags, the COD queue with decrypted details, retry, `getRefundsByReturnIds`, `payment.refunded`.
+7. Kashier refund verification (with the user), then UC-PA-6 and the gateway refund.
+8. Finance: holds, release job, return and refund bookings, seller balance and holds, payouts blocked while `seller_payable` is negative.
+9. Notifications, realtime, dashboard figures.
+10. Postman collection.
+11. Staging check: waits for P9.
+
 ## 10. R2-P7: coupons
 
 Scope: spec 19, cart preview, ordering §8.8 (checkout, columns, paid-amount events), payments / delivery / finance consumers on the paid-amount fields (R2-Q4 deploy order), close-step release.

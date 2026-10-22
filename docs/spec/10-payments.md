@@ -1,7 +1,7 @@
 # Spec 10 — payments
 
 Status: **v1.4 APPROVED (2026-10-13).** v1.0: approved by the user with the Phase 5 clarifications in §7.1. v1.1: what Kashier's test environment showed (PA-11…PA-17: no abandon, one open session per order, status mapping, config). v1.2: the worker holds no Kashier secret (PA-18); the webhook answers in the standard envelope (PA-19). v1.3: flagged refunds never exceed what was collected (PA-20). v1.4: the signed fields must cover what we read (PA-21, Phase 8 security review F-1). Changes from now on need explicit approval and a version bump.
-**v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 automated Kashier refunds and COD customer refunds (R-15, spec 18). Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.7 PA-22…PA-26 answered 2026-10-20.
+**v2.1 APPROVED (2026-10-21):** §8.8 R2-P6 plan clarifications PA-27…PA-29 (spec 18 RE-12, RE-13, RE-18). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 automated Kashier refunds and COD customer refunds (R-15, spec 18). Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.7 PA-22…PA-26 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -192,3 +192,11 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | PA-24 | Unknown outcome of a refund call | **Rec:** never re-send without first reading Kashier's refunds of the transaction; undecidable → manual queue · or re-send relying on Kashier to refuse a duplicate |
 | PA-25 | Where refunds run | **Rec:** the worker (jobs belong there), which now holds the Kashier secret key · or the api process (keeps PA-18, but runs a background loop in the api) |
 | PA-26 | Customer notification on refund | **Rec:** in-app + push (`orders`) when a refund succeeds or is recorded ("Your refund for order #{n} was issued") · or none |
+
+### 8.8 Clarifications (R2-P6 plan, approved 2026-10-21)
+
+| # | Clarification | Where |
+|---|---|---|
+| PA-27 | Kashier's public docs (2026-10-21): `PUT {fep}/v3/orders/:orderId`, header `Authorization: <secret key>`, body `{ apiOperation: "REFUND", reason?, transaction: { amount?, targetTransactionId? } }`, result `SUCCESS` / `FAILURE` / `PENDING`. They document no merchant reference or idempotency key and no way to list an order's refunds. Before UC-PA-6 is coded (plan step 7) the user pays a Kashier test order and the call is checked on the test environment with the test keys: partial, full, over-refund, repeat, reading the order back. The findings are written here as K-8…; until then: `PENDING` keeps the refund `processing` for the next run, and an unknown outcome is matched by Kashier's transaction id or amount and time, never re-sent blindly (PA-24) | §8.3 |
+| PA-28 | `partially_refunded_manually` / `refunded_manually` are converted to `partially_refunded` / `refunded` and dropped from the CHECK in the same R2-P6 migration (no production data yet; database D-23) | §8.1 |
+| PA-29 | Kashier refunds created `pending_manual` in R1 keep `method = manual`; `POST …/retry` hands one to the job (`pending_auto`) | §8.4 |

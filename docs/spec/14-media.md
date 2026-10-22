@@ -1,6 +1,6 @@
 # Spec 14 — media
 
-Status: **v1.1 APPROVED (2026-10-20).** v1.1: R2-P1 implementation clarifications ME-7…ME-13 (§7.1). Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10 (R-1, R-2, R-9), `01-api-conventions.md` v1.4. §7 ME-1…ME-6 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.2 APPROVED (2026-10-21).** v1.2: ME-14 sellers upload return photos (§7.2). v1.1: R2-P1 implementation clarifications ME-7…ME-13 (§7.1). Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10 (R-1, R-2, R-9), `01-api-conventions.md` v1.4. §7 ME-1…ME-6 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md` (v1.2 adds the media events).
 
 ## 1. Scope & owned tables
@@ -23,7 +23,7 @@ Who may upload each purpose (checked against the JWT role at upload time):
 | `category_image` | admin | public |
 | `review_image` | customer | public |
 | `support_attachment` | customer, seller, admin | **private** |
-| `return_photo` | customer | **private** |
+| `return_photo` | customer, seller (ME-14) | **private** |
 
 Limits:
 - **env:** max upload size `MEDIA_MAX_UPLOAD_BYTES` (5 MB, R-1); max `pending` + `processing` uploads per user `MEDIA_MAX_OPEN_UPLOADS_PER_USER` (20).
@@ -173,3 +173,9 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | ME-11 | `claim` details: `field` `mediaIds[<index>]`, `constraint` one of `not_found` (missing or another user's: not told apart), `not_ready`, `wrong_purpose`, `already_claimed`, `duplicate`, `value` the id. `release` ignores ids that aren't claimed. `getImages` takes no viewer: the caller has authorised it | §2 |
 | ME-12 | Processing: an original missing while `processing` (e.g. removed by the lifecycle rule) → `failed` (`decode_failed`, `warn`). An output over 16 383 px on a side (the WebP limit; e.g. 200 × 20 000) → `dimensions_out_of_range`. Private outputs carry `Cache-Control: private, no-store`. `MEDIA_PROCESSING_STUCK` is logged on every cleanup run while a row stays stuck (count + up to 20 ids) | UC-ME-3, UC-ME-4 |
 | ME-13 | An invalid upload on `complete`: the row becomes `failed` first, then the object is deleted (a failed delete is `warn MEDIA_OBJECT_DELETE_FAILED`) | UC-ME-2 |
+
+### 7.2 Clarifications (R2-P6 plan, approved 2026-10-21)
+
+| # | Clarification | Where |
+|---|---|---|
+| ME-14 | `return_photo` may be uploaded by a customer (the request) or a seller (a dispute, spec 18 UC-RE-8, RE-14). Returns checks that each photo was uploaded by the caller | §1 |

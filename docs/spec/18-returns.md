@@ -1,6 +1,6 @@
 # Spec 18 — returns
 
-Status: **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (returns and refunds, holding period), R-13…R-16, `14-media.md` (return photos), spec 09 v2.0 §8.7, spec 10 v2.0 §8, spec 11 v2.0 §8, spec 12 v2.0 §8, spec 07 v2.0 §8. §7 RE-1…RE-10 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.1 APPROVED (2026-10-21).** v1.1: R2-P6 plan clarifications RE-11…RE-20 (§7.1, every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (returns and refunds, holding period), R-13…R-16, `14-media.md` (return photos), spec 09 v2.0 §8.7, spec 10 v2.0 §8, spec 11 v2.0 §8, spec 12 v2.0 §8, spec 07 v2.0 §8. §7 RE-1…RE-10 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -218,3 +218,18 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | RE-8 | COD payout details | **Rec:** mobile wallet number or InstaPay address, given in the request, stored encrypted, sent encrypted to payments, cleared from returns at the end · or bank account details as a third method |
 | RE-9 | Return notifications | **Rec:** in-app + push under `orders`: the seller on a new request, a received parcel and an escalation outcome; the customer on approval (incl. auto-approval), rejection, pickup, completion, refusal and when the refund is paid · or customer notifications only |
 | RE-10 | Abuse limits | **Rec:** none beyond the one-open rule and the window in R2; admins see a customer's return history in the admin list (`customerId` filter) · or a cap on returns per customer per month |
+
+### 7.1 Clarifications (R2-P6 plan, approved 2026-10-21)
+
+| # | Clarification | Where |
+|---|---|---|
+| RE-11 | Coupons come in R2-P7: R2-P6 implements the return amounts and bookings with the discount at zero (no discount columns yet, `platformDiscountReversed` always `"0.00"`, no `platform_promotions` account). R2-P7 adds the discount terms and their tests (spec 09 OR-27, spec 12 FI-16) | §3, §5 |
+| RE-12 | Kashier's refund API is verified on its test environment in plan step 7, before UC-PA-6 (spec 10 PA-27); the gateway is written against the documented call first | spec 10 §8.3 |
+| RE-13 | The `_manually` payment statuses are converted and dropped in one R2-P6 migration: nothing is in production yet (spec 10 PA-28, database D-23) | spec 10 §8.1 |
+| RE-14 | A seller may upload `return_photo` media for a dispute (spec 14 ME-14); returns checks that each photo was uploaded by the caller | UC-RE-8 |
+| RE-15 | The dashboard gains the return figures in R2-P6: `returns.byStatus`, `finance.sellerPending`, `finance.customerRefundPayable`, `delivery.returnsInProgress` (spec 20 BO-24) | §2 |
+| RE-16 | Notification links: customer `/returns/<returnId>`, seller `/seller/returns/<returnId>`; `refund_issued` links to `/orders/<orderId>` and is sent for every refund reason (spec 13 NO-34) | spec 13 §8.8 |
+| RE-17 | The realtime messages of spec 15 §8 (`return.updated`, `shipment.updated` with `kind`, `payment.updated` for refunds) ship in R2-P6 (spec 15 RT-21) | spec 15 §8 |
+| RE-18 | Kashier refunds left `pending_manual` from R1 stay manual (`method = manual`); an admin retry hands one to the automated job (spec 10 PA-29) | spec 10 §8.4 |
+| RE-19 | Module edges as architecture §14.2: returns → ordering, inventory, payments, delivery, media; finance → returns; backoffice → returns | §1 |
+| RE-20 | Order of work: plan §9.1 | plan |
