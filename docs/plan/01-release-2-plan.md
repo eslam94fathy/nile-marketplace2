@@ -297,6 +297,20 @@ Scope: spec 19, cart preview, ordering §8.8 (checkout, columns, paid-amount eve
 Tests: allocation sums exactly (property-style test over random carts), global limit with N parallel checkouts (exactly the limit succeed), per-customer limit, release only on a fully cancelled checkout, commission per funding (R-17), ledger balances with platform and seller coupons, R1 events without a coupon unchanged (snapshot test of payloads).
 Done when: CI green; on staging a checkout with a platform coupon and one with a seller coupon are delivered and booked correctly.
 
+Clarifications PR-10…PR-22 (spec 19 §7.1, approved 2026-10-22): `quote` inside the checkout transaction; catalog category lookups (CA-20); cancellations with kept discount shares (OR-31); the consumers ship with checkout (no two-step deploy before go-live); return discount terms and `platform_promotions` now (FI-20); the admin block of a seller coupon with its notification and audit (NO-35, BO-27); `KASHIER_TOTAL_ZERO` (OR-32); gross GMV (BO-26). Branch `r2-p7-coupons` stacked on `r2-p6-returns`.
+
+### 10.1 Order of work (one commit each)
+1. Spec and design bumps (spec 19 v1.1, 09 v2.6, 06 v2.2, 12 v2.3, 13 v2.7, 20 v1.7, 02 v1.4, database v2.13), this section.
+2. Migrations: `coupons`, `coupon_redemptions`, the ordering coupon columns (backfill 0), `platform_promotions` and the promotion entry types, `coupon_blocked` notification type, audit actions.
+3. Catalog `categoryId` and `getCategorySubtreeIds`; promotions module: discount computation and allocation (pure, property-style test), `quote`, seller and admin coupon management, block / unblock, audit, `coupon.blocked`.
+4. Cart coupon preview and the `coupon-preview` rate class.
+5. Ordering: checkout with a coupon (quote, money, `redeem`, `KASHIER_TOTAL_ZERO`), cancellations with kept discounts, close-step `release`, paid amounts in the events, read changes.
+6. Return amounts with the discount terms (OR-27 lifted).
+7. Consumers: delivery `newPaidSubtotal`, payments on paid amounts, finance rows 8 and 11.
+8. `coupon_blocked` notification; dashboard GMV check (gross).
+9. Postman collection.
+10. Staging check: waits for P9.
+
 ## 11. R2-P8: hardening
 
 Scope: security review (`docs/security/r2-review.md`): uploads (presign conditions, magic bytes, image bombs, private URL leakage), sockets (origin, auth, room isolation, flooding), cookies / CSRF, push SSRF, payout data encryption, refund paths, audit completeness; findings fixed with regression tests. Socket and upload load test on staging (k6 WebSocket + upload scenarios) against architecture §14.8; R2 runbooks (VAPID rotation, media bucket, realtime scaling, refund queue handling); alarms for the new queues and log events.

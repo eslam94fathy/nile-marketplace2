@@ -1,7 +1,7 @@
 # Spec 02 — Domain Events Catalogue (Release 1)
 
 Status: **v1.1 APPROVED (2026-10-12).** v1.0 approved by the user 2026-10-08. v1.1: `seller_order.items_cancelled` carries `previousStatus` (E-8). It replaces the event list in `00-overview.md` §7 and the event names in `01-architecture.md` §3/§5 (differences in §5 below). Changes from now on need explicit approval and a version bump.
-**v1.3 APPROVED (2026-10-21):** §6.4 `product.unblocked` has no consumer in R2 (spec 20 BO-14). **v1.2 APPROVED (2026-10-20):** §6 adds the Release 2 events of specs 03, 09, 13, 14, 15, 16; §6.4 (2026-10-20) those of specs 06, 17, 20; §6.5 those of specs 09 §8.7–8.8, 10, 11, 18, 19. Kept as its own section, so every cross-reference stays valid (R2-Q1).
+**v1.4 APPROVED (2026-10-22):** §6.5 `coupon.blocked` (spec 19 PR-20, R2-P7). **v1.3 APPROVED (2026-10-21):** §6.4 `product.unblocked` has no consumer in R2 (spec 20 BO-14). **v1.2 APPROVED (2026-10-20):** §6 adds the Release 2 events of specs 03, 09, 13, 14, 15, 16; §6.4 (2026-10-20) those of specs 06, 17, 20; §6.5 those of specs 09 §8.7–8.8, 10, 11, 18, 19. Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Contracts live in `src/lib/events/contracts/` (architecture §2), one file per event: name constant + payload type + version.
 
 ---
@@ -336,8 +336,9 @@ New queues:
 | `return_shipment.delivered` | delivery | shipment | returns, realtime |
 | `return_shipment.failed` | delivery | shipment | returns, realtime |
 | `payment.refunded` | payments | payment | finance, notifications, realtime |
+| `coupon.blocked` | promotions | coupon | notifications (`notifications.user-events`, spec 13 NO-35) |
 
-Payloads are in spec 18 §5 (with RE-23: `return.approved` carries `orderNumber` and `paymentMethod`), spec 11 §8.2 and spec 10 §8.6. `return.completed.refundPayoutEncrypted` is encrypted with the S-1 key like the secret email variables (§3.1).
+`coupon.blocked` carries `{ couponId: string; sellerId: string; at: string }` (spec 19 PR-20). The other payloads are in spec 18 §5 (with RE-23: `return.approved` carries `orderNumber` and `paymentMethod`), spec 11 §8.2 and spec 10 §8.6. `return.completed.refundPayoutEncrypted` is encrypted with the S-1 key like the secret email variables (§3.1).
 
 Changed payloads (additive, still version 1; consumers deployed before the publisher, spec 09 OR-22):
 - `shipment.assigned` += `kind`, `returnId`.

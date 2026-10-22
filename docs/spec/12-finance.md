@@ -1,7 +1,7 @@
 # Spec 12 — finance
 
 Status: **v1.0 APPROVED (2026-10-13)**, with the Phase 7 clarifications in §7.1. Changes from now on need explicit approval and a version bump.
-**v2.2 APPROVED (2026-10-22):** §8.8 FI-17…FI-19 the holds view, the pending / available split of a return, refund bookings (R2-P6). **v2.1 APPROVED (2026-10-21):** §8.8 FI-16 coupons in R2-P7 (R2-P6). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 holding period (Q-25, R-16), coupon funding (R-17) and return / refund entries (spec 18). Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.7 FI-12…FI-15 answered 2026-10-20.
+**v2.3 APPROVED (2026-10-22):** §8.9 FI-20 coupon bookings (R2-P7). **v2.2 APPROVED (2026-10-22):** §8.8 FI-17…FI-19 the holds view, the pending / available split of a return, refund bookings (R2-P6). **v2.1 APPROVED (2026-10-21):** §8.8 FI-16 coupons in R2-P7 (R2-P6). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 holding period (Q-25, R-16), coupon funding (R-17) and return / refund entries (spec 18). Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.7 FI-12…FI-15 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -214,3 +214,9 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | FI-17 | `GET /seller/finance/holds` reads the order numbers in one batched call to ordering's `getNotificationParties({ sellerOrderIds })`: edge `finance → ordering` (architecture v2.6 A-12); `blockedByReturn` from `returns.getOpenReturnSellerOrderIds` | §8.6 |
 | FI-18 | A return's seller debits (rows 9, then 13) come from `seller_pending` up to what the seller order's unreleased hold still holds, the rest from `seller_payable` (FI-12); the hold's `held_amount` drops by the pending part. No hold (delivered before R2, FI-13) or a released one: all from `seller_payable`. The hold row is locked before the accounts (finance's lock order: hold → accounts by id), as in the release job | §8.3, §8.4 |
 | FI-19 | Refund bookings (§8.5) use `reference_type = refund`, `reference_id` = the refund id, for `reason = return` only. `GET /seller/finance/balance` answers `{ available, pending, updatedAt }` (§8.6) instead of `{ balance, updatedAt }`; `updatedAt` is the later of the two accounts' | §8.5, §8.6 |
+
+### 8.9 Clarifications (R2-P7 coupons, approved 2026-10-22)
+
+| # | Clarification | Where |
+|---|---|---|
+| FI-20 | R2-P7 adds the `platform_promotions` account type and the entry types `promotion_funded` / `promotion_reversed`, with rows 8 (`seller_order.delivered.platformDiscount`) and 11 (`return.completed.platformDiscountReversed`), each only when `> 0` (completes FI-16). It is a platform account (no owner) and the admin account list shows it. Row 8 is booked in the delivery transaction with rows 1–7, so the delivered booking stays balanced | §8.2, §8.4 |

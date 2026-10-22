@@ -1,6 +1,6 @@
 # Spec 19 — promotions (coupons)
 
-Status: **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (coupons), R-17, R-18, spec 09 v2.0 §8.8 (checkout and snapshots), spec 12 v2.0 §8 (funding in the ledger). §7 PR-1…PR-9 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.1 APPROVED (2026-10-22).** v1.1: R2-P7 plan clarifications PR-10…PR-22 (§7.1): `quote` inside the checkout transaction, the admin block of a seller coupon, Kashier at a zero total. **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (coupons), R-17, R-18, spec 09 v2.0 §8.8 (checkout and snapshots), spec 12 v2.0 §8 (funding in the ledger). §7 PR-1…PR-9 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -45,7 +45,7 @@ Enums:
 
 | Method | Caller | Notes |
 |---|---|---|
-| `quote(code, customerId, lines: { variantId, productId, sellerId, categoryId, lineTotal }[]) → CouponQuote` | cart (preview), ordering (checkout, before its transaction) | Reads only. Validates §3.1 and computes §1.2. `CouponQuote = { couponId, code, funding, sellerId, discountTotal, lines: { variantId, discount }[] }` |
+| `quote(code, customerId, lines: { variantId, productId, sellerId, categoryId, lineTotal }[]) → CouponQuote` | cart (preview), ordering (checkout, inside its transaction after the cart lock, PR-10) | Reads only, no locks; takes an optional `trx`. Validates §3.1 and computes §1.2. `CouponQuote = { couponId, code, funding, sellerId, discountTotal, lines: { variantId, discount }[] }` |
 | `redeem({ couponId, customerId, orderId, discountTotal }, trx)` | ordering (checkout, the **last** step before `cart.clear`) | UC-PR-2 |
 | `release(orderId, trx)` | ordering (close step) | UC-PR-3 |
 
@@ -121,10 +121,12 @@ Checkout gains `couponCode opt str(4..32)` (spec 09 §8.8).
 | `GET /admin/coupons` | whitelist `funding` · `status` (`eq`) · `sellerId` (uuid, `eq`) · `code` (text, `eq`) · `createdAt` (sort, default `-createdAt`) | `200 CouponDto[]` + meta | – |
 | `POST /admin/coupons` | `CreateCouponDto` (platform-funded) | `201 CouponDto` | `COUPON_INVALID`, `COUPON_CODE_TAKEN`, `CATEGORY_NOT_FOUND`, `SELLER_NOT_FOUND` 422 |
 | `GET /admin/coupons/:couponId` | – | `200 CouponDto` + the last 50 redemptions `{ orderId, customerId, discountTotal, status, createdAt }` | `COUPON_NOT_FOUND` |
-| `PATCH /admin/coupons/:couponId` | as seller (platform coupons); for a seller coupon only `status` | `200 CouponDto` | `COUPON_NOT_FOUND`, `COUPON_LOCKED`, `COUPON_INVALID` |
+| `PATCH /admin/coupons/:couponId` | as seller, platform coupons only (PR-20) | `200 CouponDto` | `COUPON_NOT_FOUND`, `COUPON_LOCKED`, `COUPON_INVALID`, `COUPON_SELLER_FUNDED` 409 |
+| `POST /admin/coupons/:couponId/block` | `reason str(3..500)` (seller coupons, PR-20) | `200 CouponDto` | `COUPON_NOT_FOUND`, `COUPON_BLOCK_INVALID_STATUS` 409 |
+| `POST /admin/coupons/:couponId/unblock` | – | `200 CouponDto` | `COUPON_NOT_FOUND`, `COUPON_BLOCK_INVALID_STATUS` |
 
 ## 5. Events
-Published: none (redemptions are inside the checkout; the money effects travel in ordering's events, spec 09 §8.8).
+Published: `coupon.blocked` `{ couponId, sellerId, at }` → notifications (the seller, PR-20). Redemptions are inside the checkout; the money effects travel in ordering's events (spec 09 §8.8).
 Consumed: none.
 
 ## 6. Error codes
@@ -142,8 +144,11 @@ Consumed: none.
 | `COUPON_INVALID` | 422 | Create / update cross-field rules (details) |
 | `COUPON_CODE_TAKEN` | 409 | `uq_coupons_code` |
 | `COUPON_LOCKED` | 409 | Changing a locked field after the first redemption |
+| `COUPON_BLOCKED` | 409 | A seller activates a coupon an admin blocked (PR-20) |
+| `COUPON_BLOCK_INVALID_STATUS` | 409 | Block a blocked or a platform coupon, unblock an unblocked one (PR-20) |
+| `COUPON_SELLER_FUNDED` | 409 | Admin `PATCH` of a seller coupon (PR-20: block / unblock instead) |
 
-New rate-limit class `coupon-preview`: user id, `RATE_LIMIT_COUPON_PREVIEW_POINTS` / `_DURATION_SECONDS` (proposed 20 per minute), so codes can't be guessed by brute force (PR-6). Checkout keeps its `checkout` limit.
+New rate-limit class `coupon-preview`: user id, `RATE_LIMIT_COUPON_PREVIEW_POINTS` / `_WINDOW_SECONDS` (20 per 60 s, PR-16), so codes can't be guessed by brute force (PR-6). Checkout keeps its `checkout` limit.
 
 ## 7. Decisions (answered 2026-10-20)
 
@@ -160,3 +165,21 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | PR-7 | Seller coupons and commission (R-17) | **Rec:** commission on the discounted subtotal; the seller's net drops by the discount and the commission on it; shown in the seller order (`discountAmount`, `discountFunding`) · (R-17 already decided; this only confirms the display) |
 | PR-8 | Changes after the first redemption | **Rec:** only `endsAt`, `globalLimit` (≥ redemptions) and `status`; everything else locked so orders keep matching their coupon · or editable at any time |
 | PR-9 | Admin deactivating seller coupons | **Rec:** allowed (abuse), audited · or sellers only |
+
+### 7.1 Clarifications (R2-P7 plan, approved 2026-10-22)
+
+| # | Clarification | Where |
+|---|---|---|
+| PR-10 | `quote` runs **inside** the checkout transaction, after step 4 (the cart lines are known only under the cart lock), reading through `trx` without locks (spec 09 §8.8). The preview calls it without a transaction | §2 |
+| PR-11 | Catalog's `getVariantsForPurchase` returns the product's `categoryId`; new public `getCategorySubtreeIds(categoryId) → string[]` from the cached tree (spec 06 CA-20). Cart and ordering pass `categoryId` in the quote lines | §1.2 |
+| PR-12 | Codes are upper-cased on input (preview, checkout, create) before the pattern check; nothing is trimmed | §1.1 |
+| PR-13 | Create: `endsAt > now`; `startsAt` may lie in the past (active at once). Update: a new `endsAt` must be `> now` and `> startsAt` | UC-PR-4 |
+| PR-14 | `coupons.first_redeemed_at` is set by the first `redeem` and never cleared: a coupon stays locked (PR-8) after every redemption is released, because its orders still reference it | UC-PR-2, UC-PR-4 |
+| PR-15 | Partial cancellations keep the redemption and re-check nothing (minimum, scope): each line keeps `round(discount_original × kept / quantity)`, the seller order's `discount_amount` is the sum of its lines' kept shares, and commission is recomputed per funding on the kept base (spec 09 OR-31) | UC-PR-3 |
+| PR-16 | Rate keys `RATE_LIMIT_COUPON_PREVIEW_POINTS` / `RATE_LIMIT_COUPON_PREVIEW_WINDOW_SECONDS` (20 / 60), api env, no defaults (spec 14 ME-8 naming) | §6 |
+| PR-17 | Seller coupon reads work in any seller status; writes need `approved` (SE-4) | §4.2 |
+| PR-18 | Nothing is in production, so the paid-amount consumers (delivery `newPaidSubtotal`, payments, finance rows 8 and 11) ship in the same PR as checkout; the R2-Q4 two-step deploy is not needed (as database D-23) | spec 09 §8.8 |
+| PR-19 | Returns get their discount terms now (completes spec 09 OR-27, spec 12 FI-16): the paid shares, the seller-funded commission base, `platformDiscountReversed` and the `platform_promotions` account | spec 09 §8.7 |
+| PR-20 | **Admin block of a seller coupon** (amends PR-9, as the product block, spec 20 §3.4): `coupons.admin_blocked_at`, `admin_block_reason VARCHAR(500)` (both null or both set, seller coupons only). `block` also sets `status = inactive`; while blocked the seller can't activate it (`409 COUPON_BLOCKED`) but may change its other unlocked fields. `unblock` clears the columns and leaves it `inactive` for the seller to re-activate. Admin `PATCH` is for platform coupons only. Audited as `coupon.blocked` / `coupon.unblocked` (spec 20 BO-27); `coupon.blocked` notifies the seller (`coupon_blocked`, spec 13 NO-35). `CouponDto` gains `adminBlocked: boolean`, `adminBlockReason: string | null` | §4.3, §5, §6 |
+| PR-21 | A Kashier checkout whose total is `0.00` (a fixed coupon covering every item and a zero delivery fee) → `422 KASHIER_TOTAL_ZERO` (ordering); the client offers COD, which works at zero (spec 09 OR-32) | spec 09 §8.8 |
+| PR-22 | Order of work: plan §10.1 | plan |

@@ -1,7 +1,7 @@
 # Spec 13 — notifications (minimal)
 
 Status: **v1.1 APPROVED (2026-10-08).** Approved by the user. v1.1: Phase 1 implementation clarifications (§7.1, N-1…N-5). Changes from now on need explicit approval and a version bump.
-**v2.6 APPROVED (2026-10-21):** §8.15 return and refund links NO-34 (R2-P6). **v2.5 APPROVED (2026-10-21):** §8.14 product-block link NO-33 (R2-P5). **v2.4 APPROVED (2026-10-21):** §8.13 review links NO-32 (R2-P4). **v2.3 APPROVED (2026-10-21):** §8.12 support links NO-31 (R2-P3). **v2.2 APPROVED (2026-10-21):** §8.11 Web Push clarifications NO-22…NO-30 (every recommendation accepted). **v2.1 APPROVED (2026-10-20):** §8.10 R2-P2 implementation clarifications NO-12…NO-21 (every recommendation accepted). **v2.0 APPROVED (2026-10-20):** §8 adds Release 2 push (standard Web Push, R-20), the in-app notification centre and preferences (R-5…R-7). Kept as its own section, so every cross-reference stays valid (R2-Q1).
+**v2.7 APPROVED (2026-10-22):** §8.16 coupon block NO-35 (R2-P7). **v2.6 APPROVED (2026-10-21):** §8.15 return and refund links NO-34 (R2-P6). **v2.5 APPROVED (2026-10-21):** §8.14 product-block link NO-33 (R2-P5). **v2.4 APPROVED (2026-10-21):** §8.13 review links NO-32 (R2-P4). **v2.3 APPROVED (2026-10-21):** §8.12 support links NO-31 (R2-P3). **v2.2 APPROVED (2026-10-21):** §8.11 Web Push clarifications NO-22…NO-30 (every recommendation accepted). **v2.1 APPROVED (2026-10-20):** §8.10 R2-P2 implementation clarifications NO-12…NO-21 (every recommendation accepted). **v2.0 APPROVED (2026-10-20):** §8 adds Release 2 push (standard Web Push, R-20), the in-app notification centre and preferences (R-5…R-7). Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -253,3 +253,9 @@ RE-9 and PA-26 accepted 2026-10-20. All under `orders`:
 | # | Clarification | Where |
 |---|---|---|
 | NO-34 | Return notifications link to `/returns/<returnId>` (customer) and `/seller/returns/<returnId>` (seller); `refund_issued` links to `/orders/<orderId>` and is sent for every refund reason, not only returns (spec 10 PA-26, spec 18 RE-16) | §8.8 |
+
+### 8.16 Clarifications (R2-P7 coupons, approved 2026-10-22)
+
+| # | Clarification | Where |
+|---|---|---|
+| NO-35 | New row: `coupon.blocked` → the seller (`sellerId` through sellers `getUserIds`), category `orders`, type `coupon_blocked`, "Coupon blocked" · "One of your coupons was blocked by the platform.", link `/seller/coupons/<couponId>`. Consumed on `notifications.user-events` like `product.blocked`; the type joins the `user_notifications.type` CHECK. Unblocking notifies nobody (spec 19 PR-20) | §8.8 |

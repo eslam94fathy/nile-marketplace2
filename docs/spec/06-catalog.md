@@ -1,7 +1,7 @@
 # Spec 06 — catalog
 
 Status: **v1.4 APPROVED (2026-10-10).** v1.0: approved with the Phase 3 clarifications in §7.1. v1.1: an active category always has an active parent (CA-13); attribute writes lock the whole subtree (CA-2). v1.2: product writes hold their category `FOR SHARE` (CA-2). v1.3: the product-detail cache holds neither visibility nor stock, so the consumers have nothing to invalidate (CA-8). v1.4: typo tolerance matches words, not the whole name (CA-14, P3-O1). Changes from now on need explicit approval and a version bump.
-**v2.1 APPROVED (2026-10-20):** §8.7 R2-P1 implementation clarifications CA-15…CA-19 (every recommendation accepted). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 images (spec 14, R-2, R-3). §9 (2026-10-20) adds the rating projection (spec 17) and product cards (wishlist, spec 04 §8). Kept as its own section, so every cross-reference stays valid (R2-Q1).
+**v2.2 APPROVED (2026-10-22):** §10 CA-20 coupon scope lookups (R2-P7). **v2.1 APPROVED (2026-10-20):** §8.7 R2-P1 implementation clarifications CA-15…CA-19 (every recommendation accepted). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 images (spec 14, R-2, R-3). §9 (2026-10-20) adds the rating projection (spec 17) and product cards (wishlist, spec 04 §8). Kept as its own section, so every cross-reference stays valid (R2-Q1).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -400,3 +400,9 @@ interface ProductCardDto {
 }
 ```
 - The review endpoints' `PRODUCT_NOT_FOUND` (spec 17 §4.1) uses the existing public visibility rule, through a new `isPubliclyVisible(productId) → boolean` (`EXISTS`, G22).
+
+## 10. Clarifications (R2-P7 coupons, approved 2026-10-22)
+
+| # | Clarification | Where |
+|---|---|---|
+| CA-20 | `PurchasableVariant` gains the product's `categoryId`; new public `getCategorySubtreeIds(categoryId) → string[]` (the category and every descendant, active or not, from the cached tree; unknown id → `[]`). Promotions uses them for the coupon scope (spec 19 PR-11) and checks a coupon's `scopeCategoryId` with the existing `CATEGORY_NOT_FOUND` lookup | §2 |

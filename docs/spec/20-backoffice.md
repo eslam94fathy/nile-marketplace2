@@ -1,6 +1,6 @@
 # Spec 20 — back-office and audit
 
-Status: **v1.6 APPROVED (2026-10-22).** v1.6: BO-25 returns in delivered GMV (§7.2, R2-P6). v1.5: BO-24 the return figures (§7.2, R2-P6). v1.4: BO-20…BO-23 the dashboard windows, status index, placed GMV and module edges (§7.2). v1.3: BO-18, BO-19 the directory cursors (§7.2). v1.2: R2-P5 clarifications BO-12…BO-17 (§7.2, every recommendation accepted). v1.1: R2-P1 implementation clarifications BO-9…BO-11 (§7.1, confirmed 2026-10-20). Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (admin back-office and audit), R-19, S-9 (answered for R2), spec 09 v2.0 §8.4 (admin cancellation), spec 16 SU-5. §7 BO-1…BO-8 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.7 APPROVED (2026-10-22).** v1.7: BO-26 gross GMV with coupons, BO-27 coupon block audit (§7.3, R2-P7). v1.6: BO-25 returns in delivered GMV (§7.2, R2-P6). v1.5: BO-24 the return figures (§7.2, R2-P6). v1.4: BO-20…BO-23 the dashboard windows, status index, placed GMV and module edges (§7.2). v1.3: BO-18, BO-19 the directory cursors (§7.2). v1.2: R2-P5 clarifications BO-12…BO-17 (§7.2, every recommendation accepted). v1.1: R2-P1 implementation clarifications BO-9…BO-11 (§7.1, confirmed 2026-10-20). Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (admin back-office and audit), R-19, S-9 (answered for R2), spec 09 v2.0 §8.4 (admin cancellation), spec 16 SU-5. §7 BO-1…BO-8 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -81,7 +81,7 @@ Added 2026-10-20 from specs 10, 18, 19:
 | returns | `POST /admin/returns/:id/decide` | `return.admin_decided` | `status`; note |
 | returns | `POST /admin/returns/:id/resolve-dispute` | `return.dispute_resolved` | `status`, `decision`; note |
 | payments | `POST /admin/payments/refunds/:id/retry` | `payment_refund.retried` | `status` |
-| promotions | `POST /admin/coupons` · `PATCH /admin/coupons/:id` | `coupon.created` · `coupon.updated` | every coupon field except counters |
+| promotions | `POST /admin/coupons` · `PATCH /admin/coupons/:id` · `POST /admin/coupons/:id/block` · `/unblock` (BO-27) | `coupon.created` · `coupon.updated` · `coupon.blocked` · `coupon.unblocked` | every coupon field except counters; block: reason |
 
 `target_type` gains `return_request`, `coupon`. The COD refund recording uses the existing `payment_refund.recorded` row; payout details are never in `changes`. Admin **reads** are not audited (BO-3). Admin support messages and notes are not audited (SU-5).
 
@@ -220,3 +220,10 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | BO-23 | `backoffice` imports only the modules the dashboard reads: ordering, sellers, support, finance, delivery (returns joins in R2-P6); the user directory lives in identity and customers (architecture v2.4) | §3.2 |
 | BO-24 | R2-P6 adds `returns.byStatus` (spec 18 §2), `finance.sellerPending` and `finance.customerRefundPayable` (spec 12 §8.6), and `delivery.returnsInProgress` (spec 11 §8.4: return shipments not yet `delivered` or `cancelled`), with the edge `backoffice → returns` (spec 18 RE-15) | §3.2 |
 | BO-25 | Amends BO-7: returns reduce delivered GMV on the day ordering records them (completion, `order_item_returns.created_at`, Cairo day): delivered GMV per day = Σ `subtotal` of seller orders delivered that day − Σ `order_item_returns.subtotal_amount` recorded that day; a day may be negative. Refused returns refund nothing and reduce nothing. Top sellers rank on the same net delivered GMV over the window | §3.2 |
+
+### 7.3 Clarifications (R2-P7 coupons, approved 2026-10-22)
+
+| # | Clarification | Where |
+|---|---|---|
+| BO-26 | GMV stays **gross**: placed and delivered GMV sum the undiscounted seller-order `subtotal`, and returns subtract `order_item_returns.subtotal_amount` (BO-25 unchanged). Coupon costs show in finance (`platform_promotions`), not in GMV. The dashboard index needs no `discount_amount` (database D-26) | §3.2 |
+| BO-27 | The admin block of a seller coupon (spec 19 PR-20) is audited as `coupon.blocked` (with the reason) and `coupon.unblocked`, target type `coupon` | §2 |
