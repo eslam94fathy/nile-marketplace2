@@ -191,7 +191,7 @@ Consumed (queue `returns.shipment-updates`): `return_shipment.picked_up`, `retur
 | `RETURN_NOT_FOUND` | 404 | Missing, or not the caller's (customer / seller) |
 | `RETURN_NOT_ALLOWED` | 422 | The seller order isn't `delivered` |
 | `RETURN_WINDOW_CLOSED` | 422 | After `delivered_at + RETURN_WINDOW_DAYS` |
-| `RETURN_QUANTITY_INVALID` | 422 | Over the returnable quantity, or an item of another seller order (details per item) |
+| `RETURN_QUANTITY_INVALID` | 422 | Over the returnable quantity, or an item of another seller order (details per item). Ordering's code (spec 09 OR-28) |
 | `RETURN_PHOTOS_REQUIRED` | 422 | A seller-fault reason without a photo |
 | `RETURN_AMOUNT_TOO_LOW` | 422 | `changed_mind` where the fee eats the whole refund |
 | `RETURN_PICKUP_UNAVAILABLE` | 422 | The customer's governorate is no longer deliverable |

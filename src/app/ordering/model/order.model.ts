@@ -59,6 +59,11 @@ export interface SellerOrder {
   commissionRate: Rate;
   commission: Money;
   sellerNet: Money;
+  /** Sums of its returns, next to the delivered amounts (spec 09 §8.7); zero until a return completes. */
+  returnedSubtotal: Money;
+  returnedPaid: Money;
+  returnedCommission: Money;
+  returnedSellerNet: Money;
   pickup: PickupSnapshot;
   acceptDeadlineAt: Date | null;
   cancelReason: SellerOrderCancelReason | null;
@@ -83,6 +88,8 @@ export interface OrderItem {
   unitPrice: Money;
   quantity: number;
   cancelledQuantity: number;
+  /** Units returned (spec 09 §8.7); `lineTotal` keeps them, a return leaves the delivered amounts. */
+  returnedQuantity: number;
   lineTotal: Money;
   /** The variant's image at checkout (spec 09 §8.3); null when it had none. */
   imageMediaId: string | null;
@@ -90,6 +97,10 @@ export interface OrderItem {
 
 /** Units still to deliver on a line (spec 09 §3.5). */
 export const openQuantity = (item: OrderItem): number => item.quantity - item.cancelledQuantity;
+
+/** Units the customer keeps: not cancelled, not returned (spec 09 §8.7, OR-9). */
+export const keptQuantity = (item: OrderItem): number =>
+  item.quantity - item.cancelledQuantity - item.returnedQuantity;
 
 /** One row of an order or seller-order status history (append-only). */
 export interface StatusHistoryEntry<S extends string> {

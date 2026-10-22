@@ -22,5 +22,12 @@ export interface ReleaseLine {
   quantity: number;
 }
 
+/** Returned units of a variant to put back on hand (spec 07 §8 `restock`). */
+export interface RestockLine {
+  variantId: string;
+  quantity: number;
+  returnId: string;
+}
+
 export const isActive = (reservation: InventoryReservation): boolean =>
   reservation.status === ReservationStatus.ACTIVE;

@@ -3,6 +3,7 @@ export const ORDERING_TABLES = {
   SELLER_ORDERS: 'seller_orders',
   ORDER_ITEMS: 'order_items',
   ORDER_ITEM_CANCELLATIONS: 'order_item_cancellations',
+  ORDER_ITEM_RETURNS: 'order_item_returns',
   ORDER_STATUS_HISTORY: 'order_status_history',
   SELLER_ORDER_STATUS_HISTORY: 'seller_order_status_history',
 } as const;

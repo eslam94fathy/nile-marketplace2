@@ -6,6 +6,7 @@ import { Money, Rate } from '../../../lib/money';
 import { ORDERING_TABLES } from '../constants';
 import { type SellerOrderCancelReason, SellerOrderStatus } from '../enums';
 import { type PickupSnapshot, type SellerOrder } from '../model/order.model';
+import { type ReturnAmounts } from '../model/return.model';
 
 const T = ORDERING_TABLES.SELLER_ORDERS;
 const COLUMNS = [
@@ -17,6 +18,10 @@ const COLUMNS = [
   'commission_rate',
   'commission',
   'seller_net',
+  'returned_subtotal',
+  'returned_paid',
+  'returned_commission',
+  'returned_seller_net',
   'pickup_governorate_id',
   'pickup_phone',
   'pickup_city',
@@ -81,6 +86,10 @@ function toModel(row: SellerOrderRow): SellerOrder {
     commissionRate: Rate.of(row.commission_rate),
     commission: Money.of(row.commission),
     sellerNet: Money.of(row.seller_net),
+    returnedSubtotal: Money.of(row.returned_subtotal),
+    returnedPaid: Money.of(row.returned_paid),
+    returnedCommission: Money.of(row.returned_commission),
+    returnedSellerNet: Money.of(row.returned_seller_net),
     pickup: {
       governorateId: row.pickup_governorate_id,
       phone: row.pickup_phone,
@@ -249,6 +258,19 @@ export class SellerOrderRepository {
         subtotal: money.subtotal.toString(),
         commission: money.commission.toString(),
         seller_net: money.sellerNet.toString(),
+        updated_at: trx.fn.now(),
+      })
+      .where({ id });
+  }
+
+  /** Adds a return's amounts to the returned sums (spec 09 §8.7), under the order lock. */
+  async addReturned(id: string, amounts: ReturnAmounts, trx: DbTransaction): Promise<void> {
+    await trx<SellerOrderTable>(T)
+      .update({
+        returned_subtotal: trx.raw('returned_subtotal + ?', [amounts.itemsSubtotal.toString()]),
+        returned_paid: trx.raw('returned_paid + ?', [amounts.itemsPaid.toString()]),
+        returned_commission: trx.raw('returned_commission + ?', [amounts.commissionReversed.toString()]),
+        returned_seller_net: trx.raw('returned_seller_net + ?', [amounts.sellerNetReversed.toString()]),
         updated_at: trx.fn.now(),
       })
       .where({ id });

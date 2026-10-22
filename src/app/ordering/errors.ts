@@ -17,6 +17,8 @@ export const OrderingErrorCode = {
   ORDER_NOT_CANCELLABLE: 'ORDER_NOT_CANCELLABLE',
   ORDER_ITEM_NOT_FOUND: 'ORDER_ITEM_NOT_FOUND',
   ITEM_CANCEL_QUANTITY_INVALID: 'ITEM_CANCEL_QUANTITY_INVALID',
+  /** Also raised by returns at request time (spec 09 OR-28). */
+  RETURN_QUANTITY_INVALID: 'RETURN_QUANTITY_INVALID',
 } as const;
 
 const C = OrderingErrorCode;
@@ -108,6 +110,18 @@ export const itemCancelQuantityInvalid = (open: number) =>
     {
       details: [{ field: 'quantity', value: String(open), constraint: 'max', message: `open: ${open}` }],
     },
+  );
+
+/**
+ * A return line over what is still returnable, of another seller order, or listed twice: one detail per
+ * line (spec 18 §6, spec 09 OR-28). Ordering's code, so returns and recordReturn raise the same 422.
+ */
+export const returnQuantityInvalid = (details: readonly ErrorDetail[]) =>
+  new AppError(
+    C.RETURN_QUANTITY_INVALID,
+    'Some items can not be returned in these quantities',
+    S.UNPROCESSABLE_ENTITY,
+    { details },
   );
 
 /** Registration creates the user and the profile in one transaction, so this is a bug (as cart CT-8). */

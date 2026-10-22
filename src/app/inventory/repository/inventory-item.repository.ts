@@ -96,6 +96,15 @@ export class InventoryItemRepository {
     return row ? toModel(row) : null;
   }
 
+  /** Returned units back on hand (spec 07 §8): the row is locked by the update; it always applies. */
+  async addOnHand(id: string, quantity: number, trx: DbTransaction): Promise<InventoryItem | null> {
+    const [row] = await trx<InventoryItemTable>(T)
+      .update({ on_hand: trx.raw('on_hand + ?', [quantity]), updated_at: trx.fn.now() })
+      .where({ id })
+      .returning<InventoryItemRow[]>(COLUMNS);
+    return row ? toModel(row) : null;
+  }
+
   /** One batched `id IN (...)` query (G20). */
   async findByIds(ids: readonly string[], trx?: DbTransaction): Promise<InventoryItem[]> {
     if (ids.length === 0) return [];

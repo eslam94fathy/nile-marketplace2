@@ -3,7 +3,7 @@ import { type DbTransaction } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import { InventoryStockStatusChanged, type IOutbox, type OutboxEvent } from '../../../lib/events';
 import { type PageMeta, type ParsedListQuery, toPage } from '../../../lib/http';
-import { MOVEMENT_REFERENCE_ORDER_ITEM } from '../constants';
+import { MOVEMENT_REFERENCE_ORDER_ITEM, MOVEMENT_REFERENCE_RETURN } from '../constants';
 import { MovementType } from '../enums';
 import { insufficientStock, inventoryItemNotFound, type ShortLine, stockAdjustmentInvalid } from '../errors';
 import { type InventoryItem, type StockDto, stockStatusChange } from '../model/inventory-item.model';
@@ -13,6 +13,7 @@ import {
   isActive,
   type ReleaseLine,
   type ReserveLine,
+  type RestockLine,
 } from '../model/inventory-reservation.model';
 import { type InventoryItemRepository } from '../repository/inventory-item.repository';
 import { type InventoryMovementRepository } from '../repository/inventory-movement.repository';
@@ -33,7 +34,7 @@ const byItemId =
 
 /**
  * Public API of inventory (spec 07 §2). Writes take the caller's transaction and record a movement
- * per changed line; adjust, reserve and release emit `inventory.stock_status_changed` when sellable
+ * per changed line; adjust, reserve, release and restock emit `inventory.stock_status_changed` when sellable
  * stock crosses 0. A movement's `quantity_delta` is the change in sellable stock, so a commit
  * records 0 (its effect shows in `on_hand_after`).
  */
@@ -61,6 +62,13 @@ export interface IInventoryService {
   release(lines: readonly ReleaseLine[], trx: DbTransaction): Promise<void>;
   /** Delivered (UC-IN-3): active reservations leave on_hand; others are skipped. Emits nothing. */
   commit(orderItemIds: readonly string[], trx: DbTransaction): Promise<void>;
+  /**
+   * Returned units back on hand (spec 07 §8, spec 18 UC-RE-7): items locked in id order, `on_hand +=`
+   * the units, one `return_restock` movement per item and return; emits
+   * `inventory.stock_status_changed` when sellable stock crosses 0. Deleted variants are restocked
+   * too (their row exists).
+   */
+  restock(lines: readonly RestockLine[], actorUserId: string | null, trx: DbTransaction): Promise<void>;
   /** Seller stock history, newest first (parse the query with INVENTORY_MOVEMENT_LIST_SPEC). */
   listMovements(
     variantId: string,
@@ -197,6 +205,53 @@ export class InventoryService implements IInventoryService {
       movements.push(reservationMovement(after, MovementType.COMMIT, 0, reservation.orderItemId));
     }
     await this.movements.insertMany(movements, trx);
+  }
+
+  async restock(
+    lines: readonly RestockLine[],
+    actorUserId: string | null,
+    trx: DbTransaction,
+  ): Promise<void> {
+    const totals = new Map<string, RestockLine>();
+    for (const line of lines) {
+      if (!Number.isInteger(line.quantity) || line.quantity < 1) {
+        throw new Error(`cannot restock ${line.quantity} of variant ${line.variantId}`);
+      }
+      const key = `${line.variantId}:${line.returnId}`;
+      const sum = totals.get(key);
+      totals.set(key, sum ? { ...sum, quantity: sum.quantity + line.quantity } : { ...line });
+    }
+    if (totals.size === 0) return;
+
+    const items = await this.items.findByVariantIds([...new Set(lines.map((l) => l.variantId))], trx);
+    const itemIds = new Map(items.map((item) => [item.variantId, item.id]));
+    const work = [...totals.values()]
+      .map((line) => {
+        const itemId = itemIds.get(line.variantId);
+        if (!itemId) throw inventoryItemNotFound(line.variantId);
+        return { line, itemId };
+      })
+      .sort(byItemId((entry) => entry.itemId));
+
+    const changes = new Map<string, SellableChange>();
+    const movements: NewInventoryMovement[] = [];
+    for (const { line, itemId } of work) {
+      const after = await this.items.addOnHand(itemId, line.quantity, trx);
+      if (!after) throw new Error(`inventory item ${itemId} vanished`);
+      track(changes, after, line.quantity);
+      movements.push({
+        inventoryItemId: after.id,
+        type: MovementType.RETURN_RESTOCK,
+        quantityDelta: line.quantity,
+        onHandAfter: after.onHand,
+        reservedAfter: after.reserved,
+        referenceType: MOVEMENT_REFERENCE_RETURN,
+        referenceId: line.returnId,
+        actorUserId,
+      });
+    }
+    await this.movements.insertMany(movements, trx);
+    await this.emitCrossings(changes, trx);
   }
 
   async listMovements(

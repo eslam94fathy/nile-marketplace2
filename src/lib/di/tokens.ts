@@ -147,6 +147,8 @@ export const TOKENS = {
   OrderItemRepository: Symbol.for('OrderItemRepository'),
   StatusHistoryRepository: Symbol.for('StatusHistoryRepository'),
   OrderItemCancellationRepository: Symbol.for('OrderItemCancellationRepository'),
+  OrderItemReturnRepository: Symbol.for('OrderItemReturnRepository'),
+  OrderReturns: Symbol.for('OrderReturns'),
   OrderLifecycleService: Symbol.for('OrderLifecycleService'),
   OrderActionService: Symbol.for('OrderActionService'),
   AcceptanceTimeoutJob: Symbol.for('AcceptanceTimeoutJob'),

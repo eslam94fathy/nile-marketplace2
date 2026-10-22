@@ -23,6 +23,7 @@ const COLUMNS = [
   'unit_price',
   'quantity',
   'cancelled_quantity',
+  'returned_quantity',
   'line_total',
   'image_media_id',
 ] as const;
@@ -59,12 +60,13 @@ function toModel(row: OrderItemRow): OrderItem {
     unitPrice: Money.of(row.unit_price),
     quantity: row.quantity,
     cancelledQuantity: row.cancelled_quantity,
+    returnedQuantity: row.returned_quantity,
     lineTotal: Money.of(row.line_total),
     imageMediaId: row.image_media_id,
   };
 }
 
-export type NewOrderItem = Omit<OrderItem, 'id' | 'cancelledQuantity'>;
+export type NewOrderItem = Omit<OrderItem, 'id' | 'cancelledQuantity' | 'returnedQuantity'>;
 
 @injectable()
 export class OrderItemRepository {
@@ -113,6 +115,18 @@ export class OrderItemRepository {
         updated_at: trx.fn.now(),
       })
       .where({ id });
+  }
+
+  /**
+   * Returned units (spec 09 §8.7), under the order lock the caller holds; conditional, so it never takes
+   * more than is kept. False when it didn't apply.
+   */
+  async addReturned(id: string, quantity: number, trx: DbTransaction): Promise<boolean> {
+    const updated = await trx<OrderItemTable>(T)
+      .update({ returned_quantity: trx.raw('returned_quantity + ?', [quantity]), updated_at: trx.fn.now() })
+      .where({ id })
+      .whereRaw('quantity - cancelled_quantity - returned_quantity >= ?', [quantity]);
+    return updated === 1;
   }
 
   /** The lines of seller orders: WHERE seller_order_id = ANY(?) over idx_order_items_seller_order_id (G20). */

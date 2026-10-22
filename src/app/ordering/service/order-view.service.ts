@@ -11,7 +11,7 @@ import {
   type Order,
   type OrderItem,
   type OrderListEntry,
-  openQuantity,
+  keptQuantity,
   type SellerOrder,
 } from '../model/order.model';
 import { type OrderItemRepository } from '../repository/order-item.repository';
@@ -102,7 +102,7 @@ export class OrderViewService {
 
   /**
    * Counts for the summaries, from two batched reads: seller orders, and units still on order (OR-9):
-   * open quantities of the seller orders still billed. A whole cancelled or returned seller order keeps
+   * kept quantities (not cancelled, not returned) of the seller orders still billed. A whole cancelled or returned seller order keeps
    * its lines' quantities (only item cancellations set cancelled_quantity), so it is left out by status.
    */
   private async listEntries(
@@ -122,7 +122,7 @@ export class OrderViewService {
         sellerOrderCount: sellerOrders.filter((s) => s.orderId === order.id).length,
         itemCount: items
           .filter((item) => billedOrderOf.get(item.sellerOrderId) === order.id)
-          .reduce((sum, item) => sum + openQuantity(item), 0),
+          .reduce((sum, item) => sum + keptQuantity(item), 0),
       })),
     };
   }

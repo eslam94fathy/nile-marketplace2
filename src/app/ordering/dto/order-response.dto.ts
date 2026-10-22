@@ -19,7 +19,7 @@ import {
   type SellerOrderDetail,
   type SellerOrderView,
 } from '../model/order-view.model';
-import { type OrderListEntry, type StatusHistoryEntry } from '../model/order.model';
+import { type OrderListEntry, type SellerOrder, type StatusHistoryEntry } from '../model/order.model';
 
 /* Response DTOs for spec 09 §4 (decorators describe the OpenAPI shape only). */
 
@@ -60,6 +60,10 @@ export class OrderItemDto {
 
   @IsInt()
   cancelledQuantity!: number;
+
+  /** Units returned (spec 09 §8.7); lineTotal still counts them, the returned sums sit beside it. */
+  @IsInt()
+  returnedQuantity!: number;
 
   /** unitPrice × (quantity − cancelledQuantity). */
   @IsMoney()
@@ -133,6 +137,10 @@ export class CustomerSellerOrderDto {
 
   @IsMoney()
   subtotal!: string;
+
+  /** What its completed returns paid back for items (spec 09 §8.7); "0.00" without one. */
+  @IsMoney()
+  returnedPaid!: string;
 
   /** Only while `placed` (Q-31). */
   @IsBoolean()
@@ -299,6 +307,16 @@ export class SellerOrderDto {
   @IsMoney()
   sellerNet!: string;
 
+  /** Sums of its completed returns (spec 09 §8.7), next to the delivered amounts above. */
+  @IsMoney()
+  returnedSubtotal!: string;
+
+  @IsMoney()
+  returnedCommission!: string;
+
+  @IsMoney()
+  returnedSellerNet!: string;
+
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)
   items!: OrderItemDto[];
@@ -376,6 +394,16 @@ export class AdminSellerOrderDto extends CustomerSellerOrderDto {
   @IsMoney()
   sellerNet!: string;
 
+  /** Sums of its completed returns (spec 09 §8.7), next to the delivered amounts above. */
+  @IsMoney()
+  returnedSubtotal!: string;
+
+  @IsMoney()
+  returnedCommission!: string;
+
+  @IsMoney()
+  returnedSellerNet!: string;
+
   @ValidateNested({ each: true })
   @Type(() => AdminHistoryEntryDto)
   statusHistory!: AdminHistoryEntryDto[];
@@ -402,6 +430,13 @@ export class AdminOrderDetailDto extends OrderDetailDto {
 
 const iso = (date: Date | null): string | null => date?.toISOString() ?? null;
 
+/** The seller and admin views of the returned sums (spec 09 §8.7). */
+const returnedSums = (s: SellerOrder) => ({
+  returnedSubtotal: s.returnedSubtotal.toString(),
+  returnedCommission: s.returnedCommission.toString(),
+  returnedSellerNet: s.returnedSellerNet.toString(),
+});
+
 function toOrderItemDto(item: OrderItemView): OrderItemDto {
   return {
     id: item.id,
@@ -413,6 +448,7 @@ function toOrderItemDto(item: OrderItemView): OrderItemDto {
     unitPrice: item.unitPrice.toString(),
     quantity: item.quantity,
     cancelledQuantity: item.cancelledQuantity,
+    returnedQuantity: item.returnedQuantity,
     lineTotal: item.lineTotal.toString(),
     image: item.image ? toImageDto(item.image) : null,
   };
@@ -429,6 +465,7 @@ function toCustomerSellerOrderDto(
     businessName: detail.businessName,
     status: sellerOrder.status,
     subtotal: sellerOrder.subtotal.toString(),
+    returnedPaid: sellerOrder.returnedPaid.toString(),
     canCancel: !orderAwaitsPayment && sellerOrder.status === SellerOrderStatus.PLACED,
     cancelReason: sellerOrder.cancelReason,
     items: detail.items.map(toOrderItemDto),
@@ -484,6 +521,7 @@ export function toAdminOrderDetailDto(detail: OrderDetail): AdminOrderDetailDto 
         commissionRate: s.sellerOrder.commissionRate.toString(),
         commission: s.sellerOrder.commission.toString(),
         sellerNet: s.sellerOrder.sellerNet.toString(),
+        ...returnedSums(s.sellerOrder),
         statusHistory: s.history.map(toAdminHistoryDto),
       };
     }),
@@ -520,6 +558,7 @@ export function toSellerOrderDto(view: SellerOrderView): SellerOrderDto {
     commissionRate: s.commissionRate.toString(),
     commission: s.commission.toString(),
     sellerNet: s.sellerNet.toString(),
+    ...returnedSums(s),
     items: view.items.map(toOrderItemDto),
     dropoffGovernorate: order.dropoffGovernorate,
     acceptDeadlineAt: iso(s.acceptDeadlineAt),
