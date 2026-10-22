@@ -60,7 +60,7 @@ const idempotencyKey = { key: 'Idempotency-Key', value: '{{$guid}}' };
 const API = '/api/v1';
 const collection = {
   info: {
-    name: 'Nile Marketplace API (Release 1 + R2-P1…P6)',
+    name: 'Nile Marketplace API (Release 1 + R2-P1…P7)',
     _postman_id: 'c3a1d0e2-4f6b-4c1e-9a7d-6b2f0e8d1a01',
     description: [
       'Every endpoint built so far: health, API docs, identity (spec 03), customers (spec 04), sellers (spec 05), catalog with seller stock (spec 06), cart (spec 08), checkout and orders with COD and Kashier (spec 09), payments and refunds (spec 10), delivery (spec 11): governorates and fees, agents, shipments and the work of delivery agents, and finance (spec 12): balances, statements, COD remittances and payouts.',
@@ -89,7 +89,7 @@ const collection = {
       '',
       'Finance flow: once an order is delivered (the worker books it in the ledger) → "Admin: finance" → List accounts (stores the first in `accountId`) → Account statement; "Entries of a seller order" uses `sellerOrderId`. "Confirm COD remittance" takes cash from `agentId`; "Record payout" pays `sellerId` (set it to the seller\'s id) with a fresh `payoutReference`. Log in as the seller → "Seller: finance", or as the agent → "Agent: finance", to see the same money from their side.',
       '',
-      'Release 2 so far: the audit log (spec 20 §2), image uploads (spec 14) with product and category images (spec 06 §8), the notification centre and Web Push (spec 13 §8), the web refresh cookie (spec 03 §8), support tickets (spec 16), reviews and ratings (spec 17), the wishlist (spec 04 §8), and returns (spec 18) with automated refunds (spec 10 §8) and the seller holding period (spec 12 §8). The live socket (spec 15) is not HTTP: see docs/realtime.md.',
+      'Release 2 so far: the audit log (spec 20 §2), image uploads (spec 14) with product and category images (spec 06 §8), the notification centre and Web Push (spec 13 §8), the web refresh cookie (spec 03 §8), support tickets (spec 16), reviews and ratings (spec 17), the wishlist (spec 04 §8), returns (spec 18) with automated refunds (spec 10 §8) and the seller holding period (spec 12 §8), and coupons (spec 19). The live socket (spec 15) is not HTTP: see docs/realtime.md.',
       '',
       'Image flow: "Media" → Request upload (stores `mediaId`) → POST the file to the returned `upload.url` with every `upload.fields` entry first and the file last as `file` (multipart/form-data; in Postman a new request, Body → form-data) → Complete upload → poll Get media until `ready` (the worker processes it). Then attach it: "Seller: product images" → Add image, or "Admin: category images" → Set image.',
       '',
@@ -100,6 +100,8 @@ const collection = {
       'Back-office flow (admin): "Admin: dashboard" shows the figures (cached for DASHBOARD_CACHE_TTL_SECONDS; generatedAt is their age). "Admin: users" → List users finds any account; "Admin: customers" → List customers (stores `customerId`) → Customer detail, then "Admin: orders" with customerId[eq]. "Admin: orders" → Cancel seller order / Cancel order (Idempotency-Key, a reason for the audit log). "Admin: products" → Product (admin view) → Block (the seller is notified and can no longer activate it) → Unblock. Every admin write appears in "Admin: audit log".',
       '',
       'Return flow: a customer with a delivered order → "Returns" → Returnable items (uses `orderId` and `sellerOrderId`; stores the first line in `orderItemId`) → Request a return (Idempotency-Key; stores `returnId`; damaged / wrong_item / not_as_described need a photo: upload with purpose return_photo first; a COD order needs `refundPayout`). Log in as the seller → "Seller: returns" → Approve (or Reject; the customer may then Escalate and an admin decides in "Admin: returns"). The worker assigns the return pickup to an agent: "Agent" → My shipments → Picked up → Delivered (handed to the seller). The seller → Return detail (stores `returnItemId`) → Confirm receipt (or Dispute; an admin resolves it). The refund follows: Kashier refunds are sent by the worker; COD refunds wait in "Admin: payments" → Refund queue → Refund detail (shows the wallet / InstaPay details) → Record a refund. "Seller: finance" → My balance / My holds shows money held until the return window ends.',
+      '',
+      'Coupon flow: as an admin → "Admin: coupons" → Create a platform coupon (stores `couponId` and `couponCode`), or as an approved seller → "Seller: coupons" → Create a coupon for your products. As a customer with items in the cart → "Cart" → Coupon preview shows the discount per seller and line (nothing is stored). Then "Checkout & orders" → Checkout with a coupon: expectedTotal must be the discounted total (the first send stores it from ORDER_TOTAL_CHANGED). After the first use only endsAt, globalLimit and status can change. An admin may block a seller coupon ("Admin: coupons" → Block): it goes inactive and the seller is notified.',
       'Tokens are per account: log in as the admin again (Auth → Login) before the "Admin: …" folders.',
       '',
       'Errors use the envelope { success: false, error: { code, message, details? }, correlationId }. Every request sends a fresh X-Correlation-Id (collection pre-request script); search the api/worker logs for it.',
@@ -170,6 +172,8 @@ const collection = {
     { key: 'customerId', value: '' },
     { key: 'returnId', value: '' },
     { key: 'returnItemId', value: '' },
+    { key: 'couponId', value: '' },
+    { key: 'couponCode', value: 'SAVE-10' },
   ],
   item: [
     {
@@ -1083,6 +1087,16 @@ if (pm.response.code === 201) {
           description: 'Removes every line; 204 also when there is no cart yet.',
           tests: expect(204),
         }),
+        req({
+          name: 'Coupon preview',
+          method: 'POST',
+          path: `${API}/cart/coupon-preview`,
+          auth: true,
+          body: { code: '{{couponCode}}' },
+          description:
+            'What {{couponCode}} would take off the cart, per seller and line; lines with an issue are left out. Nothing is stored: send the code again at checkout. Its own per-user rate limit (coupon-preview, 429). 422: CART_EMPTY, COUPON_NOT_FOUND, COUPON_INACTIVE, COUPON_NOT_ACTIVE_YET, COUPON_EXPIRED, COUPON_LIMIT_REACHED, COUPON_CUSTOMER_LIMIT_REACHED, COUPON_NOT_APPLICABLE, COUPON_MIN_SUBTOTAL_NOT_MET (details[0].value = the missing amount).',
+          tests: expect(200),
+        }),
       ],
     },
     {
@@ -1120,6 +1134,34 @@ if (pm.response.code === 201) {
     pm.collectionVariables.set('sellerOrderId', first.id);
     if (first.items[0]) pm.collectionVariables.set('orderItemId', first.items[0].id);
   }
+}`,
+        }),
+        req({
+          name: 'Checkout with a coupon',
+          method: 'POST',
+          path: `${API}/checkout`,
+          auth: true,
+          headers: [idempotencyKey],
+          body: {
+            addressId: '{{addressId}}',
+            paymentMethod: '{{paymentMethod}}',
+            expectedTotal: '{{expectedTotal}}',
+            couponCode: '{{couponCode}}',
+          },
+          description:
+            'As Checkout, with {{couponCode}}: the items are discounted (never the delivery fee) and expectedTotal is the discounted total. data.order.coupon shows the code and discount; seller orders show discountAmount and discountFunding, lines discountAmount and paidTotal. The coupon codes of Coupon preview answer 422 and nothing is placed. KASHIER_TOTAL_ZERO 422: a Kashier order that would cost 0.00 (use cod).',
+          tests: `
+if (pm.response.code === 409 && pm.response.json().error.code === 'ORDER_TOTAL_CHANGED') {
+  pm.collectionVariables.set('expectedTotal', pm.response.json().error.details[0].value);
+  console.log('expectedTotal updated: send again');
+  return;
+}
+${expect(201)}
+if (pm.response.code === 201) {
+  const { order } = pm.response.json().data;
+  pm.collectionVariables.set('orderId', order.id);
+  console.log('coupon:', JSON.stringify(order.coupon));
+  if (order.sellerOrders[0]) pm.collectionVariables.set('sellerOrderId', order.sellerOrders[0].id);
 }`,
         }),
         req({
@@ -2671,6 +2713,159 @@ if (pm.response.code === 201) {
           body: { decision: 'refund', note: 'The seller received the right item.' },
           description:
             'disputed → completed (refund) or refused (no_refund). RETURN_INVALID_STATUS_TRANSITION 409.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Seller: coupons',
+      description:
+        'spec 19 §4.2. Log in as the seller. Seller-funded coupons for your own products: commission is taken on the discounted subtotal (R-17). Writes need an approved seller; reads work in any status. Seller writes are not audited.',
+      item: [
+        req({
+          name: 'My coupons',
+          method: 'GET',
+          path: `${API}/seller/coupons`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'status[eq]', value: 'active', disabled: true },
+            { key: 'sort', value: '-createdAt', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description:
+            'Newest first; displayStatus: scheduled | active | expired | inactive. Stores the first in couponId.',
+          tests: saveId('couponId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Create a coupon',
+          method: 'POST',
+          path: `${API}/seller/coupons`,
+          auth: true,
+          body: {
+            code: 'SAVE-10',
+            discountType: 'percent',
+            discountValue: '0.10',
+            maxDiscount: '50.00',
+            minItemsSubtotal: '100.00',
+            scope: 'seller',
+            startsAt: '2026-01-01T00:00:00+02:00',
+            endsAt: '2027-01-01T00:00:00+02:00',
+            globalLimit: 100,
+            perCustomerLimit: 1,
+          },
+          description:
+            'scope seller (all your products) or category (with scopeCategoryId: your products in that category and below); scopeSellerId is not accepted. discountType percent: discountValue a rate 0.01..0.90, maxDiscount optional; fixed: an amount above 0, no maxDiscount. The code (4..32 letters, digits, dashes) is upper-cased. startsAt may be past, endsAt must be future. perCustomerLimit 1..100, globalLimit null = unlimited. SELLER_NOT_APPROVED 403, COUPON_INVALID 422 (details), CATEGORY_NOT_FOUND 422, COUPON_CODE_TAKEN 409. Stores couponId and couponCode.',
+          tests: `
+${expect(201)}
+if (pm.response.code === 201) {
+  pm.collectionVariables.set('couponId', pm.response.json().data.id);
+  pm.collectionVariables.set('couponCode', pm.response.json().data.code);
+}`,
+        }),
+        req({
+          name: 'Coupon',
+          method: 'GET',
+          path: `${API}/seller/coupons/{{couponId}}`,
+          auth: true,
+          description:
+            "adminBlocked and adminBlockReason show a block. COUPON_NOT_FOUND 404 (also another seller's).",
+          tests: expect(200),
+        }),
+        req({
+          name: 'Change a coupon',
+          method: 'PATCH',
+          path: `${API}/seller/coupons/{{couponId}}`,
+          auth: true,
+          body: { status: 'inactive' },
+          description:
+            'Any create field but code, plus status; at least one. After the first use only endsAt, globalLimit (not below the uses) and status (COUPON_LOCKED 409). A blocked coupon cannot be activated (COUPON_BLOCKED 409). COUPON_NOT_FOUND 404, COUPON_INVALID 422, SELLER_NOT_APPROVED 403.',
+          tests: expect(200),
+        }),
+      ],
+    },
+    {
+      name: 'Admin: coupons',
+      description:
+        'spec 19 §4.3. Admin role. Platform-funded coupons (the platform absorbs the discount, commission on the undiscounted subtotal) and the block of seller coupons. Every write is audited.',
+      item: [
+        req({
+          name: 'List coupons',
+          method: 'GET',
+          path: `${API}/admin/coupons`,
+          auth: true,
+          query: [
+            { key: 'limit', value: '20' },
+            { key: 'funding[eq]', value: 'seller', disabled: true },
+            { key: 'status[eq]', value: 'active', disabled: true },
+            { key: 'sellerId[eq]', value: '{{sellerId}}', disabled: true },
+            { key: 'code[eq]', value: '{{couponCode}}', disabled: true },
+            { key: 'cursor', value: '{{cursor}}', disabled: true },
+          ],
+          description: 'Newest first. code is matched as stored (upper-case). Stores the first in couponId.',
+          tests: saveId('couponId', 200, 'data[0] && body.data[0].id'),
+        }),
+        req({
+          name: 'Create a platform coupon',
+          method: 'POST',
+          path: `${API}/admin/coupons`,
+          auth: true,
+          body: {
+            code: 'SAVE-10',
+            discountType: 'percent',
+            discountValue: '0.10',
+            maxDiscount: '50.00',
+            minItemsSubtotal: '100.00',
+            scope: 'all',
+            startsAt: '2026-01-01T00:00:00+02:00',
+            endsAt: '2027-01-01T00:00:00+02:00',
+            globalLimit: 100,
+            perCustomerLimit: 1,
+          },
+          description:
+            'scope all, seller (with scopeSellerId) or category (with scopeCategoryId). discountType percent: discountValue a rate 0.01..0.90, maxDiscount optional; fixed: an amount above 0, no maxDiscount. The code (4..32 letters, digits, dashes) is upper-cased. startsAt may be past, endsAt must be future. perCustomerLimit 1..100, globalLimit null = unlimited. COUPON_INVALID 422 (details), CATEGORY_NOT_FOUND / SELLER_NOT_FOUND 422, COUPON_CODE_TAKEN 409. Stores couponId and couponCode.',
+          tests: `
+${expect(201)}
+if (pm.response.code === 201) {
+  pm.collectionVariables.set('couponId', pm.response.json().data.id);
+  pm.collectionVariables.set('couponCode', pm.response.json().data.code);
+}`,
+        }),
+        req({
+          name: 'Coupon (admin)',
+          method: 'GET',
+          path: `${API}/admin/coupons/{{couponId}}`,
+          auth: true,
+          description: 'With its last 50 redemptions (active or released). COUPON_NOT_FOUND 404.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Change a platform coupon',
+          method: 'PATCH',
+          path: `${API}/admin/coupons/{{couponId}}`,
+          auth: true,
+          body: { globalLimit: 200 },
+          description:
+            'As a seller changes theirs. A seller coupon is blocked or unblocked instead (COUPON_SELLER_FUNDED 409). COUPON_NOT_FOUND 404, COUPON_LOCKED 409, COUPON_INVALID 422.',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Block a seller coupon',
+          method: 'POST',
+          path: `${API}/admin/coupons/{{couponId}}/block`,
+          auth: true,
+          body: { reason: 'Misleading coupon code' },
+          description:
+            'The coupon goes inactive and its seller cannot activate it; the seller is notified (coupon_blocked). reason 3..500, kept in the audit log. COUPON_NOT_FOUND 404, COUPON_BLOCK_INVALID_STATUS 409 (a platform coupon, or already blocked).',
+          tests: expect(200),
+        }),
+        req({
+          name: 'Unblock a seller coupon',
+          method: 'POST',
+          path: `${API}/admin/coupons/{{couponId}}/unblock`,
+          auth: true,
+          description:
+            'Clears the block; the coupon stays inactive for the seller to activate. COUPON_NOT_FOUND 404, COUPON_BLOCK_INVALID_STATUS 409.',
           tests: expect(200),
         }),
       ],
