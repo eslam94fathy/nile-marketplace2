@@ -127,6 +127,7 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261022100029_validate_ledger_entries_types',
       '20261022100030_create_seller_order_holds',
       '20261022100031_add_return_audit_actions',
+      '20261022120001_add_payments_customer_id',
     ]);
   });
 

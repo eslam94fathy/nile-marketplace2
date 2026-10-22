@@ -15,9 +15,15 @@ const COLUMNS = [
   'r.payment_id',
   'p.order_id',
   'r.seller_order_id',
+  'r.return_id',
   'r.amount',
   'r.reason',
   'r.status',
+  'r.method',
+  'r.attempt_count',
+  'r.next_attempt_at',
+  'r.last_error',
+  'r.succeeded_at',
   'r.provider_refund_ref',
   'r.recorded_by_user_id',
   'r.recorded_at',
@@ -50,14 +56,23 @@ type RefundRow = Pick<
   | 'id'
   | 'payment_id'
   | 'seller_order_id'
+  | 'return_id'
   | 'amount'
   | 'reason'
   | 'status'
+  | 'method'
+  | 'attempt_count'
+  | 'next_attempt_at'
+  | 'last_error'
+  | 'succeeded_at'
   | 'provider_refund_ref'
   | 'recorded_by_user_id'
   | 'recorded_at'
   | 'created_at'
-> & { order_id: string };
+> & { order_id: string; has_payout_details: boolean };
+
+/** The ciphertext never enters the model; only whether it is there. */
+const HAS_PAYOUT = 'r.payout_details_encrypted IS NOT NULL AS has_payout_details';
 
 function toModel(row: RefundRow): PaymentRefund {
   return {
@@ -65,12 +80,19 @@ function toModel(row: RefundRow): PaymentRefund {
     paymentId: row.payment_id,
     orderId: row.order_id,
     sellerOrderId: row.seller_order_id,
+    returnId: row.return_id,
     amount: Money.of(row.amount),
     reason: row.reason,
     status: row.status,
+    method: row.method,
+    attemptCount: row.attempt_count,
+    nextAttemptAt: row.next_attempt_at,
+    lastError: row.last_error,
+    hasPayoutDetails: row.has_payout_details,
     providerRefundRef: row.provider_refund_ref,
     recordedByUserId: row.recorded_by_user_id,
     recordedAt: row.recorded_at,
+    succeededAt: row.succeeded_at,
     createdAt: row.created_at,
   };
 }
@@ -84,14 +106,25 @@ export class PaymentRefundRepository {
   }
 
   private select(trx?: DbTransaction) {
-    return this.exec(trx)(`${T} as r`)
+    const executor = this.exec(trx);
+    return executor(`${T} as r`)
       .join(`${P} as p`, 'p.id', 'r.payment_id')
-      .select(...COLUMNS);
+      .select(...COLUMNS, executor.raw(HAS_PAYOUT));
   }
 
-  /** A refund due, waiting for an admin to do it in the Kashier dashboard and record it (UC-PA-4). */
+  /**
+   * A refund due, waiting for an admin to do it (Kashier dashboard, or a COD wallet / InstaPay transfer)
+   * and record it (UC-PA-4). Kashier refunds go to the job from R2-P6 step 7 (PA-31).
+   */
   async insertPending(
-    refund: { paymentId: string; sellerOrderId: string | null; amount: Money; reason: RefundReason },
+    refund: {
+      paymentId: string;
+      sellerOrderId: string | null;
+      amount: Money;
+      reason: RefundReason;
+      returnId?: string;
+      payoutDetailsEncrypted?: string | null;
+    },
     trx: DbTransaction,
   ): Promise<void> {
     await trx<PaymentRefundTable>(T).insert({
@@ -103,12 +136,12 @@ export class PaymentRefundRepository {
       recorded_by_user_id: null,
       recorded_at: null,
       provider_refund_ref: null,
-      return_id: null,
+      return_id: refund.returnId ?? null,
       method: RefundMethod.MANUAL,
       attempt_count: 0,
       next_attempt_at: null,
       last_error: null,
-      payout_details_encrypted: null,
+      payout_details_encrypted: refund.payoutDetailsEncrypted ?? null,
       succeeded_at: null,
     });
   }
@@ -142,6 +175,42 @@ export class PaymentRefundRepository {
   async list(query: ParsedListQuery, trx?: DbTransaction): Promise<PaymentRefund[]> {
     const rows = (await applyListQuery(this.select(trx), query, 'r.id')) as RefundRow[];
     return rows.map(toModel);
+  }
+
+  /** The sealed COD payout details of a refund (spec 10 §8.4); opened only for the refund detail. */
+  async findPayoutDetails(id: string): Promise<string | null> {
+    const row = await this.db
+      .knex<PaymentRefundTable>(T)
+      .select('payout_details_encrypted')
+      .where({ id })
+      .first<{ payout_details_encrypted: string | null } | undefined>();
+    return row?.payout_details_encrypted ?? null;
+  }
+
+  /** The refunds of returns, oldest first: idx_payment_refunds_return_id (spec 10 §8.5). */
+  async findByReturnIds(returnIds: readonly string[]): Promise<PaymentRefund[]> {
+    if (returnIds.length === 0) return [];
+    const rows = (await this.select()
+      .whereIn('r.return_id', [...new Set(returnIds)])
+      .orderBy([{ column: 'r.created_at' }, { column: 'r.id' }])) as RefundRow[];
+    return rows.map(toModel);
+  }
+
+  /**
+   * `POST …/retry` (spec 10 §8.4): a `pending_manual` refund to the job, at once, attempts reset.
+   * Conditional; false when it was not `pending_manual`.
+   */
+  async markRetry(id: string, now: Date, trx: DbTransaction): Promise<boolean> {
+    const updated = await trx<PaymentRefundTable>(T)
+      .update({
+        status: RefundStatus.PENDING_AUTO,
+        next_attempt_at: now,
+        attempt_count: 0,
+        last_error: null,
+        updated_at: trx.fn.now(),
+      })
+      .where({ id, status: RefundStatus.PENDING_MANUAL });
+    return updated === 1;
   }
 
   /**

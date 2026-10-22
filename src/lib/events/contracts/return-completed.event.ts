@@ -27,3 +27,9 @@ export interface ReturnCompletedPayload {
 }
 
 export const ReturnCompleted = defineEvent<ReturnCompletedPayload>('return.completed', 1, 'return_request');
+
+/**
+ * AAD of the sealed COD payout details (S-1 box, spec 02 §3.1): bound to the return, so a ciphertext can't
+ * be moved to another request. Returns seals with it, payments opens with it (spec 10 §8.4).
+ */
+export const refundPayoutAad = (returnId: string): string => `${returnId}:refund_payout`;

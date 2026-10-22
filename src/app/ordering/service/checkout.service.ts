@@ -252,7 +252,7 @@ export class CheckoutService {
     );
 
     await this.payments.createForOrder(
-      { orderId: order.id, method: input.paymentMethod, amount: money.total },
+      { orderId: order.id, customerId, method: input.paymentMethod, amount: money.total },
       trx,
     );
     await this.cart.clear(customerId, trx);

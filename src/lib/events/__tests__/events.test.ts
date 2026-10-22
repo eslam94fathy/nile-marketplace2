@@ -4,9 +4,9 @@ import { ALL_EVENT_CONTRACTS, outboxBackoffMs } from '..';
 
 describe('lib/events', () => {
   it('registers the R1 contracts and the R2 events landed so far (docs/spec/02-events.md) with unique names and version 1', () => {
-    expect(ALL_EVENT_CONTRACTS).toHaveLength(44);
+    expect(ALL_EVENT_CONTRACTS).toHaveLength(45);
     const types = ALL_EVENT_CONTRACTS.map((contract) => contract.type);
-    expect(new Set(types).size).toBe(44);
+    expect(new Set(types).size).toBe(45);
     for (const contract of ALL_EVENT_CONTRACTS) {
       expect(contract.type).toMatch(/^[a-z_]+\.[a-z_]+$/);
       expect(contract.version).toBe(1);

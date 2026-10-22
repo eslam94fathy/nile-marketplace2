@@ -14,6 +14,7 @@ const SELLER_ORDER_ID = '0192f5e0-0000-7000-8000-000000000002';
 const payment = (overrides: Partial<Payment> = {}): Payment => ({
   id: 'payment-1',
   orderId: ORDER_ID,
+  customerId: 'customer-1',
   method: 'cod',
   status: 'pending',
   amount: Money.of('300.00'),

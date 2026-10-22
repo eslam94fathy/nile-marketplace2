@@ -10,7 +10,9 @@ export const PAYMENTS_TABLES = {
 export const PAYMENTS_PATHS = {
   KASHIER_WEBHOOK: '/webhooks/kashier',
   REFUNDS: '/admin/payments/refunds',
+  REFUND: '/admin/payments/refunds/:refundId',
   RECORD_REFUND: '/admin/payments/refunds/:refundId/record',
+  RETRY_REFUND: '/admin/payments/refunds/:refundId/retry',
   PAYMENT: '/admin/payments/:paymentId',
   ORDER_PAYMENT: '/admin/orders/:orderId/payment',
 } as const;

@@ -25,12 +25,6 @@ export const RETURN_NUMBER = {
   DIGITS: 9,
 } as const;
 
-/**
- * AAD of the sealed COD payout details (S-1 box, spec 02 §3.1): bound to the return, so a ciphertext
- * can't be moved to another request. Payments opens it with the same string (spec 10 §8.4).
- */
-export const refundPayoutAad = (returnId: string): string => `${returnId}:refund_payout`;
-
 /** Paths under /api/v1 (spec 18 §4.1). */
 export const RETURN_PATHS = {
   RETURNABLE_ITEMS: '/orders/:orderId/seller-orders/:sellerOrderId/returnable-items',

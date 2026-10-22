@@ -277,9 +277,15 @@ export function toSellerReturnDto(view: ReturnView): SellerReturnDto {
   };
 }
 
-/** `refund` comes from payments.getRefundsByReturnIds (spec 10 §8.5), wired in R2-P6 step 6. */
+/** `refund` comes from payments.getRefundsByReturnIds (spec 10 §8.5). */
 export function toReturnDto(view: ReturnView): ReturnDto {
-  return { ...toSellerReturnDto(view), refund: null };
+  const { refund } = view;
+  return {
+    ...toSellerReturnDto(view),
+    refund: refund
+      ? { status: refund.status, amount: refund.amount.toString(), refundedAt: iso(refund.refundedAt) }
+      : null,
+  };
 }
 
 export function toAdminReturnDto(view: ReturnView): AdminReturnDto {

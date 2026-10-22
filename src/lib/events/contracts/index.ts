@@ -42,6 +42,7 @@ export * from './return-status-changed.event';
 export * from './return-approved.event';
 export * from './return-completed.event';
 export * from './return-shipment.events';
+export * from './payment-refunded.event';
 
 import { CodRemittanceConfirmed } from './cod-remittance-confirmed.event';
 import { InventoryStockStatusChanged } from './inventory-stock-status-changed.event';
@@ -56,6 +57,7 @@ import { PaymentExpired } from './payment-expired.event';
 import { PaymentFailed } from './payment-failed.event';
 import { PaymentPaid } from './payment-paid.event';
 import { PaymentRefundRecorded } from './payment-refund-recorded.event';
+import { PaymentRefunded } from './payment-refunded.event';
 import { PayoutRecorded } from './payout-recorded.event';
 import { ProductBlocked, ProductUnblocked } from './product-blocked.event';
 import { ReturnApproved } from './return-approved.event';
@@ -134,4 +136,5 @@ export const ALL_EVENT_CONTRACTS = [
   ReturnShipmentPickedUp,
   ReturnShipmentDelivered,
   ReturnShipmentFailed,
+  PaymentRefunded,
 ] as const;

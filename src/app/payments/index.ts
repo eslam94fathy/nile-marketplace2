@@ -16,6 +16,7 @@ import {
   SellerOrderDelivered,
   SellerOrderItemsCancelled,
   SellerOrderReturned,
+  ReturnCompleted,
 } from '../../lib/events';
 import { type OpenApiRegistry } from '../../lib/http';
 import { type ILogger } from '../../lib/logger';
@@ -37,6 +38,7 @@ export { PaymentMethod, PaymentStatus } from './enums';
 export { PAYMENTS_PATHS } from './constants';
 export { PaymentsErrorCode } from './errors';
 export type { PaymentSummary } from './model/payment.model';
+export type { ReturnRefundStatus, ReturnRefundView } from './model/refund.model';
 /** Inject with `TOKENS.PaymentDirectory`. */
 export type {
   IPaymentDirectory,
@@ -102,6 +104,7 @@ export function createPaymentsHandlers(container: DependencyContainer): EventHan
         SellerOrderReturned,
         SellerOrderDelivered,
         OrderClosed,
+        ReturnCompleted,
       ],
       handle: (envelope, trx) => adjustments.handle(envelope, trx),
     },

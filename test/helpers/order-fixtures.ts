@@ -164,10 +164,15 @@ export function orderFixtures(db: Knex) {
 
   /** A pending COD payment of 150.00. */
   async function insertPayment(orderId: string, overrides: Record<string, unknown> = {}): Promise<string> {
+    const order = await db('orders')
+      .where({ id: orderId })
+      .first<{ customer_id: string } | undefined>('customer_id');
+    if (!order) throw new Error(`order ${orderId} not found`);
     return one(
       db('payments')
         .insert({
           order_id: orderId,
+          customer_id: order.customer_id,
           method: 'cod',
           status: 'pending',
           amount: '150.00',

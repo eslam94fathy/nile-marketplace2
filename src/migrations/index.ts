@@ -115,6 +115,7 @@ import * as m20261022100028 from './20261022100028_add_ledger_entries_return_typ
 import * as m20261022100029 from './20261022100029_validate_ledger_entries_types';
 import * as m20261022100030 from './20261022100030_create_seller_order_holds';
 import * as m20261022100031 from './20261022100031_add_return_audit_actions';
+import * as m20261022120001 from './20261022120001_add_payments_customer_id';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -235,5 +236,6 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261022100029_validate_ledger_entries_types', module: m20261022100029 },
   { name: '20261022100030_create_seller_order_holds', module: m20261022100030 },
   { name: '20261022100031_add_return_audit_actions', module: m20261022100031 },
+  { name: '20261022120001_add_payments_customer_id', module: m20261022120001 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

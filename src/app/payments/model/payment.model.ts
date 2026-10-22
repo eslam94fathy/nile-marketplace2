@@ -6,6 +6,8 @@ import { PaymentMethod, type PaymentStatus } from '../enums';
 export interface Payment {
   id: string;
   orderId: string;
+  /** The order's customer (PA-30): the refund events carry it. */
+  customerId: string;
   method: PaymentMethod;
   status: PaymentStatus;
   amount: Money;

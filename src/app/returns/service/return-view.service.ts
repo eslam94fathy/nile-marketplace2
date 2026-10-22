@@ -3,6 +3,7 @@ import { TOKENS } from '../../../lib/di';
 import { type PageMeta, type ParsedListQuery, toPage } from '../../../lib/http';
 import { type ImageView, type MediaService } from '../../media';
 import { type IOrderingDirectory, type IOrderReturns, type OrderItemSnapshot } from '../../ordering';
+import { type IPaymentDirectory, type ReturnRefundView } from '../../payments';
 import { returnNotFound } from '../errors';
 import { type ReturnHistoryEntry, type ReturnItem, type ReturnRequest } from '../model/return-request.model';
 import { type ReturnHistoryRepository } from '../repository/return-history.repository';
@@ -25,6 +26,8 @@ export interface ReturnView {
   /** Private, presigned (spec 14 ME-1): the caller is already authorised. */
   photos: ImageView[];
   history: ReturnHistoryEntry[];
+  /** The customer's refund (payments, spec 10 §8.5); null until there is one. */
+  refund: ReturnRefundView | null;
 }
 
 /** Reads for the three audiences; a page costs one query per table plus batched calls (G20). */
@@ -38,6 +41,7 @@ export class ReturnViewService {
     @inject(TOKENS.OrderingDirectory) private readonly ordering: IOrderingDirectory,
     @inject(TOKENS.OrderReturns) private readonly orderReturns: IOrderReturns,
     @inject(TOKENS.MediaService) private readonly media: MediaService,
+    @inject(TOKENS.PaymentDirectory) private readonly payments: IPaymentDirectory,
   ) {}
 
   /** One request of the owner (`{}` = an admin); another party's reads as missing. */
@@ -63,11 +67,12 @@ export class ReturnViewService {
   async views(requests: readonly ReturnRequest[]): Promise<ReturnView[]> {
     if (requests.length === 0) return [];
     const ids = requests.map((r) => r.id);
-    const [items, photos, history, orderNumbers] = await Promise.all([
+    const [items, photos, history, orderNumbers, refunds] = await Promise.all([
       this.items.findByReturnIds(ids),
       this.photos.findByReturnIds(ids),
       this.history.findByReturnIds(ids),
       this.ordering.getOrderNumbers(requests.map((r) => r.orderId)),
+      this.payments.getRefundsByReturnIds(ids),
     ]);
     const snapshots = new Map(
       (await this.orderReturns.getOrderItems(items.map((i) => i.orderItemId))).map((s) => [s.orderItemId, s]),
@@ -98,6 +103,7 @@ export class ReturnViewService {
           .filter((photo) => photo.returnId === request.id)
           .flatMap((photo) => images.get(photo.mediaId) ?? []),
         history: history.filter((entry) => entry.returnId === request.id),
+        refund: refunds.get(request.id) ?? null,
       };
     });
   }

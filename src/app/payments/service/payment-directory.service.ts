@@ -7,10 +7,12 @@ import { type IOutbox, PaymentExpired } from '../../../lib/events';
 import { type ILogger } from '../../../lib/logger';
 import { EGP, type Money } from '../../../lib/money';
 import { type IPaymentGateway, PaymentGatewayError } from '../../../pkg/payments';
-import { PaymentMethod, PaymentStatus } from '../enums';
+import { PaymentMethod, PaymentStatus, RefundStatus } from '../enums';
 import { paymentProviderUnavailable } from '../errors';
 import { type Payment, type PaymentSummary, toSummary } from '../model/payment.model';
+import { type PaymentRefundRepository } from '../repository/payment-refund.repository';
 import { type PaymentRepository } from '../repository/payment.repository';
+import { type ReturnRefundStatus, type ReturnRefundView } from '../model/refund.model';
 import { type PaymentSettlementService, type SettlementOutcome } from './payment-settlement.service';
 
 /** A racing request may hold Kashier's session but not have stored it yet: one more look after this. */
@@ -29,11 +31,16 @@ export type ProviderStatus = 'paid' | 'pending' | 'unpaid' | 'unknown';
 export interface IPaymentDirectory {
   /** Checkout, in its transaction: COD → `pending`, Kashier → `initiated`. Returns the payment id. */
   createForOrder(
-    payment: { orderId: string; method: PaymentMethod; amount: Money },
+    payment: { orderId: string; customerId: string; method: PaymentMethod; amount: Money },
     trx: DbTransaction,
   ): Promise<string>;
   /** Order views: one batched query; orders without a payment are left out. */
   getSummaries(orderIds: readonly string[], trx?: DbTransaction): Promise<PaymentSummary[]>;
+  /**
+   * The return views (spec 10 §8.5), batched: each return's refund (the latest when several), with its
+   * status for the customer. Returns without a refund are left out.
+   */
+  getRefundsByReturnIds(returnIds: readonly string[]): Promise<Map<string, ReturnRefundView>>;
   /**
    * Outside any transaction. The stored session while it is valid, else a new one ending at
    * `expiresAt` (PA-3, PA-12). Throws PAYMENT_PROVIDER_UNAVAILABLE when Kashier can't give one.
@@ -53,6 +60,15 @@ export interface IPaymentDirectory {
   expire(orderId: string, trx: DbTransaction): Promise<boolean>;
 }
 
+/** How a return view names a refund's state (spec 10 §8.5). */
+const RETURN_REFUND_STATUS: Readonly<Record<RefundStatus, ReturnRefundStatus>> = {
+  [RefundStatus.PENDING_AUTO]: 'pending',
+  [RefundStatus.PROCESSING]: 'processing',
+  [RefundStatus.SUCCEEDED]: 'succeeded',
+  [RefundStatus.RECORDED]: 'succeeded',
+  [RefundStatus.PENDING_MANUAL]: 'manual',
+};
+
 @injectable()
 export class PaymentDirectory implements IPaymentDirectory {
   constructor(
@@ -62,15 +78,37 @@ export class PaymentDirectory implements IPaymentDirectory {
     @inject(TOKENS.Logger) private readonly logger: ILogger,
     @inject(TOKENS.PaymentGateway) private readonly gateway: IPaymentGateway,
     @inject(TOKENS.PaymentRepository) private readonly payments: PaymentRepository,
+    @inject(TOKENS.PaymentRefundRepository) private readonly refunds: PaymentRefundRepository,
     @inject(TOKENS.PaymentSettlementService) private readonly settlement: PaymentSettlementService,
   ) {}
 
   createForOrder(
-    payment: { orderId: string; method: PaymentMethod; amount: Money },
+    payment: { orderId: string; customerId: string; method: PaymentMethod; amount: Money },
     trx: DbTransaction,
   ): Promise<string> {
     const status = payment.method === PaymentMethod.COD ? PaymentStatus.PENDING : PaymentStatus.INITIATED;
     return this.payments.insert({ ...payment, status }, trx);
+  }
+
+  async getRefundsByReturnIds(returnIds: readonly string[]): Promise<Map<string, ReturnRefundView>> {
+    const refunds = await this.refunds.findByReturnIds(returnIds);
+    // Oldest first, so the latest refund of a return is the one kept.
+    return new Map(
+      refunds.flatMap((refund) =>
+        refund.returnId === null
+          ? []
+          : [
+              [
+                refund.returnId,
+                {
+                  status: RETURN_REFUND_STATUS[refund.status],
+                  amount: refund.amount,
+                  refundedAt: refund.succeededAt ?? refund.recordedAt,
+                },
+              ] as const,
+            ],
+      ),
+    );
   }
 
   async getSummaries(orderIds: readonly string[], trx?: DbTransaction): Promise<PaymentSummary[]> {

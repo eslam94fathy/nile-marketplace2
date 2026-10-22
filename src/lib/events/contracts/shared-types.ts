@@ -84,6 +84,16 @@ export type ReturnStatusValue =
 
 export type ReturnActorValue = 'customer' | 'seller' | 'admin' | 'delivery_agent' | 'system';
 
+/** Spec 10 §1, §8.1 (payments). */
+export type RefundReasonValue =
+  | 'seller_order_cancelled'
+  | 'items_cancelled'
+  | 'delivery_failed'
+  | 'late_payment_after_expiry'
+  | 'all_cancelled_fee'
+  | 'amount_mismatch'
+  | 'return';
+
 export type TicketMessageKindValue = 'message' | 'internal_note' | 'system';
 
 export type TicketSenderRoleValue = 'customer' | 'seller' | 'admin' | 'system';

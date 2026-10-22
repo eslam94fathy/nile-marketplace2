@@ -1925,6 +1925,14 @@ describe('migrations on a real Postgres 18', () => {
         });
       expect((await pgFailure(() => kashier('refunded_manually'))).constraint).toBe('chk_payments_status');
       await kashier('partially_refunded');
+      // D-25: every payment names its customer (a fresh order: one payment per order).
+      const fresh = await fx().insertOrderChain();
+      expect(
+        (await pgFailure(() => fx().insertPayment(fresh.orderId, { customer_id: randomUUID() }))).constraint,
+      ).toBe('fk_payments_customer_id');
+      expect((await pgFailure(() => fx().insertPayment(fresh.orderId, { customer_id: null }))).code).toBe(
+        '23502',
+      );
     });
 
     it('payment_refunds: return link, automation fields and outcomes', async () => {

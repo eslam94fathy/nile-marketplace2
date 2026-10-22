@@ -85,7 +85,10 @@ describe('payments: order-adjustments consumer', () => {
     const chain = await fx.insertOrderChain();
     await knex()('orders').where({ id: chain.orderId }).update({ items_total: '250.00', total: '300.00' });
     const paymentId = await t.infra.db.run((trx) =>
-      directory.createForOrder({ orderId: chain.orderId, method: 'cod', amount: Money.of('300.00') }, trx),
+      directory.createForOrder(
+        { orderId: chain.orderId, customerId: chain.customerId, method: 'cod', amount: Money.of('300.00') },
+        trx,
+      ),
     );
     return { ...chain, paymentId };
   }
@@ -140,7 +143,7 @@ describe('payments: order-adjustments consumer', () => {
     });
     await t.infra.db.run((trx) =>
       directory.createForOrder(
-        { orderId: kashierOrderId, method: 'kashier', amount: Money.of('150.00') },
+        { orderId: kashierOrderId, customerId, method: 'kashier', amount: Money.of('150.00') },
         trx,
       ),
     );

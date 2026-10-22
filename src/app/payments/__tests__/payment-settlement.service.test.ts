@@ -11,6 +11,7 @@ const TRX = {} as DbTransaction;
 const payment = (overrides: Partial<Payment> = {}): Payment => ({
   id: 'payment-1',
   orderId: 'order-1',
+  customerId: 'customer-1',
   method: 'kashier',
   status: 'initiated',
   amount: Money.of('150.00'),

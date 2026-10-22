@@ -10,6 +10,7 @@ const T = PAYMENTS_TABLES.PAYMENTS;
 const COLUMNS = [
   'id',
   'order_id',
+  'customer_id',
   'method',
   'status',
   'amount',
@@ -27,6 +28,7 @@ const COLUMNS = [
 interface PaymentTable {
   id: string;
   order_id: string;
+  customer_id: string;
   method: PaymentMethod;
   status: PaymentStatus;
   amount: string;
@@ -48,6 +50,7 @@ function toModel(row: PaymentRow): Payment {
   return {
     id: row.id,
     orderId: row.order_id,
+    customerId: row.customer_id,
     method: row.method,
     status: row.status,
     amount: Money.of(row.amount),
@@ -79,12 +82,19 @@ export class PaymentRepository {
 
   /** Nothing collected or refunded yet, no provider data (spec 10 §2 `createForOrder`). */
   async insert(
-    payment: { orderId: string; method: PaymentMethod; status: PaymentStatus; amount: Money },
+    payment: {
+      orderId: string;
+      customerId: string;
+      method: PaymentMethod;
+      status: PaymentStatus;
+      amount: Money;
+    },
     trx: DbTransaction,
   ): Promise<string> {
     const [row] = await trx<PaymentTable>(T)
       .insert({
         order_id: payment.orderId,
+        customer_id: payment.customerId,
         method: payment.method,
         status: payment.status,
         amount: payment.amount.toString(),
