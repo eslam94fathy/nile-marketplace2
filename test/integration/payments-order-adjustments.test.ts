@@ -277,15 +277,15 @@ describe('payments: order-adjustments consumer', () => {
         seller_order_id: order.sellerOrderId,
         amount: '50.00',
         reason: 'items_cancelled',
-        status: 'pending_manual',
+        status: 'pending_auto',
       },
       {
         seller_order_id: order.sellerOrderId,
         amount: '50.00',
         reason: 'delivery_failed',
-        status: 'pending_manual',
+        status: 'pending_auto',
       },
-      { seller_order_id: null, amount: '50.00', reason: 'all_cancelled_fee', status: 'pending_manual' },
+      { seller_order_id: null, amount: '50.00', reason: 'all_cancelled_fee', status: 'pending_auto' },
     ]);
     expect(await paymentOf(order.orderId)).toEqual({
       status: 'paid',

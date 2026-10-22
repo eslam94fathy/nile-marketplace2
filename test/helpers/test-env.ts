@@ -166,6 +166,11 @@ export function testEnvInput(overrides: Record<string, string> = {}): Record<str
     PAYMENT_GATEWAY: 'fake',
     KASHIER_API_KEY: TEST_KASHIER_API_KEY,
     KASHIER_HTTP_TIMEOUT_MS: '2000',
+    // the refund job (spec 10 UC-PA-6) against the fake
+    JOB_PAYMENT_REFUND_INTERVAL_MS: '60000',
+    PAYMENT_REFUND_BATCH_SIZE: '50',
+    PAYMENT_REFUND_MAX_ATTEMPTS: '5',
+    PAYMENT_REFUND_STUCK_MINUTES: '10',
     // secrets in event payloads
     SECRETS_ENCRYPTION_KEYS: JSON.stringify({ [TEST_SECRETS_KEY_ID]: TEST_SECRETS_KEY.toString('base64') }),
     SECRETS_ENCRYPTION_ACTIVE_KEY_ID: TEST_SECRETS_KEY_ID,

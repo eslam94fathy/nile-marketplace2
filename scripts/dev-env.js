@@ -184,6 +184,11 @@ const values = {
   PAYMENT_GATEWAY: 'fake',
   KASHIER_API_KEY: randomBytes(16).toString('hex'),
   KASHIER_HTTP_TIMEOUT_MS: '10000',
+  // Kashier refund job (spec 10 UC-PA-6): the fake refunds locally; with kashier set KASHIER_FEP_BASE_URL
+  JOB_PAYMENT_REFUND_INTERVAL_MS: '60000',
+  PAYMENT_REFUND_BATCH_SIZE: '50',
+  PAYMENT_REFUND_MAX_ATTEMPTS: '5',
+  PAYMENT_REFUND_STUCK_MINUTES: '10',
   // email: local inbox by default (P1-Q2); switch EMAIL_PROVIDER to mailjet to send real mail
   EMAIL_PROVIDER: 'mailpit',
   EMAIL_HTTP_TIMEOUT_MS: '10000',

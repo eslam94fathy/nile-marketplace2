@@ -47,13 +47,35 @@ export interface WebhookNotification {
   storablePayload: Record<string, unknown>;
 }
 
+/** One refund of a payment (spec 10 UC-PA-6, K-8). */
+export interface RefundInput {
+  /** Our payment id: the order the session was created for. */
+  merchantOrderId: string;
+  /** Decimal string with 2 places. */
+  amount: string;
+  /** Shown in the provider dashboard; never PII. */
+  reason: string;
+}
+
+/** What the provider answered for an executed refund (K-8). */
+export interface RefundResult {
+  /** The refund's own transaction id: our `provider_refund_ref`. */
+  refundTransactionId: string;
+  /** Everything refunded on the order so far, 2-decimal string (the replay check, K-11). */
+  totalRefundedAmount: string;
+  /** The provider's order status after it, e.g. PARTIALLY_REFUNDED / REFUNDED. */
+  providerStatus: string;
+}
+
 export type PaymentGatewayErrorKind =
   /** Timeout, network failure or 5xx: retrying later may work. */
   | 'unavailable'
   /** The provider refuses a second session while one is open or paid (PA-12). */
   | 'session_exists'
   /** Any other refusal (4xx): retrying the same request won't help. */
-  | 'rejected';
+  | 'rejected'
+  /** Refunds only (K-10, K-12): a timeout or 5xx after sending; the refund may have run. */
+  | 'unknown_outcome';
 
 export class PaymentGatewayError extends Error {
   override readonly name = 'PaymentGatewayError';
@@ -77,4 +99,9 @@ export interface IPaymentGateway {
   getSessionStatus(sessionId: string): Promise<SessionStatus>;
   /** null when the signature is missing or wrong, or the body isn't a webhook we can read (PA-7). */
   verifyWebhook(rawBody: Buffer, signatureHeader: string | undefined): WebhookNotification | null;
+  /**
+   * Refunds part of a paid payment (spec 10 UC-PA-6). Errors: `unavailable` (not sent, retry later),
+   * `rejected` (refused), `unknown_outcome` (may have run: never re-send blindly, PA-24).
+   */
+  refund(input: RefundInput): Promise<RefundResult>;
 }

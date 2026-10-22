@@ -4,6 +4,7 @@ import { createDeliveryJobs } from './app/delivery';
 import { createIdentityJobs } from './app/identity';
 import { createMediaJobs } from './app/media';
 import { createNotificationJobs } from './app/notifications';
+import { createPaymentsJobs } from './app/payments';
 import { createReturnsJobs } from './app/returns';
 import { createSupportJobs } from './app/support';
 import { createOrderingJobs } from './app/ordering';
@@ -55,6 +56,7 @@ async function main(): Promise<void> {
   for (const job of createNotificationJobs(container, env)) jobs.register(job);
   for (const job of createSupportJobs(container, env)) jobs.register(job);
   for (const job of createReturnsJobs(container, env)) jobs.register(job);
+  for (const job of createPaymentsJobs(container, env)) jobs.register(job);
   jobs.start();
 
   logger.info('worker started');

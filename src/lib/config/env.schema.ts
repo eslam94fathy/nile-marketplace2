@@ -81,6 +81,12 @@ const KASHIER_HOST_BY_MODE = {
   [KashierMode.LIVE]: 'https://api.kashier.io',
 } as const;
 
+/** Refunds run on the FEP host (spec 10 K-8). */
+const KASHIER_FEP_HOST_BY_MODE = {
+  [KashierMode.TEST]: 'https://test-fep.kashier.io',
+  [KashierMode.LIVE]: 'https://fep.kashier.io',
+} as const;
+
 // ---------------------------------------------------------------------------------------------
 // Sections (plain shapes, combined per process below)
 // ---------------------------------------------------------------------------------------------
@@ -248,6 +254,19 @@ const kashierSessionShape = {
   KASHIER_REDIRECT_URL: z.url().optional(),
   /** Our public webhook URL, sent per session as `serverWebhook`. */
   KASHIER_WEBHOOK_URL: z.url().optional(),
+};
+
+/**
+ * worker only: automated Kashier refunds (spec 10 UC-PA-6, PA-25 reverses PA-18, K-8). The secret key and
+ * the FEP host are required when PAYMENT_GATEWAY=kashier (`refinePayments`).
+ */
+const kashierRefundShape = {
+  KASHIER_SECRET_KEY: z.string().min(1).optional(),
+  KASHIER_FEP_BASE_URL: z.url().optional(),
+  JOB_PAYMENT_REFUND_INTERVAL_MS: positiveInt(3_600_000),
+  PAYMENT_REFUND_BATCH_SIZE: positiveInt(1_000),
+  PAYMENT_REFUND_MAX_ATTEMPTS: positiveInt(20),
+  PAYMENT_REFUND_STUCK_MINUTES: positiveInt(24 * 60),
 };
 
 /** delivery jobs (spec 11 DE-9), worker only. */
@@ -440,11 +459,12 @@ function refineSecrets(
   }
 }
 
-type PaymentEnv = z.output<z.ZodObject<typeof paymentGatewayShape>> &
-  Partial<z.output<z.ZodObject<typeof kashierSessionShape>>> & { NODE_ENV: string };
+type PaymentEnv = z.output<z.ZodObject<typeof paymentGatewayShape>> & {
+  KASHIER_FEP_BASE_URL?: string;
+} & Partial<z.output<z.ZodObject<typeof kashierSessionShape>>> & { NODE_ENV: string };
 
-/** `createsSessions` = the api, which also needs the session keys. */
-function refinePayments(env: PaymentEnv, ctx: Ctx, createsSessions: boolean): void {
+/** `createsSessions` = the api, which also needs the session keys; `refunds` = the worker (K-8). */
+function refinePayments(env: PaymentEnv, ctx: Ctx, createsSessions: boolean, refunds = false): void {
   if (env.PAYMENT_GATEWAY === PaymentGatewayName.FAKE) {
     if (env.NODE_ENV === NodeEnv.STAGING || env.NODE_ENV === NodeEnv.PRODUCTION) {
       issue(ctx, 'PAYMENT_GATEWAY', 'fake is for development and tests only');
@@ -458,7 +478,8 @@ function refinePayments(env: PaymentEnv, ctx: Ctx, createsSessions: boolean): vo
     'KASHIER_REDIRECT_URL',
     'KASHIER_WEBHOOK_URL',
   ] as const;
-  for (const key of [...required, ...(createsSessions ? sessionKeys : [])]) {
+  const refundKeys = ['KASHIER_SECRET_KEY', 'KASHIER_FEP_BASE_URL'] as const;
+  for (const key of [...required, ...(createsSessions ? sessionKeys : []), ...(refunds ? refundKeys : [])]) {
     if (!env[key]) issue(ctx, key, 'required when PAYMENT_GATEWAY=kashier');
   }
   if (
@@ -470,6 +491,18 @@ function refinePayments(env: PaymentEnv, ctx: Ctx, createsSessions: boolean): vo
       ctx,
       'KASHIER_BASE_URL',
       `must be ${KASHIER_HOST_BY_MODE[env.KASHIER_MODE]} when KASHIER_MODE=${env.KASHIER_MODE}`,
+    );
+  }
+  if (
+    refunds &&
+    env.KASHIER_MODE &&
+    env.KASHIER_FEP_BASE_URL &&
+    env.KASHIER_FEP_BASE_URL.replace(/\/+$/, '') !== KASHIER_FEP_HOST_BY_MODE[env.KASHIER_MODE]
+  ) {
+    issue(
+      ctx,
+      'KASHIER_FEP_BASE_URL',
+      `must be ${KASHIER_FEP_HOST_BY_MODE[env.KASHIER_MODE]} when KASHIER_MODE=${env.KASHIER_MODE}`,
     );
   }
   for (const key of ['KASHIER_REDIRECT_URL', 'KASHIER_WEBHOOK_URL'] as const) {
@@ -599,6 +632,7 @@ export const workerEnvSchema = z
     // The payment consumer sets the acceptance deadline when a Kashier order is placed (OR-8).
     ...orderingShape,
     ...paymentGatewayShape,
+    ...kashierRefundShape,
     ...secretsShape,
     ...emailShape,
   })
@@ -606,7 +640,7 @@ export const workerEnvSchema = z
     refinePool(env, ctx);
     refineSecrets(env, ctx);
     refineEmail(env, ctx);
-    refinePayments(env, ctx, false);
+    refinePayments(env, ctx, false, true);
     refineStorage(env, ctx, false);
   });
 

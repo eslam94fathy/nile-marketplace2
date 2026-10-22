@@ -162,6 +162,12 @@ module "environment" {
     CLEANUP_JOB_INTERVAL_MS                   = "86400000"
     JOB_SELLER_ACCEPTANCE_TIMEOUT_INTERVAL_MS = "60000"
     JOB_KASHIER_PAYMENT_EXPIRY_INTERVAL_MS    = "30000"
+    # Kashier refunds (spec 10 UC-PA-6, K-8): the FEP host, one job run a minute, 5 attempts, stuck after 10 min.
+    KASHIER_FEP_BASE_URL                      = "https://fep.kashier.io"
+    JOB_PAYMENT_REFUND_INTERVAL_MS            = "60000"
+    PAYMENT_REFUND_BATCH_SIZE                 = "50"
+    PAYMENT_REFUND_MAX_ATTEMPTS               = "5"
+    PAYMENT_REFUND_STUCK_MINUTES              = "10"
     ORDER_JOBS_BATCH_SIZE                     = "100"
     JOB_SHIPMENT_ASSIGNMENT_RETRY_INTERVAL_MS = "60000"
     SHIPMENT_JOBS_BATCH_SIZE                  = "100"

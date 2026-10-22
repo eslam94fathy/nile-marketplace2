@@ -210,9 +210,7 @@ describe('admin order cancellation', () => {
         'payment_refunds.status',
         'payment_refunds.amount',
       );
-    expect(refunds).toEqual([
-      { reason: 'seller_order_cancelled', status: 'pending_manual', amount: '100.00' },
-    ]);
+    expect(refunds).toEqual([{ reason: 'seller_order_cancelled', status: 'pending_auto', amount: '100.00' }]);
   });
 
   it('requires an Idempotency-Key and a reason; 404 unknown; 403 for other roles; pending payment is 409', async () => {

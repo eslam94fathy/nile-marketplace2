@@ -199,10 +199,20 @@ describe('lib/config per-process env schemas (P1-Q1)', () => {
         loadEnv(apiEnvSchema, testEnvInput({ NODE_ENV: 'staging', DB_SSL: 'true', ...S3_STORAGE })),
       ),
     ).toEqual(['PAYMENT_GATEWAY']);
-    // The worker only reads session statuses: no secret key, merchant id or URLs needed (PA-13).
+    // The worker reads session statuses and refunds (K-8): the secret key and the FEP host, no merchant id
+    // or URLs.
     expect(invalidKeys(() => loadEnv(workerEnvSchema, testEnvInput({ PAYMENT_GATEWAY: 'kashier' })))).toEqual(
-      ['KASHIER_BASE_URL', 'KASHIER_MODE'],
+      ['KASHIER_BASE_URL', 'KASHIER_FEP_BASE_URL', 'KASHIER_MODE', 'KASHIER_SECRET_KEY'],
     );
+    expect(() => loadEnv(workerEnvSchema, testEnvInput(KASHIER_TEST))).not.toThrow();
+    expect(
+      invalidKeys(() =>
+        loadEnv(
+          workerEnvSchema,
+          testEnvInput({ ...KASHIER_TEST, KASHIER_FEP_BASE_URL: 'https://fep.kashier.io' }),
+        ),
+      ),
+    ).toEqual(['KASHIER_FEP_BASE_URL']);
     expect(invalidKeys(() => loadEnv(apiEnvSchema, testEnvInput({ PAYMENT_GATEWAY: 'kashier' })))).toEqual([
       'KASHIER_BASE_URL',
       'KASHIER_MERCHANT_ID',
@@ -326,4 +336,5 @@ const KASHIER_TEST = {
   KASHIER_SECRET_KEY: 'secret$key',
   KASHIER_REDIRECT_URL: 'https://app.nile.test/payment-return',
   KASHIER_WEBHOOK_URL: 'https://api.nile.test/api/v1/webhooks/kashier',
+  KASHIER_FEP_BASE_URL: 'https://test-fep.kashier.io',
 };

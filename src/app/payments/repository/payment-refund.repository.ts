@@ -113,8 +113,8 @@ export class PaymentRefundRepository {
   }
 
   /**
-   * A refund due, waiting for an admin to do it (Kashier dashboard, or a COD wallet / InstaPay transfer)
-   * and record it (UC-PA-4). Kashier refunds go to the job from R2-P6 step 7 (PA-31).
+   * A refund due (spec 10 UC-PA-3, UC-PA-5): `auto` = a Kashier refund for the job (`pending_auto`,
+   * due at `now`, K-12); otherwise one an admin does by hand and records (UC-PA-4, COD returns).
    */
   async insertPending(
     refund: {
@@ -124,6 +124,8 @@ export class PaymentRefundRepository {
       reason: RefundReason;
       returnId?: string;
       payoutDetailsEncrypted?: string | null;
+      /** Kashier: the refund job does it (UC-PA-6). */
+      autoAt?: Date;
     },
     trx: DbTransaction,
   ): Promise<void> {
@@ -132,14 +134,14 @@ export class PaymentRefundRepository {
       seller_order_id: refund.sellerOrderId,
       amount: refund.amount.toString(),
       reason: refund.reason,
-      status: RefundStatus.PENDING_MANUAL,
+      status: refund.autoAt ? RefundStatus.PENDING_AUTO : RefundStatus.PENDING_MANUAL,
       recorded_by_user_id: null,
       recorded_at: null,
       provider_refund_ref: null,
       return_id: refund.returnId ?? null,
-      method: RefundMethod.MANUAL,
+      method: refund.autoAt ? RefundMethod.KASHIER_AUTO : RefundMethod.MANUAL,
       attempt_count: 0,
-      next_attempt_at: null,
+      next_attempt_at: refund.autoAt ?? null,
       last_error: null,
       payout_details_encrypted: refund.payoutDetailsEncrypted ?? null,
       succeeded_at: null,
@@ -177,6 +179,131 @@ export class PaymentRefundRepository {
     return rows.map(toModel);
   }
 
+  /** The job's candidates, due first (UC-PA-6): idx_payment_refunds_next_attempt_at_id, read without locks. */
+  async findDueIds(now: Date, limit: number): Promise<string[]> {
+    const rows = await this.db
+      .knex<PaymentRefundTable>(T)
+      .select('id')
+      .where({ status: RefundStatus.PENDING_AUTO })
+      .where('next_attempt_at', '<=', now)
+      .orderBy([{ column: 'next_attempt_at' }, { column: 'id' }])
+      .limit(limit);
+    return rows.map((row) => row.id);
+  }
+
+  /** Refunds left `processing` since before `before` (§8.3 step 4): idx_payment_refunds_processing. */
+  async findStuckIds(before: Date, limit: number): Promise<string[]> {
+    const rows = await this.db
+      .knex<PaymentRefundTable>(T)
+      .select('id')
+      .where({ status: RefundStatus.PROCESSING })
+      .where('updated_at', '<', before)
+      .orderBy('updated_at')
+      .limit(limit);
+    return rows.map((row) => row.id);
+  }
+
+  /** The refund row `FOR UPDATE`; with `skipLocked` a busy one reads as missing (the job). */
+  async lockById(
+    id: string,
+    trx: DbTransaction,
+    options: { skipLocked?: boolean } = {},
+  ): Promise<PaymentRefund | null> {
+    const qb = trx<PaymentRefundTable>(T).select('id').where({ id }).forUpdate();
+    if (options.skipLocked) void qb.skipLocked();
+    if (!(await qb.first())) return null;
+    return this.findById(id, trx);
+  }
+
+  /**
+   * K-11: another refund of the payment was sent, done or recorded since `since`; a same-amount refund
+   * sent now could be replayed by Kashier instead of run. Over idx_payment_refunds_payment_id.
+   */
+  async hasRecentAttempt(
+    paymentId: string,
+    exceptId: string,
+    since: Date,
+    trx: DbTransaction,
+  ): Promise<boolean> {
+    const { rows } = await trx.raw<{ rows: { found: boolean }[] }>(
+      `SELECT EXISTS (SELECT 1 FROM ${T} WHERE payment_id = ? AND id <> ? AND status IN (?, ?, ?) AND updated_at > ?) AS found`,
+      [paymentId, exceptId, RefundStatus.PROCESSING, RefundStatus.SUCCEEDED, RefundStatus.RECORDED, since],
+    );
+    return rows[0]?.found === true;
+  }
+
+  /** K-11: Kashier's refund transaction id is already one of the payment's refunds (a replayed answer). */
+  async hasProviderRef(paymentId: string, providerRefundRef: string, trx: DbTransaction): Promise<boolean> {
+    const { rows } = await trx.raw<{ rows: { found: boolean }[] }>(
+      `SELECT EXISTS (SELECT 1 FROM ${T} WHERE payment_id = ? AND provider_refund_ref = ?) AS found`,
+      [paymentId, providerRefundRef],
+    );
+    return rows[0]?.found === true;
+  }
+
+  /** UC-PA-6 step 1: `pending_auto → processing`, one more attempt. */
+  async markProcessing(id: string, trx: DbTransaction): Promise<void> {
+    await this.move(
+      id,
+      RefundStatus.PENDING_AUTO,
+      { status: RefundStatus.PROCESSING, attempt_count: trx.raw('attempt_count + 1') },
+      trx,
+    );
+  }
+
+  /** K-11 spacing: still `pending_auto`, later. */
+  async defer(id: string, nextAttemptAt: Date, trx: DbTransaction): Promise<void> {
+    await this.move(id, RefundStatus.PENDING_AUTO, { next_attempt_at: nextAttemptAt }, trx);
+  }
+
+  /** UC-PA-6 success: `processing → succeeded` with Kashier's refund transaction id. */
+  async markSucceeded(id: string, providerRefundRef: string, at: Date, trx: DbTransaction): Promise<void> {
+    await this.move(
+      id,
+      RefundStatus.PROCESSING,
+      {
+        status: RefundStatus.SUCCEEDED,
+        provider_refund_ref: providerRefundRef,
+        succeeded_at: at,
+        last_error: null,
+      },
+      trx,
+    );
+  }
+
+  /** A transient failure: back to `pending_auto` for a later attempt. */
+  async markRetry(id: string, nextAttemptAt: Date, error: string, trx: DbTransaction): Promise<void> {
+    await this.move(
+      id,
+      RefundStatus.PROCESSING,
+      { status: RefundStatus.PENDING_AUTO, next_attempt_at: nextAttemptAt, last_error: error.slice(0, 500) },
+      trx,
+    );
+  }
+
+  /** Given up, refused, unknown or replayed: an admin takes over (`pending_manual`, spec 10 §8.4). */
+  async markManual(id: string, error: string, trx: DbTransaction): Promise<void> {
+    await this.move(
+      id,
+      RefundStatus.PROCESSING,
+      { status: RefundStatus.PENDING_MANUAL, next_attempt_at: null, last_error: error.slice(0, 500) },
+      trx,
+    );
+  }
+
+  /** Conditional on the expected status, under the caller's lock: a refusal is an invariant violation. */
+  private async move(
+    id: string,
+    from: RefundStatus,
+    set: Record<string, unknown>,
+    trx: DbTransaction,
+  ): Promise<void> {
+    const updated = await trx<PaymentRefundTable>(T)
+      .update({ ...set, updated_at: trx.fn.now() })
+      .where({ id, status: from });
+    if (updated !== 1) throw new Error(`refund ${id} is not ${from}`);
+  }
+
   /** The sealed COD payout details of a refund (spec 10 §8.4); opened only for the refund detail. */
   async findPayoutDetails(id: string): Promise<string | null> {
     const row = await this.db
@@ -200,7 +327,7 @@ export class PaymentRefundRepository {
    * `POST …/retry` (spec 10 §8.4): a `pending_manual` refund to the job, at once, attempts reset.
    * Conditional; false when it was not `pending_manual`.
    */
-  async markRetry(id: string, now: Date, trx: DbTransaction): Promise<boolean> {
+  async markRetriedByAdmin(id: string, now: Date, trx: DbTransaction): Promise<boolean> {
     const updated = await trx<PaymentRefundTable>(T)
       .update({
         status: RefundStatus.PENDING_AUTO,

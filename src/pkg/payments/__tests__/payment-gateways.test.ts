@@ -166,6 +166,7 @@ describe('KashierPaymentGateway (against a local stand-in)', () => {
   const gateway = () =>
     new KashierPaymentGateway({
       baseUrl,
+      fepBaseUrl: baseUrl,
       merchantId: 'MID-1-2',
       apiKey: API_KEY,
       secretKey: SECRET_KEY,
@@ -271,9 +272,124 @@ describe('KashierPaymentGateway (against a local stand-in)', () => {
     reply = { status: 404, body: JSON.stringify({ messages: { en: 'Payment session not found' } }) };
     expect((await failure(gateway().getSessionStatus('nope'))).kind).toBe('rejected');
   });
+
+  it('reads a paid session: Kashier answers 400 "already been paid", which means paid (K-9)', async () => {
+    reply = {
+      status: 400,
+      body: JSON.stringify({
+        error: { cause: 'Invalid Request' },
+        messages: { en: 'The order has already been paid before' },
+        status: 'FAILURE',
+      }),
+    };
+    expect(await gateway().getSessionStatus('sess-1')).toEqual({ status: 'paid', providerStatus: 'PAID' });
+  });
+
+  /** Kashier's refund answer (K-8), trimmed. */
+  const refunded = (overrides: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      response: {
+        apiOperation: 'REFUND',
+        result: 'SUCCESS',
+        status: 'PARTIALLY_REFUNDED',
+        amount: 50,
+        totalRefundedAmount: 50,
+        transactionId: 'TX-1',
+        merchantOrderId: 'payment-1',
+        apiKeyId: 'echoed',
+        ...overrides,
+      },
+      messages: { en: 'Approved' },
+      status: 'SUCCESS',
+      statusCode: 200,
+    });
+
+  it('refunds on the FEP host: PUT /v3/orders/<our id>, credentials in headers, the amount as a number (K-8)', async () => {
+    reply = { status: 200, body: refunded() };
+    expect(
+      await gateway().refund({ merchantOrderId: 'payment-1', amount: '50.00', reason: 'Nile refund return' }),
+    ).toEqual({
+      refundTransactionId: 'TX-1',
+      totalRefundedAmount: '50.00',
+      providerStatus: 'PARTIALLY_REFUNDED',
+    });
+    expect(captured?.method).toBe('PUT');
+    expect(captured?.url).toBe('/v3/orders/payment-1');
+    expect(captured?.headers.authorization).toBe(SECRET_KEY);
+    expect(captured?.headers['api-key']).toBe(API_KEY);
+    expect(captured?.body).toEqual({
+      apiOperation: 'REFUND',
+      reason: 'Nile refund return',
+      transaction: { amount: 50 },
+    });
+  });
+
+  it('classifies refund failures by whether the refund may have run (K-12)', async () => {
+    const refund = () => gateway().refund({ merchantOrderId: 'payment-1', amount: '50.00', reason: 'r' });
+    reply = {
+      status: 400,
+      body: JSON.stringify({
+        messages: { en: 'This order cannot be refunded with provided amount' },
+        status: 'FAILURE',
+      }),
+    };
+    const over = await failure(refund());
+    expect([over.kind, over.status]).toEqual(['rejected', 400]);
+    expect(over.message).toContain('cannot be refunded');
+
+    reply = { status: 429, body: '{}' };
+    expect((await failure(refund())).kind).toBe('unavailable');
+    reply = { status: 502, body: '<html>bad gateway</html>' };
+    expect((await failure(refund())).kind).toBe('unknown_outcome');
+    reply = { status: 200, body: refunded(), delayMs: 1_000 };
+    expect((await failure(refund())).kind).toBe('unknown_outcome');
+    reply = {
+      status: 200,
+      body: JSON.stringify({ status: 'FAILURE', messages: { en: 'Something went wrong' } }),
+    };
+    expect((await failure(refund())).kind).toBe('unknown_outcome');
+
+    const nowhere = new KashierPaymentGateway({
+      baseUrl,
+      fepBaseUrl: await closedPortUrl(),
+      merchantId: 'MID-1-2',
+      apiKey: API_KEY,
+      secretKey: SECRET_KEY,
+      webhookUrl: '',
+      redirectUrl: '',
+      timeoutMs: 300,
+    });
+    const refused = await failure(
+      nowhere.refund({ merchantOrderId: 'payment-1', amount: '1.00', reason: 'r' }),
+    );
+    expect(refused.kind).toBe('unavailable');
+    expect(refused.message).not.toContain(SECRET_KEY);
+  });
 });
 
 describe('FakePaymentGateway (spec 10 PA-5)', () => {
+  it('refunds with a new transaction id and the running total; tests script replays and failures', async () => {
+    const fake = new FakePaymentGateway({ apiKey: API_KEY, checkoutBaseUrl: 'http://fake.local' });
+    const refund = (amount: string) => fake.refund({ merchantOrderId: 'payment-1', amount, reason: 'r' });
+    expect(await refund('50.00')).toMatchObject({
+      refundTransactionId: 'FAKE-RF-1',
+      totalRefundedAmount: '50.00',
+    });
+    fake.scriptRefund('replay', 'unknown_outcome');
+    expect(await refund('50.00')).toMatchObject({
+      refundTransactionId: 'FAKE-RF-1',
+      totalRefundedAmount: '50.00',
+    });
+    expect(((await refund('5.00').catch((e: unknown) => e)) as PaymentGatewayError).kind).toBe(
+      'unknown_outcome',
+    );
+    expect(await refund('5.00')).toMatchObject({
+      refundTransactionId: 'FAKE-RF-2',
+      totalRefundedAmount: '55.00',
+    });
+    expect(fake.refundCalls).toHaveLength(4);
+  });
+
   const fake = () =>
     new FakePaymentGateway({ apiKey: API_KEY, checkoutBaseUrl: 'http://localhost:3000/fake-kashier' });
   const input = (merchantOrderId: string, minutes = 15) => ({
@@ -310,3 +426,12 @@ describe('FakePaymentGateway (spec 10 PA-5)', () => {
     expect(gateway.verifyWebhook(body, signKashierWebhook({}, ['x'], 'wrong'))).toBeNull();
   });
 });
+
+/** A local URL nothing listens on: the connection is refused before anything is sent. */
+async function closedPortUrl(): Promise<string> {
+  const probe = createServer();
+  await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+  const { port } = probe.address() as AddressInfo;
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  return `http://127.0.0.1:${port}`;
+}

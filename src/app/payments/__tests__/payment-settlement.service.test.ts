@@ -45,6 +45,7 @@ function setup() {
   container.register(TOKENS.PaymentRefundRepository, { useValue: refunds });
   container.register(TOKENS.Outbox, { useValue: outbox });
   container.register(TOKENS.Logger, { useValue: logger });
+  container.register(TOKENS.Clock, { useValue: { now: () => new Date('2026-10-22T10:00:00.000Z') } });
   return { payments, refunds, outbox, logger, service: container.resolve(PaymentSettlementService) };
 }
 

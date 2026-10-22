@@ -1,4 +1,5 @@
 import { inject, injectable } from 'tsyringe';
+import { type IClock } from '../../../lib/clock';
 import { type DbTransaction } from '../../../lib/db';
 import { TOKENS } from '../../../lib/di';
 import {
@@ -31,6 +32,7 @@ export class OrderAdjustmentService {
     @inject(TOKENS.PaymentRepository) private readonly payments: PaymentRepository,
     @inject(TOKENS.PaymentRefundRepository) private readonly refunds: PaymentRefundRepository,
     @inject(TOKENS.Logger) private readonly logger: ILogger,
+    @inject(TOKENS.Clock) private readonly clock: IClock,
   ) {}
 
   async handle(envelope: EventEnvelope, trx: DbTransaction): Promise<void> {
@@ -123,8 +125,8 @@ export class OrderAdjustmentService {
   }
 
   /**
-   * UC-PA-5 `return.completed`: a refund row for what the return gives back. Kashier refunds are done
-   * by hand until the refund job (PA-31); a COD refund carries the sealed payout details (RE-8). Both
+   * UC-PA-5 `return.completed`: a refund row for what the return gives back. A Kashier refund goes to
+   * the refund job (UC-PA-6); a COD refund carries the sealed payout details for the admin (RE-8). Both
    * stay within what was collected (PA-20).
    */
   private async returned(envelope: EventEnvelope, orderId: string, trx: DbTransaction): Promise<void> {
@@ -250,6 +252,8 @@ export class OrderAdjustmentService {
         amount: refund,
         reason,
         ...(extra ? { returnId: extra.returnId, payoutDetailsEncrypted: extra.payoutDetailsEncrypted } : {}),
+        // Kashier refunds go to the job at once (K-12); COD refunds are paid by an admin.
+        ...(payment.method === PaymentMethod.KASHIER ? { autoAt: this.clock.now() } : {}),
       },
       trx,
     );

@@ -312,15 +312,19 @@ const FAKE_CHECKOUT_BASE_URL = 'https://fake-kashier.invalid';
  * enforces which keys each needs). The worker only reads session statuses, which needs no credential
  * (PA-13), so its Kashier gateway has no secret key or merchant id.
  */
-export function createPaymentGateway(env: Readonly<Partial<ApiEnv> & WorkerEnvPaymentKeys>): IPaymentGateway {
+export function createPaymentGateway(
+  env: Readonly<Partial<Omit<ApiEnv, keyof WorkerEnvPaymentKeys>> & WorkerEnvPaymentKeys>,
+): IPaymentGateway {
   if (env.PAYMENT_GATEWAY === PaymentGatewayName.FAKE) {
     return new FakePaymentGateway({ apiKey: env.KASHIER_API_KEY, checkoutBaseUrl: FAKE_CHECKOUT_BASE_URL });
   }
   if (!env.KASHIER_BASE_URL) throw new Error('Kashier configuration is incomplete');
   return new KashierPaymentGateway({
     baseUrl: env.KASHIER_BASE_URL.replace(/\/+$/, ''),
+    // Only the worker refunds; the schema requires it there (K-8).
+    fepBaseUrl: env.KASHIER_FEP_BASE_URL?.replace(/\/+$/, '') ?? '',
     apiKey: env.KASHIER_API_KEY,
-    // Only the api creates sessions; the schema requires these there.
+    // Only the api creates sessions; the schema requires these there. Both processes have the secret key.
     merchantId: env.KASHIER_MERCHANT_ID ?? '',
     secretKey: env.KASHIER_SECRET_KEY ?? '',
     webhookUrl: env.KASHIER_WEBHOOK_URL ?? '',
@@ -332,7 +336,8 @@ export function createPaymentGateway(env: Readonly<Partial<ApiEnv> & WorkerEnvPa
 type WorkerEnvPaymentKeys = Pick<
   WorkerEnv,
   'PAYMENT_GATEWAY' | 'KASHIER_API_KEY' | 'KASHIER_HTTP_TIMEOUT_MS' | 'KASHIER_BASE_URL'
->;
+> &
+  Partial<Pick<WorkerEnv, 'KASHIER_FEP_BASE_URL' | 'KASHIER_SECRET_KEY'>>;
 
 /** Each close is independent, so one failure doesn't block the rest. */
 export async function closeInfrastructure(infra: ApiInfrastructure | WorkerInfrastructure): Promise<void> {

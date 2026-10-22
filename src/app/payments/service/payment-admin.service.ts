@@ -159,7 +159,8 @@ export class PaymentAdminService {
     const payment = await this.payments.findById(found.paymentId);
     if (payment?.method !== PaymentMethod.KASHIER) throw refundNotRetryable();
     await this.tx.run(async (trx) => {
-      if (!(await this.refunds.markRetry(refundId, this.clock.now(), trx))) throw refundNotRetryable();
+      if (!(await this.refunds.markRetriedByAdmin(refundId, this.clock.now(), trx)))
+        throw refundNotRetryable();
       await this.audit.record(
         {
           action: 'payment_refund.retried',

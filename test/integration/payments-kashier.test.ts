@@ -246,7 +246,7 @@ describe('payments: Kashier sessions, webhook and manual refunds', () => {
       expect(await paymentRow(paymentId)).toMatchObject({ status: 'failed', collected_amount: '140.00' });
       expect(
         await knex()('payment_refunds').where({ payment_id: paymentId }).select('amount', 'reason', 'status'),
-      ).toEqual([{ amount: '140.00', reason: 'amount_mismatch', status: 'pending_manual' }]);
+      ).toEqual([{ amount: '140.00', reason: 'amount_mismatch', status: 'pending_auto' }]);
       expect((await outboxOf('payment.failed', paymentId)).map((e) => e.payload.reason)).toEqual([
         'amount_mismatch',
       ]);

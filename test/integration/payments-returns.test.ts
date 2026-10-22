@@ -214,11 +214,21 @@ describe('payments: return refunds', () => {
     });
   });
 
-  it('Kashier: a manual refund until the job (PA-31); retry hands it to the job, audited, once', async () => {
+  it('Kashier: a refund for the job (K-12); once the job handed it over, retry gives it back, audited, once', async () => {
     const d = await deliveredWithReturn('kashier');
     await deliver('return.completed', completed(d, { paymentMethod: 'kashier' }));
     const [refund] = await refundsOf(d.paymentId);
-    expect(refund).toMatchObject({ reason: 'return', status: 'pending_manual', hasPayoutDetails: false });
+    expect(refund).toMatchObject({
+      reason: 'return',
+      status: 'pending_auto',
+      method: 'kashier_auto',
+      hasPayoutDetails: false,
+    });
+    expect(refund?.nextAttemptAt).not.toBeNull();
+    // As the job leaves a refund it gave up on.
+    await knex()('payment_refunds')
+      .where({ id: refund?.id })
+      .update({ status: 'pending_manual', attempt_count: 5 });
 
     const retried = successBody<RefundBody>(
       await asAdmin.post(`/admin/payments/refunds/${refund?.id}/retry`).expect(200),
