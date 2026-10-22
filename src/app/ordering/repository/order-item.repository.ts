@@ -41,6 +41,8 @@ interface OrderItemTable {
   cancelled_quantity: number;
   returned_quantity: number;
   line_total: string;
+  discount_original: string;
+  discount_amount: string;
   image_media_id: string | null;
   created_at: Date;
   updated_at: Date;
@@ -94,6 +96,9 @@ export class OrderItemRepository {
           cancelled_quantity: 0,
           returned_quantity: 0,
           line_total: item.lineTotal.toString(),
+          // R2-P7 step 5 passes the coupon share (spec 09 §8.8).
+          discount_original: Money.zero().toString(),
+          discount_amount: Money.zero().toString(),
           image_media_id: item.imageMediaId,
         })),
       )

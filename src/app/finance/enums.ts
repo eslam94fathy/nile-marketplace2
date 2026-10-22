@@ -9,6 +9,8 @@ export const AccountType = {
   SELLER_PENDING: 'seller_pending',
   /** What the platform owes a customer for a completed return. */
   CUSTOMER_REFUND_PAYABLE: 'customer_refund_payable',
+  /** Platform-funded coupon discounts; only goes negative (FI-14, FI-20). */
+  PLATFORM_PROMOTIONS: 'platform_promotions',
 } as const;
 export type AccountType = (typeof AccountType)[keyof typeof AccountType];
 
@@ -37,6 +39,8 @@ export const EntryType = {
   RETURN_FEE_EARNED: 'return_fee_earned',
   CUSTOMER_REFUND_OWED: 'customer_refund_owed',
   CUSTOMER_REFUND_PAID: 'customer_refund_paid',
+  PROMOTION_FUNDED: 'promotion_funded',
+  PROMOTION_REVERSED: 'promotion_reversed',
 } as const;
 export type EntryType = (typeof EntryType)[keyof typeof EntryType];
 

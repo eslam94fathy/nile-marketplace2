@@ -47,6 +47,9 @@ interface OrderTable {
   delivery_fee: string;
   agent_fee_share_rate: string;
   total: string;
+  coupon_id: string | null;
+  coupon_code: string | null;
+  discount_total: string;
   ship_governorate_id: string;
   ship_governorate_name: string;
   ship_recipient_name: string;
@@ -142,6 +145,10 @@ export class OrderRepository {
         delivery_fee: order.deliveryFee.toString(),
         agent_fee_share_rate: order.agentFeeShareRate.toString(),
         total: order.total.toString(),
+        // R2-P7 step 5 passes the coupon (spec 09 §8.8).
+        coupon_id: null,
+        coupon_code: null,
+        discount_total: Money.zero().toString(),
         ship_governorate_id: order.shipping.governorateId,
         ship_governorate_name: order.shipping.governorateName,
         ship_recipient_name: order.shipping.recipientName,

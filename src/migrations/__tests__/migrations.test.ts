@@ -128,6 +128,19 @@ describe('migrations list (ListMigrationSource)', () => {
       '20261022100030_create_seller_order_holds',
       '20261022100031_add_return_audit_actions',
       '20261022120001_add_payments_customer_id',
+      '20261022140001_create_coupons',
+      '20261022140002_create_coupon_redemptions',
+      '20261022140003_add_orders_coupon',
+      '20261022140004_validate_orders_coupon',
+      '20261022140005_add_seller_orders_discount',
+      '20261022140006_validate_seller_orders_discount',
+      '20261022140007_add_order_items_discount',
+      '20261022140008_validate_order_items_discount',
+      '20261022140009_add_finance_promotions_account',
+      '20261022140010_add_ledger_entries_promotion_types',
+      '20261022140011_validate_ledger_entries_promotion_types',
+      '20261022140012_add_coupon_blocked_notification_type',
+      '20261022140013_add_coupon_audit_actions',
     ]);
   });
 

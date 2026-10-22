@@ -2164,4 +2164,308 @@ describe('migrations on a real Postgres 18', () => {
       }
     });
   });
+
+  describe('coupons, redemptions and discounts (R2-P7, D-26)', () => {
+    const fx = () => orderFixtures(db);
+    type Chain = Awaited<ReturnType<ReturnType<typeof orderFixtures>['insertOrderChain']>>;
+    const DAY = 86_400_000;
+    let codes = 0;
+    const nextCode = () => `TEST-${Date.now().toString(36).toUpperCase()}-${++codes}`;
+    const couponRow = (overrides: Record<string, unknown> = {}) => ({
+      code: nextCode(),
+      funding: 'platform',
+      seller_id: null,
+      discount_type: 'percent',
+      discount_value: '0.1000',
+      max_discount: null,
+      min_items_subtotal: '0.00',
+      scope: 'all',
+      scope_seller_id: null,
+      scope_category_id: null,
+      starts_at: new Date(Date.now() - DAY),
+      ends_at: new Date(Date.now() + DAY),
+      global_limit: null,
+      per_customer_limit: 1,
+      redemption_count: 0,
+      status: 'active',
+      first_redeemed_at: null,
+      admin_blocked_at: null,
+      admin_block_reason: null,
+      ...overrides,
+    });
+    const insertCoupon = async (overrides: Record<string, unknown> = {}) =>
+      (await db('coupons').insert(couponRow(overrides)).returning<{ id: string }[]>('id'))[0]?.id ?? '';
+    const sellerCoupon = (chain: Chain, overrides: Record<string, unknown> = {}) => ({
+      funding: 'seller',
+      seller_id: chain.sellerId,
+      scope: 'seller',
+      scope_seller_id: chain.sellerId,
+      ...overrides,
+    });
+    const categoryOf = async (chain: Chain) =>
+      (await db('products').where({ id: chain.productId }).first<{ category_id: string }>('category_id'))
+        .category_id;
+
+    it('coupons: code, funding, discount, scope, dates and limits CHECKs', async () => {
+      const chain = await fx().insertOrderChain();
+      const categoryId = await categoryOf(chain);
+      const fails = async (overrides: Record<string, unknown>) =>
+        (await pgFailure(() => insertCoupon(overrides))).constraint;
+      expect(await fails({ code: 'abc-1' })).toBe('chk_coupons_code');
+      expect(await fails({ code: 'AB1' })).toBe('chk_coupons_code');
+      expect(await fails({ funding: 'partner' })).toBe('chk_coupons_funding');
+      expect(await fails({ funding: 'seller', scope: 'seller', scope_seller_id: chain.sellerId })).toBe(
+        'chk_coupons_funding_seller',
+      );
+      expect(await fails({ seller_id: chain.sellerId })).toBe('chk_coupons_funding_seller');
+      expect(await fails({ discount_value: '0.9100' })).toBe('chk_coupons_discount_value');
+      expect(await fails({ discount_value: '0.0000' })).toBe('chk_coupons_discount_value');
+      expect(await fails({ discount_type: 'fixed', discount_value: '10.5050' })).toBe(
+        'chk_coupons_discount_value',
+      );
+      expect(await fails({ discount_type: 'fixed', discount_value: '50.0000', max_discount: '20.00' })).toBe(
+        'chk_coupons_max_discount',
+      );
+      expect(await fails({ max_discount: '0.00' })).toBe('chk_coupons_max_discount');
+      expect(await fails({ min_items_subtotal: '-1.00' })).toBe('chk_coupons_min_items_subtotal');
+      expect(await fails({ scope: 'seller' })).toBe('chk_coupons_scope');
+      expect(await fails({ scope: 'category' })).toBe('chk_coupons_scope');
+      expect(await fails({ scope_category_id: categoryId })).toBe('chk_coupons_scope');
+      expect(
+        await fails({ scope: 'category', scope_category_id: categoryId, scope_seller_id: chain.sellerId }),
+      ).toBe('chk_coupons_scope');
+      expect(await fails(sellerCoupon(chain, { scope: 'all', scope_seller_id: null }))).toBe(
+        'chk_coupons_scope',
+      );
+      const other = await fx().insertOrderChain();
+      expect(await fails(sellerCoupon(chain, { scope_seller_id: other.sellerId }))).toBe('chk_coupons_scope');
+      expect(await fails({ ends_at: new Date(Date.now() - 2 * DAY) })).toBe('chk_coupons_dates');
+      expect(await fails({ global_limit: 0 })).toBe('chk_coupons_limits');
+      expect(await fails({ per_customer_limit: 0 })).toBe('chk_coupons_limits');
+      expect(await fails({ per_customer_limit: 101 })).toBe('chk_coupons_limits');
+      expect(await fails({ global_limit: 1, redemption_count: 2, first_redeemed_at: new Date() })).toBe(
+        'chk_coupons_redemption_count',
+      );
+      expect(await fails({ redemption_count: 1 })).toBe('chk_coupons_redemption_count');
+      expect(await fails({ status: 'scheduled' })).toBe('chk_coupons_status');
+
+      await insertCoupon({ discount_type: 'fixed', discount_value: '25.5000' });
+      await insertCoupon({ scope: 'seller', scope_seller_id: chain.sellerId, max_discount: '30.00' });
+      await insertCoupon({ scope: 'category', scope_category_id: categoryId });
+      await insertCoupon(sellerCoupon(chain, { scope: 'category', scope_category_id: categoryId }));
+      const code = nextCode();
+      await insertCoupon({ code });
+      expect((await pgFailure(() => insertCoupon({ code }))).constraint).toBe('uq_coupons_code');
+    });
+
+    it('coupons: an admin block is both columns, a seller coupon, inactive, with a real reason (PR-20)', async () => {
+      const chain = await fx().insertOrderChain();
+      const blocked = { status: 'inactive', admin_blocked_at: new Date(), admin_block_reason: 'Abuse' };
+      const fails = async (overrides: Record<string, unknown>) =>
+        (await pgFailure(() => insertCoupon(overrides))).constraint;
+      expect(await fails(blocked)).toBe('chk_coupons_admin_block');
+      expect(await fails(sellerCoupon(chain, { ...blocked, status: 'active' }))).toBe(
+        'chk_coupons_admin_block',
+      );
+      expect(await fails(sellerCoupon(chain, { ...blocked, admin_block_reason: null }))).toBe(
+        'chk_coupons_admin_block',
+      );
+      expect(await fails(sellerCoupon(chain, { ...blocked, admin_block_reason: 'no' }))).toBe(
+        'chk_coupons_admin_block',
+      );
+      await insertCoupon(sellerCoupon(chain, blocked));
+    });
+
+    it('coupon_redemptions: one per order, released exactly when released_at is set', async () => {
+      const chain = await fx().insertOrderChain();
+      const couponId = await insertCoupon();
+      const redemption = (overrides: Record<string, unknown>) =>
+        db('coupon_redemptions').insert({
+          coupon_id: couponId,
+          customer_id: chain.customerId,
+          order_id: chain.orderId,
+          discount_total: '10.00',
+          status: 'active',
+          released_at: null,
+          ...overrides,
+        });
+      expect((await pgFailure(() => redemption({ discount_total: '-0.01' }))).constraint).toBe(
+        'chk_coupon_redemptions_discount_total',
+      );
+      expect((await pgFailure(() => redemption({ status: 'expired' }))).constraint).toBe(
+        'chk_coupon_redemptions_status',
+      );
+      expect((await pgFailure(() => redemption({ status: 'released' }))).constraint).toBe(
+        'chk_coupon_redemptions_released',
+      );
+      expect((await pgFailure(() => redemption({ released_at: new Date() }))).constraint).toBe(
+        'chk_coupon_redemptions_released',
+      );
+      await redemption({});
+      expect((await pgFailure(() => redemption({}))).constraint).toBe('uq_coupon_redemptions_order_id');
+      expect((await pgFailure(() => db('coupons').where({ id: couponId }).delete())).constraint).toBe(
+        'fk_coupon_redemptions_coupon_id',
+      );
+    });
+
+    it('ordering: the discount columns have no default and stay within the order, seller order and line', async () => {
+      const chain = await fx().insertOrderChain();
+      const couponId = await insertCoupon();
+      for (const [table, column] of [
+        ['orders', 'discount_total'],
+        ['seller_orders', 'discount_amount'],
+        ['order_items', 'discount_original'],
+        ['order_items', 'discount_amount'],
+      ] as const) {
+        const { rows } = await db.raw<{ rows: { column_default: string | null; is_nullable: string }[] }>(
+          `SELECT column_default, is_nullable FROM information_schema.columns
+            WHERE table_name = ? AND column_name = ?`,
+          [table, column],
+        );
+        expect(rows[0], `${table}.${column}`).toEqual({ column_default: null, is_nullable: 'NO' });
+      }
+      const order = (values: Record<string, unknown>) =>
+        db('orders').where({ id: chain.orderId }).update(values);
+      expect((await pgFailure(() => order({ discount_total: '10.00' }))).constraint).toBe(
+        'chk_orders_discount',
+      );
+      expect((await pgFailure(() => order({ coupon_id: couponId }))).constraint).toBe('chk_orders_discount');
+      expect((await pgFailure(() => order({ coupon_code: 'SAVE-10' }))).constraint).toBe(
+        'chk_orders_discount',
+      );
+      expect(
+        (await pgFailure(() => order({ coupon_id: randomUUID(), coupon_code: 'SAVE-10' }))).constraint,
+      ).toBe('fk_orders_coupon_id');
+      await order({ coupon_id: couponId, coupon_code: 'SAVE-10', discount_total: '10.00' });
+
+      const sellerOrder = (values: Record<string, unknown>) =>
+        db('seller_orders').where({ id: chain.sellerOrderId }).update(values);
+      expect((await pgFailure(() => sellerOrder({ discount_amount: '10.00' }))).constraint).toBe(
+        'chk_seller_orders_discount',
+      );
+      expect((await pgFailure(() => sellerOrder({ discount_funding: 'platform' }))).constraint).toBe(
+        'chk_seller_orders_discount',
+      );
+      expect(
+        (await pgFailure(() => sellerOrder({ discount_amount: '100.01', discount_funding: 'platform' })))
+          .constraint,
+      ).toBe('chk_seller_orders_discount');
+      expect(
+        (await pgFailure(() => sellerOrder({ discount_amount: '10.00', discount_funding: 'partner' })))
+          .constraint,
+      ).toBe('chk_seller_orders_discount_funding');
+      await sellerOrder({ discount_amount: '10.00', discount_funding: 'seller' });
+
+      const item = (values: Record<string, unknown>) =>
+        db('order_items').where({ id: chain.orderItemId }).update(values);
+      expect((await pgFailure(() => item({ discount_original: '100.01' }))).constraint).toBe(
+        'chk_order_items_discount',
+      );
+      expect((await pgFailure(() => item({ discount_amount: '5.00' }))).constraint).toBe(
+        'chk_order_items_discount',
+      );
+      expect(
+        (
+          await pgFailure(() =>
+            item({ discount_original: '60.00', discount_amount: '60.00', line_total: '50.00' }),
+          )
+        ).constraint,
+      ).toBe('chk_order_items_discount');
+      await item({
+        discount_original: '10.00',
+        discount_amount: '5.00',
+        cancelled_quantity: 1,
+        line_total: '50.00',
+      });
+    });
+
+    it('finance, notifications and audit accept the R2-P7 values; platform_promotions may go negative', async () => {
+      const [account] = await db('finance_accounts')
+        .insert({ account_type: 'platform_promotions', owner_id: null, balance: '-20.00' })
+        .returning<{ id: string }[]>('id');
+      for (const [entryType, referenceType] of [
+        ['promotion_funded', 'seller_order'],
+        ['promotion_reversed', 'return'],
+      ]) {
+        await db('ledger_entries').insert({
+          account_id: account?.id,
+          direction: 'debit',
+          amount: '1.00',
+          balance_after: '-21.00',
+          entry_type: entryType,
+          reference_type: referenceType,
+          reference_id: randomUUID(),
+          source_event_id: null,
+        });
+      }
+      const sellerUserId = await insertUser({ role: 'seller' });
+      await db('user_notifications').insert({
+        user_id: sellerUserId,
+        category: 'orders',
+        type: 'coupon_blocked',
+        title: 'Coupon blocked',
+        body: 'One of your coupons was blocked by the platform.',
+        link: `/seller/coupons/${randomUUID()}`,
+        source_event_id: randomUUID(),
+      });
+      const adminId = await insertUser({ role: 'admin' });
+      for (const action of ['coupon.created', 'coupon.updated', 'coupon.blocked', 'coupon.unblocked']) {
+        await db('admin_audit_log').insert({
+          actor_type: 'admin',
+          actor_user_id: adminId,
+          action,
+          target_type: 'coupon',
+          target_id: randomUUID(),
+        });
+      }
+    });
+
+    it('the R2-P7 indexes are valid and serve their queries', async () => {
+      const names = [
+        'idx_coupons_seller_id_created_at_id',
+        'idx_coupons_created_at_id',
+        'idx_coupon_redemptions_coupon_id_customer_id',
+        'idx_coupon_redemptions_coupon_id_created_at',
+      ];
+      const valid = await db.raw<{ rows: { name: string; valid: boolean }[] }>(
+        `SELECT c.relname AS name, i.indisvalid AS valid
+           FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = ANY(?)`,
+        [names],
+      );
+      expect(
+        valid.rows
+          .filter((row) => row.valid)
+          .map((row) => row.name)
+          .sort(),
+      ).toEqual([...names].sort());
+
+      const planOf = (sql: string) =>
+        db.transaction(async (trx) => {
+          await trx.raw('SET LOCAL enable_seqscan = off');
+          const result = await trx.raw<{ rows: { 'QUERY PLAN': string }[] }>(`EXPLAIN ${sql}`);
+          return result.rows.map((row) => row['QUERY PLAN']).join('\n');
+        });
+      const id = randomUUID();
+      for (const [sql, index] of [
+        [
+          `SELECT id FROM coupons WHERE seller_id = '${id}' ORDER BY created_at DESC, id DESC LIMIT 20`,
+          'idx_coupons_seller_id_created_at_id',
+        ],
+        [`SELECT id FROM coupons ORDER BY created_at DESC, id DESC LIMIT 20`, 'idx_coupons_created_at_id'],
+        [`SELECT id FROM coupons WHERE code = 'SAVE-10'`, 'uq_coupons_code'],
+        [
+          `SELECT count(*) FROM coupon_redemptions
+             WHERE coupon_id = '${id}' AND customer_id = '${id}' AND status = 'active'`,
+          'idx_coupon_redemptions_coupon_id_customer_id',
+        ],
+        [
+          `SELECT id FROM coupon_redemptions WHERE coupon_id = '${id}' ORDER BY created_at DESC LIMIT 50`,
+          'idx_coupon_redemptions_coupon_id_created_at',
+        ],
+        [`SELECT id FROM coupon_redemptions WHERE order_id = '${id}'`, 'uq_coupon_redemptions_order_id'],
+      ] as const) {
+        expect(await planOf(sql), sql).toContain(index);
+      }
+    });
+  });
 });

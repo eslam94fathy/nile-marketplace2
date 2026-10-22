@@ -116,6 +116,19 @@ import * as m20261022100029 from './20261022100029_validate_ledger_entries_types
 import * as m20261022100030 from './20261022100030_create_seller_order_holds';
 import * as m20261022100031 from './20261022100031_add_return_audit_actions';
 import * as m20261022120001 from './20261022120001_add_payments_customer_id';
+import * as m20261022140001 from './20261022140001_create_coupons';
+import * as m20261022140002 from './20261022140002_create_coupon_redemptions';
+import * as m20261022140003 from './20261022140003_add_orders_coupon';
+import * as m20261022140004 from './20261022140004_validate_orders_coupon';
+import * as m20261022140005 from './20261022140005_add_seller_orders_discount';
+import * as m20261022140006 from './20261022140006_validate_seller_orders_discount';
+import * as m20261022140007 from './20261022140007_add_order_items_discount';
+import * as m20261022140008 from './20261022140008_validate_order_items_discount';
+import * as m20261022140009 from './20261022140009_add_finance_promotions_account';
+import * as m20261022140010 from './20261022140010_add_ledger_entries_promotion_types';
+import * as m20261022140011 from './20261022140011_validate_ledger_entries_promotion_types';
+import * as m20261022140012 from './20261022140012_add_coupon_blocked_notification_type';
+import * as m20261022140013 from './20261022140013_add_coupon_audit_actions';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -237,5 +250,18 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261022100030_create_seller_order_holds', module: m20261022100030 },
   { name: '20261022100031_add_return_audit_actions', module: m20261022100031 },
   { name: '20261022120001_add_payments_customer_id', module: m20261022120001 },
+  { name: '20261022140001_create_coupons', module: m20261022140001 },
+  { name: '20261022140002_create_coupon_redemptions', module: m20261022140002 },
+  { name: '20261022140003_add_orders_coupon', module: m20261022140003 },
+  { name: '20261022140004_validate_orders_coupon', module: m20261022140004 },
+  { name: '20261022140005_add_seller_orders_discount', module: m20261022140005 },
+  { name: '20261022140006_validate_seller_orders_discount', module: m20261022140006 },
+  { name: '20261022140007_add_order_items_discount', module: m20261022140007 },
+  { name: '20261022140008_validate_order_items_discount', module: m20261022140008 },
+  { name: '20261022140009_add_finance_promotions_account', module: m20261022140009 },
+  { name: '20261022140010_add_ledger_entries_promotion_types', module: m20261022140010 },
+  { name: '20261022140011_validate_ledger_entries_promotion_types', module: m20261022140011 },
+  { name: '20261022140012_add_coupon_blocked_notification_type', module: m20261022140012 },
+  { name: '20261022140013_add_coupon_audit_actions', module: m20261022140013 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

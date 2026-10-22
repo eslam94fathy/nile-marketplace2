@@ -12,7 +12,8 @@ const MODULE_GRAPH = {
   delivery: ['identity'],
   catalog: ['sellers', 'inventory', 'media'],
   cart: ['catalog', 'customers', 'inventory', 'sellers', 'media'],
-  ordering: ['customers', 'cart', 'catalog', 'sellers', 'inventory', 'payments', 'delivery', 'media'],
+  // R2-P7 (spec 09 §8.8): coupon quote, redemption and release.
+  ordering: ['customers', 'cart', 'catalog', 'sellers', 'inventory', 'payments', 'delivery', 'media', 'promotions'],
   // R2-P6 (spec 12 §8, A-12): the holding release asks returns; the holds view reads order numbers.
   finance: ['sellers', 'delivery', 'returns', 'ordering'],
   // R2-P2 (spec 15): profiles at connect, parties and statuses for the fan-out; R2-P3: support (canView).

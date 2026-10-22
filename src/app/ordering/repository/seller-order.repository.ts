@@ -5,6 +5,7 @@ import { applyListQuery, type ParsedListQuery } from '../../../lib/http';
 import { Money, Rate } from '../../../lib/money';
 import { ORDERING_TABLES } from '../constants';
 import { type SellerOrderCancelReason, SellerOrderStatus } from '../enums';
+import { type CouponFunding } from '../../promotions';
 import { type PickupSnapshot, type SellerOrder } from '../model/order.model';
 import { type ReturnAmounts } from '../model/return.model';
 
@@ -50,6 +51,8 @@ interface SellerOrderTable {
   commission_rate: string;
   commission: string;
   seller_net: string;
+  discount_amount: string;
+  discount_funding: CouponFunding | null;
   returned_subtotal: string;
   returned_paid: string;
   returned_commission: string;
@@ -157,6 +160,9 @@ export class SellerOrderRepository {
           commission_rate: s.commissionRate.toString(),
           commission: s.commission.toString(),
           seller_net: s.sellerNet.toString(),
+          // R2-P7 step 5 passes the coupon share (spec 09 §8.8).
+          discount_amount: Money.zero().toString(),
+          discount_funding: null,
           returned_subtotal: Money.zero().toString(),
           returned_paid: Money.zero().toString(),
           returned_commission: Money.zero().toString(),

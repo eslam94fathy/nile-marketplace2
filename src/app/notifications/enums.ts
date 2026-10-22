@@ -44,5 +44,6 @@ export const NotificationType = {
   RETURN_COMPLETED: 'return_completed',
   RETURN_REFUSED: 'return_refused',
   REFUND_ISSUED: 'refund_issued',
+  COUPON_BLOCKED: 'coupon_blocked',
 } as const;
 export type NotificationType = (typeof NotificationType)[keyof typeof NotificationType];

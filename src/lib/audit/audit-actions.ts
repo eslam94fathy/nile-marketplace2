@@ -26,6 +26,7 @@ export const AuditTargetType = {
   REVIEW: 'review',
   REVIEW_REPLY: 'review_reply',
   RETURN_REQUEST: 'return_request',
+  COUPON: 'coupon',
 } as const;
 export type AuditTargetType = (typeof AuditTargetType)[keyof typeof AuditTargetType];
 
@@ -42,6 +43,24 @@ const CATEGORY_IMAGE_FIELDS = ['imageMediaId', 'imageAltText'] as const;
 const ATTRIBUTE_FIELDS = ['name', 'code', 'sortOrder', 'categoryId'] as const;
 const OPTION_FIELDS = ['value', 'code', 'sortOrder', 'attributeId'] as const;
 const AGENT_FIELDS = ['fullName', 'phone', 'homeGovernorateId', 'status'] as const;
+// Every coupon field except the counters (spec 20 §2.3).
+const COUPON_FIELDS = [
+  'code',
+  'funding',
+  'sellerId',
+  'discountType',
+  'discountValue',
+  'maxDiscount',
+  'minItemsSubtotal',
+  'scope',
+  'scopeSellerId',
+  'scopeCategoryId',
+  'startsAt',
+  'endsAt',
+  'globalLimit',
+  'perCustomerLimit',
+  'status',
+] as const;
 
 export const AUDIT_ACTIONS = {
   // identity (spec 03 §4.10–§4.13, UC-ID-8)
@@ -98,6 +117,11 @@ export const AUDIT_ACTIONS = {
   'return.dispute_resolved': { target: T.RETURN_REQUEST, fields: ['status', 'decision'] },
   // payments (spec 10 §8.4)
   'payment_refund.retried': { target: T.PAYMENT_REFUND, fields: STATUS },
+  // promotions (spec 19 UC-PR-4, PR-20, BO-27): the block reason is the entry's `reason`
+  'coupon.created': { target: T.COUPON, fields: COUPON_FIELDS },
+  'coupon.updated': { target: T.COUPON, fields: COUPON_FIELDS },
+  'coupon.blocked': { target: T.COUPON, fields: ['status', 'adminBlocked'] },
+  'coupon.unblocked': { target: T.COUPON, fields: ['adminBlocked'] },
   // finance (spec 12 §1.3)
   'cod_remittance.recorded': { target: T.COD_REMITTANCE, fields: ['amount', 'agentId'] },
   'payout.recorded': {
