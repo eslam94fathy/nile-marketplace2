@@ -73,4 +73,6 @@ export const NotificationLink = {
   /** NO-34 (spec 18 RE-16). */
   customerReturn: (returnId: string) => `/returns/${returnId}`,
   sellerReturn: (returnId: string) => `/seller/returns/${returnId}`,
+  /** NO-35 (spec 19 PR-20). */
+  sellerCoupon: (couponId: string) => `/seller/coupons/${couponId}`,
 } as const;

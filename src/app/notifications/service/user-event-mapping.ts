@@ -4,6 +4,7 @@ import {
   PaymentFailed,
   PaymentRefunded,
   PaymentRefundRecorded,
+  CouponBlocked,
   OrderPlaced,
   PermanentEventError,
   ProductBlocked,
@@ -41,6 +42,7 @@ export const USER_EVENTS = [
   ReviewCreated,
   ReviewReplied,
   ProductBlocked,
+  CouponBlocked,
   ReturnStatusChanged,
   PaymentRefunded,
   PaymentRefundRecorded,
@@ -66,6 +68,7 @@ const NO_PARTY_EVENTS: ReadonlySet<string> = new Set([
   ReviewCreated.type,
   ReviewReplied.type,
   ProductBlocked.type,
+  CouponBlocked.type,
   ReturnStatusChanged.type,
 ]);
 
@@ -251,6 +254,18 @@ export function mapUserEvent(
           title: 'Product blocked',
           body: 'A product was blocked by the platform.',
           link: NotificationLink.sellerProduct(idOf(envelope, 'productId')),
+        },
+      ];
+    // Spec 13 NO-35: the reason is only in the seller's coupon view; an unblock notifies nobody.
+    case CouponBlocked.type:
+      return [
+        {
+          recipient: { kind: 'seller', id: idOf(envelope, 'sellerId') },
+          category: NotificationCategory.ORDERS,
+          type: NotificationType.COUPON_BLOCKED,
+          title: 'Coupon blocked',
+          body: 'One of your coupons was blocked by the platform.',
+          link: NotificationLink.sellerCoupon(idOf(envelope, 'couponId')),
         },
       ];
     case ReturnStatusChanged.type:

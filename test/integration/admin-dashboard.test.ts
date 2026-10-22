@@ -105,6 +105,22 @@ describe('admin dashboard', () => {
     });
   });
 
+  describe('GMV with coupons (spec 20 BO-26)', () => {
+    it('stays gross: placed and delivered GMV count the subtotal before the coupon', async () => {
+      const { customerId } = await fx.insertCustomer();
+      const x = (await fx.insertSeller()).sellerId;
+      const order = await fx.insertOrder(customerId, { placed_at: new Date('2026-03-10T10:00:00Z') });
+      await sellerOrder(order, x, '100.00', {
+        discount_amount: '20.00',
+        discount_funding: 'platform',
+        ...delivered('2026-03-10T12:00:00Z'),
+      });
+
+      const stats = await ordering().getDashboardStats({ now: new Date('2026-03-10T20:00:00Z'), ...WINDOW });
+      expect(stats.gmv.at(-1)).toEqual({ day: '2026-03-10', placed: '100.00', delivered: '100.00' });
+    });
+  });
+
   describe('GET /admin/dashboard', () => {
     it('composes every block, then serves the cached value until it expires', async () => {
       await knex()('seller_orders').del();
