@@ -81,6 +81,10 @@ export function orderFixtures(db: Knex) {
           commission_rate: '0.1000',
           commission: '10.00',
           seller_net: '90.00',
+          returned_subtotal: '0.00',
+          returned_paid: '0.00',
+          returned_commission: '0.00',
+          returned_seller_net: '0.00',
           pickup_governorate_id: await governorateId(),
           pickup_phone: '+201221234567',
           pickup_city: 'Cairo',
@@ -116,6 +120,7 @@ export function orderFixtures(db: Knex) {
           unit_price: '50.00',
           quantity: 2,
           cancelled_quantity: 0,
+          returned_quantity: 0,
           line_total: '100.00',
           ...overrides,
         })

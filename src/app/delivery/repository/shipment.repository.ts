@@ -4,7 +4,7 @@ import { TOKENS } from '../../../lib/di';
 import { applyListQuery, type ParsedListQuery } from '../../../lib/http';
 import { Money } from '../../../lib/money';
 import { DELIVERY_TABLES } from '../constants';
-import { ACTIVE_SHIPMENT_STATUSES, ShipmentStatus } from '../enums';
+import { ACTIVE_SHIPMENT_STATUSES, ShipmentKind, ShipmentStatus } from '../enums';
 import {
   type Shipment,
   type ShipmentDropoff,
@@ -92,6 +92,8 @@ interface ShipmentTable {
   delivered_at: Date | null;
   returned_at: Date | null;
   seller_order_cancelled_at: Date | null;
+  kind: ShipmentKind;
+  return_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -182,12 +184,14 @@ export class ShipmentRepository {
   }
 
   /**
-   * Creates the shipment `unassigned` unless the seller order already has one (replay-safe,
-   * uq_shipments_seller_order_id). Returns it, or null when it existed.
+   * Creates the delivery `unassigned` unless the seller order already has one (replay-safe,
+   * uq_shipments_seller_order_id_delivery). Returns it, or null when it existed.
    */
   async insertIfNew(shipment: NewShipment, trx: DbTransaction): Promise<Shipment | null> {
     const [row] = await trx<ShipmentTable>(T)
       .insert({
+        kind: ShipmentKind.DELIVERY,
+        return_id: null,
         seller_order_id: shipment.sellerOrderId,
         order_id: shipment.orderId,
         agent_id: null,
@@ -225,7 +229,8 @@ export class ShipmentRepository {
         returned_at: null,
         seller_order_cancelled_at: null,
       })
-      .onConflict('seller_order_id')
+      // The conflict target names the partial index's predicate, so Postgres can infer it.
+      .onConflict(trx.raw('(seller_order_id) WHERE kind = ?', [ShipmentKind.DELIVERY]))
       .ignore()
       .returning<ShipmentRow[]>(COLUMNS);
     return row ? toModel(row) : null;
@@ -253,20 +258,23 @@ export class ShipmentRepository {
     return row ? toModel(row) : null;
   }
 
-  /** The seller order's shipment, unlocked: finds the checkout to lock (uq_shipments_seller_order_id). */
+  /**
+   * The seller order's delivery, unlocked: finds the checkout to lock
+   * (uq_shipments_seller_order_id_delivery). Return shipments of the seller order are left out.
+   */
   async findBySellerOrderId(sellerOrderId: string, trx?: DbTransaction): Promise<Shipment | null> {
     const row = await this.exec(trx)<ShipmentTable>(T)
       .select(...COLUMNS)
-      .where({ seller_order_id: sellerOrderId })
+      .where({ seller_order_id: sellerOrderId, kind: ShipmentKind.DELIVERY })
       .first<ShipmentRow | undefined>();
     return row ? toModel(row) : null;
   }
 
-  /** Locks the seller order's shipment, if it exists yet (the seller-order consumer). */
+  /** Locks the seller order's delivery, if it exists yet (the seller-order consumer). */
   async lockBySellerOrderId(sellerOrderId: string, trx: DbTransaction): Promise<Shipment | null> {
     const row = await trx<ShipmentTable>(T)
       .select(...COLUMNS)
-      .where({ seller_order_id: sellerOrderId })
+      .where({ seller_order_id: sellerOrderId, kind: ShipmentKind.DELIVERY })
       .forUpdate()
       .first<ShipmentRow | undefined>();
     return row ? toModel(row) : null;

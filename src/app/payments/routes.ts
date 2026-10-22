@@ -74,7 +74,7 @@ export function paymentAdminRoutes(deps: PaymentAdminRouteDeps): Router {
     method: 'post',
     path: `${basePath}${P.RECORD_REFUND}`,
     summary:
-      'Record a refund done by hand in the Kashier dashboard; the payment becomes partially_refunded_manually or refunded_manually (REFUND_NOT_FOUND 404, REFUND_ALREADY_RECORDED 409)',
+      'Record a refund done by hand in the Kashier dashboard; the payment becomes partially_refunded or refunded (REFUND_NOT_FOUND 404, REFUND_ALREADY_RECORDED 409)',
     requestBody: RecordRefundDto,
     idempotent: true,
     responses: { 200: { description: 'The recorded refund', body: RefundDto } },

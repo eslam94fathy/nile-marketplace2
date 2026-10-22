@@ -1,7 +1,7 @@
 # Spec 11 — delivery
 
 Status: **v1.2 APPROVED (2026-10-12).** v1.0 (2026-10-09): the reference-data part, with the clarifications in §7.1. v1.1: the whole spec (agents, shipments, assignment) approved with the Phase 6 clarifications in §7.2. v1.2: how the consumer orders item cancellations and returns (DE-15, DE-16). Changes from now on need explicit approval and a version bump.
-**v2.1 APPROVED (2026-10-20):** §8.4 `getUserIds` (DE-20). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 return shipments (spec 18), a dashboard method, and the paid-amount payload change (spec 09 §8.8). Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.6 DE-17…DE-19 answered 2026-10-20.
+**v2.2 APPROVED (2026-10-22):** §8.7 DE-21, DE-22 how a return shipment fills the snapshot and payment columns (R2-P6). **v2.1 APPROVED (2026-10-20):** §8.4 `getUserIds` (DE-20). **v2.0 APPROVED (2026-10-20):** §8 adds the Release 2 return shipments (spec 18), a dashboard method, and the paid-amount payload change (spec 09 §8.8). Kept as its own section, so every cross-reference stays valid (R2-Q1). §8.6 DE-17…DE-19 answered 2026-10-20.
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -247,3 +247,10 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | DE-17 | Which agent picks up a return | **Rec:** auto-assignment by the customer's governorate (the pickup), same algorithm as deliveries · or always manual admin assignment |
 | DE-18 | Pickup attempts | **Rec:** up to 3, `customer_refused` ends at once; then the return is `pickup_failed` and no fee is charged · or a single attempt |
 | DE-19 | Seller absent at hand-over | **Rec:** not modelled in R2: the agent keeps the parcel and an admin sorts it out (support ticket) · or a failed drop-off status with retries |
+
+### 8.7 Clarifications (R2-P6 schema, approved 2026-10-22)
+
+| # | Clarification | Where |
+|---|---|---|
+| DE-21 | The snapshot columns keep their **party** for both kinds: `pickup_*` is always the seller (business name, pickup address), `dropoff_*` always the customer (recipient, governorate name, floor / apartment). A return shipment runs from the `dropoff_*` address to the `pickup_*` one; the agent and admin DTOs swap them for `kind = return` (§8.3), and auto-assignment keys on `dropoff_governorate_id` for returns (DE-17). No new columns (database D-24) | §8.1, §8.3 |
+| DE-22 | A return shipment stores the order's real `payment_method`; `chk_shipments_return_no_cash` makes it collect nothing (`cod_items_amount = 0`, `order_delivery_fee = 0`, never a fee carrier, no cash collected). `chk_shipments_kind_status` keeps `pickup_failed` for returns and the delivery-only statuses for deliveries (database D-24) | §8.1 |

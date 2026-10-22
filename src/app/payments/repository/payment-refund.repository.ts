@@ -4,7 +4,7 @@ import { TOKENS } from '../../../lib/di';
 import { applyListQuery, type ParsedListQuery } from '../../../lib/http';
 import { Money } from '../../../lib/money';
 import { PAYMENTS_TABLES } from '../constants';
-import { type RefundReason, RefundStatus } from '../enums';
+import { RefundMethod, type RefundReason, RefundStatus } from '../enums';
 import { type PaymentRefund } from '../model/refund.model';
 
 const T = PAYMENTS_TABLES.PAYMENT_REFUNDS;
@@ -34,11 +34,30 @@ interface PaymentRefundTable {
   recorded_by_user_id: string | null;
   recorded_at: Date | null;
   provider_refund_ref: string | null;
+  return_id: string | null;
+  method: RefundMethod;
+  attempt_count: number;
+  next_attempt_at: Date | null;
+  last_error: string | null;
+  payout_details_encrypted: string | null;
+  succeeded_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
 
-type RefundRow = Omit<PaymentRefundTable, 'updated_at'> & { order_id: string };
+type RefundRow = Pick<
+  PaymentRefundTable,
+  | 'id'
+  | 'payment_id'
+  | 'seller_order_id'
+  | 'amount'
+  | 'reason'
+  | 'status'
+  | 'provider_refund_ref'
+  | 'recorded_by_user_id'
+  | 'recorded_at'
+  | 'created_at'
+> & { order_id: string };
 
 function toModel(row: RefundRow): PaymentRefund {
   return {
@@ -84,6 +103,13 @@ export class PaymentRefundRepository {
       recorded_by_user_id: null,
       recorded_at: null,
       provider_refund_ref: null,
+      return_id: null,
+      method: RefundMethod.MANUAL,
+      attempt_count: 0,
+      next_attempt_at: null,
+      last_error: null,
+      payout_details_encrypted: null,
+      succeeded_at: null,
     });
   }
 

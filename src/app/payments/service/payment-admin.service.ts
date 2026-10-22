@@ -48,8 +48,8 @@ export class PaymentAdminService {
 
   /**
    * UC-PA-4, one transaction with the payment row locked: the refund `pending_manual → recorded`,
-   * `refunded_amount += amount`, status `refunded_manually` once everything collected went back,
-   * else `partially_refunded_manually`, and `payment.refund_recorded`.
+   * `refunded_amount += amount`, status `refunded` once everything collected went back,
+   * else `partially_refunded`, and `payment.refund_recorded`.
    */
   async recordRefund(
     refundId: string,
@@ -79,8 +79,8 @@ export class PaymentAdminService {
 
       const refundedAmount = payment.refundedAmount.plus(found.amount);
       const status = refundedAmount.equals(payment.collectedAmount)
-        ? PaymentStatus.REFUNDED_MANUALLY
-        : PaymentStatus.PARTIALLY_REFUNDED_MANUALLY;
+        ? PaymentStatus.REFUNDED
+        : PaymentStatus.PARTIALLY_REFUNDED;
       // chk_payments_refunded_amount refuses more than was collected (a 422 through the PG error map).
       await this.payments.setRefunded(payment.id, refundedAmount, status, trx);
       await this.outbox.add(trx, {

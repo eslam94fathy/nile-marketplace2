@@ -1380,7 +1380,7 @@ if (pm.response.code === 201) {
           headers: [idempotencyKey],
           body: { providerRefundRef: 'KASHIER-REFUND-REF' },
           description:
-            'After refunding in the Kashier dashboard. The payment becomes partially_refunded_manually or refunded_manually. REFUND_NOT_FOUND 404, REFUND_ALREADY_RECORDED 409.',
+            'After refunding in the Kashier dashboard. The payment becomes partially_refunded or refunded. REFUND_NOT_FOUND 404, REFUND_ALREADY_RECORDED 409.',
           tests: expect(200),
         }),
       ],

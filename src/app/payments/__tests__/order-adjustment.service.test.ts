@@ -89,7 +89,7 @@ describe('OrderAdjustmentService (spec 10 UC-PA-3)', () => {
 
   it('a fully refunded Kashier payment and a settled COD payment are left alone', async () => {
     for (const settled of [
-      payment({ method: 'kashier', status: 'refunded_manually' }),
+      payment({ method: 'kashier', status: 'refunded' }),
       payment({ status: 'collected' }),
     ]) {
       const { service, payments, refunds } = setup(settled);

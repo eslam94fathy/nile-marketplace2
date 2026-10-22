@@ -66,7 +66,7 @@ describe('PaymentSettlementService (spec 10 UC-PA-2)', () => {
     for (const [current, outcome] of [
       [payment({ method: 'cod', status: 'pending' }), 'not_kashier'],
       [payment({ status: 'paid' }), 'already_settled'],
-      [payment({ status: 'refunded_manually' }), 'already_settled'],
+      [payment({ status: 'refunded' }), 'already_settled'],
       [payment({ status: 'failed' }), 'already_settled'],
     ] as const) {
       const { service, payments, outbox } = setup();

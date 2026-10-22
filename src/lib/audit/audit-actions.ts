@@ -25,6 +25,7 @@ export const AuditTargetType = {
   SUPPORT_TICKET: 'support_ticket',
   REVIEW: 'review',
   REVIEW_REPLY: 'review_reply',
+  RETURN_REQUEST: 'return_request',
 } as const;
 export type AuditTargetType = (typeof AuditTargetType)[keyof typeof AuditTargetType];
 
@@ -92,6 +93,11 @@ export const AUDIT_ACTIONS = {
   // ordering (spec 09 §8.4): the reason is the entry's `reason`
   'seller_order.admin_cancelled': { target: T.SELLER_ORDER, fields: STATUS },
   'order.admin_cancelled': { target: T.ORDER, fields: STATUS },
+  // returns (spec 18 UC-RE-3, UC-RE-8): the note is the entry's `reason`
+  'return.admin_decided': { target: T.RETURN_REQUEST, fields: STATUS },
+  'return.dispute_resolved': { target: T.RETURN_REQUEST, fields: ['status', 'decision'] },
+  // payments (spec 10 §8.4)
+  'payment_refund.retried': { target: T.PAYMENT_REFUND, fields: STATUS },
   // finance (spec 12 §1.3)
   'cod_remittance.recorded': { target: T.COD_REMITTANCE, fields: ['amount', 'agentId'] },
   'payout.recorded': {

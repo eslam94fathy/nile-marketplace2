@@ -6,7 +6,7 @@ export interface PaymentRefundRecordedPayload {
   orderId: string;
   refundId: string;
   amount: string;
-  newPaymentStatus: 'partially_refunded_manually' | 'refunded_manually';
+  newPaymentStatus: 'partially_refunded' | 'refunded';
   recordedByUserId: string;
 }
 

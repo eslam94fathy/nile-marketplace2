@@ -1,6 +1,6 @@
 # Spec 18 — returns
 
-Status: **v1.1 APPROVED (2026-10-21).** v1.1: R2-P6 plan clarifications RE-11…RE-20 (§7.1, every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (returns and refunds, holding period), R-13…R-16, `14-media.md` (return photos), spec 09 v2.0 §8.7, spec 10 v2.0 §8, spec 11 v2.0 §8, spec 12 v2.0 §8, spec 07 v2.0 §8. §7 RE-1…RE-10 answered 2026-10-20 (every recommendation accepted).
+Status: **v1.2 APPROVED (2026-10-22).** v1.2: RE-21 the return number format (§7.1). v1.1: R2-P6 plan clarifications RE-11…RE-20 (§7.1, every recommendation accepted). **v1.0 APPROVED (2026-10-20).** Changes from now on need explicit approval and a version bump. Release 2. Inputs: `00-overview.md` v2.0 §10.4 (returns and refunds, holding period), R-13…R-16, `14-media.md` (return photos), spec 09 v2.0 §8.7, spec 10 v2.0 §8, spec 11 v2.0 §8, spec 12 v2.0 §8, spec 07 v2.0 §8. §7 RE-1…RE-10 answered 2026-10-20 (every recommendation accepted).
 Conventions: `01-api-conventions.md`. Events: `02-events.md`.
 
 ## 1. Scope & owned tables
@@ -233,3 +233,4 @@ The user accepted every recommendation (2026-10-20). The table is kept for the r
 | RE-18 | Kashier refunds left `pending_manual` from R1 stay manual (`method = manual`); an admin retry hands one to the automated job (spec 10 PA-29) | spec 10 §8.4 |
 | RE-19 | Module edges as architecture §14.2: returns → ordering, inventory, payments, delivery, media; finance → returns; backoffice → returns | §1 |
 | RE-20 | Order of work: plan §9.1 | plan |
+| RE-21 | `return_number` = `R-` + 9 digits from `return_number_seq` (`chk_return_requests_return_number` `^R-[0-9]{9,}$`), like tickets (SU-16) | §1 |

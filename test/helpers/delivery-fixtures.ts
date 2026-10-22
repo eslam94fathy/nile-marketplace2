@@ -45,6 +45,8 @@ export function deliveryFixtures(db: Knex) {
     return one(
       db('shipments')
         .insert({
+          kind: 'delivery',
+          return_id: null,
           seller_order_id: ids.sellerOrderId,
           order_id: ids.orderId,
           agent_id: null,

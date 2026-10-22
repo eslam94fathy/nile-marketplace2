@@ -293,6 +293,8 @@ describe('payments: Kashier sessions, webhook and manual refunds', () => {
             recorded_by_user_id: null,
             recorded_at: null,
             provider_refund_ref: null,
+            method: 'manual',
+            attempt_count: 0,
           })
           .returning<{ id: string }[]>('id');
       const [first] = await due('100.00', 'seller_order_cancelled');
@@ -312,17 +314,17 @@ describe('payments: Kashier sessions, webhook and manual refunds', () => {
         orderId,
       });
       expect(await paymentRow(paymentId)).toMatchObject({
-        status: 'partially_refunded_manually',
+        status: 'partially_refunded',
         refunded_amount: '100.00',
       });
       await as(adminToken).record(second, { providerRefundRef: 'KR-2' });
       expect(await paymentRow(paymentId)).toMatchObject({
-        status: 'refunded_manually',
+        status: 'refunded',
         refunded_amount: '150.00',
       });
       expect(
         (await outboxOf('payment.refund_recorded', paymentId)).map((e) => e.payload.newPaymentStatus),
-      ).toEqual(['partially_refunded_manually', 'refunded_manually']);
+      ).toEqual(['partially_refunded', 'refunded']);
 
       const again = await as(adminToken).record(first, { providerRefundRef: 'KR-1' });
       expect([again.status, errorBody(again).error.code]).toEqual([409, 'REFUND_ALREADY_RECORDED']);

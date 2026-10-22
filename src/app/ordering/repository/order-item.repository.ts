@@ -38,6 +38,7 @@ interface OrderItemTable {
   unit_price: string;
   quantity: number;
   cancelled_quantity: number;
+  returned_quantity: number;
   line_total: string;
   image_media_id: string | null;
   created_at: Date;
@@ -89,6 +90,7 @@ export class OrderItemRepository {
           unit_price: item.unitPrice.toString(),
           quantity: item.quantity,
           cancelled_quantity: 0,
+          returned_quantity: 0,
           line_total: item.lineTotal.toString(),
           image_media_id: item.imageMediaId,
         })),

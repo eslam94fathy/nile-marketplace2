@@ -84,6 +84,37 @@ import * as m20261021150001 from './20261021150001_customers_created_at_millisec
 import * as m20261021150002 from './20261021150002_add_users_created_at_id_index';
 import * as m20261021150003 from './20261021150003_add_customers_created_at_id_index';
 import * as m20261021150004 from './20261021150004_add_seller_orders_open_status_index';
+import * as m20261022100001 from './20261022100001_create_return_requests';
+import * as m20261022100002 from './20261022100002_create_return_items';
+import * as m20261022100003 from './20261022100003_create_return_photos';
+import * as m20261022100004 from './20261022100004_create_return_status_history';
+import * as m20261022100005 from './20261022100005_add_order_items_returned_quantity';
+import * as m20261022100006 from './20261022100006_validate_order_items_quantities';
+import * as m20261022100007 from './20261022100007_add_seller_orders_returned_amounts';
+import * as m20261022100008 from './20261022100008_validate_seller_orders_returned_amounts';
+import * as m20261022100009 from './20261022100009_create_order_item_returns';
+import * as m20261022100010 from './20261022100010_add_inventory_movements_return_restock';
+import * as m20261022100011 from './20261022100011_validate_inventory_movements_type';
+import * as m20261022100012 from './20261022100012_convert_payments_refunded_statuses';
+import * as m20261022100013 from './20261022100013_validate_payments_status';
+import * as m20261022100014 from './20261022100014_add_payment_refunds_automation';
+import * as m20261022100015 from './20261022100015_validate_payment_refunds_automation';
+import * as m20261022100016 from './20261022100016_add_payment_refunds_next_attempt_index';
+import * as m20261022100017 from './20261022100017_add_payment_refunds_processing_index';
+import * as m20261022100018 from './20261022100018_add_payment_refunds_return_id_index';
+import * as m20261022100019 from './20261022100019_add_payment_refunds_status_created_at_index';
+import * as m20261022100020 from './20261022100020_add_shipments_return_kind';
+import * as m20261022100021 from './20261022100021_validate_shipments_return_kind';
+import * as m20261022100022 from './20261022100022_add_shipment_status_history_pickup_failed';
+import * as m20261022100023 from './20261022100023_validate_shipment_status_history_statuses';
+import * as m20261022100024 from './20261022100024_add_shipments_return_id_unique_index';
+import * as m20261022100025 from './20261022100025_add_shipments_seller_order_id_delivery_index';
+import * as m20261022100026 from './20261022100026_drop_shipments_seller_order_id_unique';
+import * as m20261022100027 from './20261022100027_add_finance_return_accounts';
+import * as m20261022100028 from './20261022100028_add_ledger_entries_return_types';
+import * as m20261022100029 from './20261022100029_validate_ledger_entries_types';
+import * as m20261022100030 from './20261022100030_create_seller_order_holds';
+import * as m20261022100031 from './20261022100031_add_return_audit_actions';
 // <migration-imports> (npm run migrate:make appends above this line)
 
 /** Every migration, in timestamp order. Never edit or reorder an applied one (CLAUDE.md §6.1). */
@@ -173,5 +204,36 @@ export const MIGRATIONS: readonly NamedMigration[] = [
   { name: '20261021150002_add_users_created_at_id_index', module: m20261021150002 },
   { name: '20261021150003_add_customers_created_at_id_index', module: m20261021150003 },
   { name: '20261021150004_add_seller_orders_open_status_index', module: m20261021150004 },
+  { name: '20261022100001_create_return_requests', module: m20261022100001 },
+  { name: '20261022100002_create_return_items', module: m20261022100002 },
+  { name: '20261022100003_create_return_photos', module: m20261022100003 },
+  { name: '20261022100004_create_return_status_history', module: m20261022100004 },
+  { name: '20261022100005_add_order_items_returned_quantity', module: m20261022100005 },
+  { name: '20261022100006_validate_order_items_quantities', module: m20261022100006 },
+  { name: '20261022100007_add_seller_orders_returned_amounts', module: m20261022100007 },
+  { name: '20261022100008_validate_seller_orders_returned_amounts', module: m20261022100008 },
+  { name: '20261022100009_create_order_item_returns', module: m20261022100009 },
+  { name: '20261022100010_add_inventory_movements_return_restock', module: m20261022100010 },
+  { name: '20261022100011_validate_inventory_movements_type', module: m20261022100011 },
+  { name: '20261022100012_convert_payments_refunded_statuses', module: m20261022100012 },
+  { name: '20261022100013_validate_payments_status', module: m20261022100013 },
+  { name: '20261022100014_add_payment_refunds_automation', module: m20261022100014 },
+  { name: '20261022100015_validate_payment_refunds_automation', module: m20261022100015 },
+  { name: '20261022100016_add_payment_refunds_next_attempt_index', module: m20261022100016 },
+  { name: '20261022100017_add_payment_refunds_processing_index', module: m20261022100017 },
+  { name: '20261022100018_add_payment_refunds_return_id_index', module: m20261022100018 },
+  { name: '20261022100019_add_payment_refunds_status_created_at_index', module: m20261022100019 },
+  { name: '20261022100020_add_shipments_return_kind', module: m20261022100020 },
+  { name: '20261022100021_validate_shipments_return_kind', module: m20261022100021 },
+  { name: '20261022100022_add_shipment_status_history_pickup_failed', module: m20261022100022 },
+  { name: '20261022100023_validate_shipment_status_history_statuses', module: m20261022100023 },
+  { name: '20261022100024_add_shipments_return_id_unique_index', module: m20261022100024 },
+  { name: '20261022100025_add_shipments_seller_order_id_delivery_index', module: m20261022100025 },
+  { name: '20261022100026_drop_shipments_seller_order_id_unique', module: m20261022100026 },
+  { name: '20261022100027_add_finance_return_accounts', module: m20261022100027 },
+  { name: '20261022100028_add_ledger_entries_return_types', module: m20261022100028 },
+  { name: '20261022100029_validate_ledger_entries_types', module: m20261022100029 },
+  { name: '20261022100030_create_seller_order_holds', module: m20261022100030 },
+  { name: '20261022100031_add_return_audit_actions', module: m20261022100031 },
   // <migration-list> (npm run migrate:make appends above this line)
 ];

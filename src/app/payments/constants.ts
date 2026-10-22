@@ -30,5 +30,5 @@ export const COD_OPEN_STATUSES: readonly PaymentStatus[] = [
  */
 export const KASHIER_REFUNDABLE_STATUSES: readonly PaymentStatus[] = [
   PaymentStatus.PAID,
-  PaymentStatus.PARTIALLY_REFUNDED_MANUALLY,
+  PaymentStatus.PARTIALLY_REFUNDED,
 ];

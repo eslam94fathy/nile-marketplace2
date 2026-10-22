@@ -45,6 +45,10 @@ interface SellerOrderTable {
   commission_rate: string;
   commission: string;
   seller_net: string;
+  returned_subtotal: string;
+  returned_paid: string;
+  returned_commission: string;
+  returned_seller_net: string;
   pickup_governorate_id: string;
   pickup_phone: string;
   pickup_city: string;
@@ -144,6 +148,10 @@ export class SellerOrderRepository {
           commission_rate: s.commissionRate.toString(),
           commission: s.commission.toString(),
           seller_net: s.sellerNet.toString(),
+          returned_subtotal: Money.zero().toString(),
+          returned_paid: Money.zero().toString(),
+          returned_commission: Money.zero().toString(),
+          returned_seller_net: Money.zero().toString(),
           pickup_governorate_id: s.pickup.governorateId,
           pickup_phone: s.pickup.phone,
           pickup_city: s.pickup.city,
